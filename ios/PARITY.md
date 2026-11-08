@@ -2,6 +2,9 @@
 
 The native iPhone client targets the PWA behavior at repository reference `74ed561`. This document separates implemented behavior from exercised workflows; it is not a certification of complete functional parity. A subsequent source audit found five omissions in the earlier broad parity claim. The corrections and their evidence are recorded below. Presentation follows PRODUCT.md and DIRECTION.md. Validation uses the m5p iPhone 17 Pro Simulator, iOS 26.4, and an isolated real backend. Physical-device installation remains deferred by the user.
 
+
+Current local integration adds the media catalog and live activity contract from backend reference `0e204cf`. See [MEDIA-INTEGRATION.md](MEDIA-INTEGRATION.md) for current validation and remaining limits. Earlier results below are historical; they do not certify this newer backend as a whole.
+
 | Area | Implemented behavior | Automated evidence |
 |---|---|---|
 | Connection | address validation, prefix URLs, reconnect, suspend/resume, remote capabilities | connection unit tests; live shell, switching and background recovery |

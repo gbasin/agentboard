@@ -129,7 +129,7 @@ Historical evidence in `evidence/`:
 
 ## Full parity regression command
 
-Prepare the private backend, seeded conversations, file/photo fixtures, port-4149 shell fixture, port-4190 PR proxy and port-4192 parity-gap fixture as described above. Run the full native matrix on the simulator host:
+Prepare the private backend at `0e204cf` or a compatible newer revision, seeded conversations, file/photo fixtures, port-4149 shell fixture, port-4190 PR proxy, port-4192 parity-gap fixture and port-4193 media/activity fixture described below. The older backend in the native branch does not implement the catalog endpoints required by the new integration tests. Run the full native matrix on the simulator host:
 
 ```sh
 ./ios/scripts/test-e2e.sh YOUR_UDID
@@ -211,3 +211,18 @@ Six `SessionActionsTests` cover create acknowledgement, rename identity/name mat
 `SessionActionUITests` creates a uniquely named disposable shell on the isolated port-4151 backend. It rejects an invalid directory, preserves and corrects the draft, creates and opens the shell, renames it, cancels ending it, then confirms end and verifies removal. The light-mode run passed in `actions-ui-fixed.xcresult`. The same flow passed at the largest accessibility text size in dark appearance in `actions-accessibility-settled.xcresult`. The test waits for native field scrolling before editing and scrolls the native menu to reach End session. A final light-mode regression run passed all three UI tests in `actions-regression.xcresult`: the management flow plus existing address validation and terminal typing/paste/background recovery/switching. Captures are in `evidence/session-actions/`. These results do not validate remote SSH mutations or physical iPhone behavior.
 
 Root lint, typecheck and the full test suite passed on m5p for this iteration with Bun 1.3.14 and `LOG_LEVEL` unset. Local commits use the previously documented per-command hook override after equivalent remote checks; the local PTY limitation remains. No permanent hook settings change.
+
+
+## Current media and activity integration (local)
+
+The native catalog now consumes optional `mediaSummary` metadata. New servers provide bounded media pages, search and kind filters, discovery progress, revision fencing, thumbnails and image neighbors across page boundaries. Older servers retain the snapshot view. The media browser retains one page (at most 40 items) and bounded cursor history. Backgrounding cancels discovery; returning to an incomplete catalog exposes Continue discovery.
+
+Current-backend validation uses an independent checkout at `0e204cf` on port 4151. Keep its database and tmux socket isolated as above. After the ordinary fixtures, run this additional fixture in another terminal:
+
+```sh
+NATIVE_PARITY_SHELL_RESUME=1 bun ios/scripts/media-activity-fixture.ts
+```
+
+It creates a reserved private transcript with 90 images and 90 links and wakes it into the configured disposable shell. Loopback port 4193 appends activity events to that fixture for UI testing. It does not simulate the backend's responses: the actual backend indexes the log and broadcasts activity changes. Do not run this fixture against production. Stop the fixture process and remove only its private tmux windows after testing.
+
+`MediaCatalogTests` exercises cancellation, query changes, cursor traversal, revisions and bounded responses. `MediaBackendTests` requires this fixture and checks all five pages, search, thumbnails and image neighbors outside the retained page. `MediaActivityUITests` drives the real backend in Simulator and checks updates while the activity sheet stays open, media paging and search. The full regression script includes these classes and the native glass flows, with parallel testing disabled to reduce local PTY demand.

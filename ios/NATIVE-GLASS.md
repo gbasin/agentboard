@@ -16,9 +16,9 @@ Shift+Tab sends `ESC [ Z`. Shift+Enter sends LF instead of CR. Shift resets afte
 
 ## Contract boundaries
 
-Agent activity is optional. The native decoder follows the newer backend’s `session.activity` schema, including running, blocked, unknown and truncated observations. The baseline backend does not emit it. Older servers therefore show no invented subagent count. End-to-end activity requires that backend rollout.
+Agent activity is optional. The native decoder follows the newer backend’s `session.activity` schema, including running, blocked, unknown and truncated observations. Older servers show no invented subagent count. The subsequent local integration validates live running-to-completed updates against actual backend `0e204cf`, including updates while the activity sheet stays open, in light and dark/maximum-text Simulator runs.
 
-Media counts cover the supplied session snapshot. Baseline extraction can be capped, so the interface says “Available” and explains the limit in media detail. Complete totals and older-item browsing require the newer `mediaSummary` contract and cursor pagination; this checkpoint does not implement those APIs.
+The original glass checkpoint counted only the supplied session snapshot. The subsequent media integration implements the newer `mediaSummary` contract: indexed totals, bounded cursor pages, search/filtering, discovery progress and image neighbors across pages. A persistent glass bar keeps paging reachable. Older servers retain the explicitly labeled “Available” snapshot fallback. See [MEDIA-INTEGRATION.md](MEDIA-INTEGRATION.md) for current evidence and limits.
 
 PR chips use the existing batched `/api/pr-info` endpoint. Missing or failed state lookup stays unknown. Catalog PR navigation opens a PR-only list and does not assert that omitted media is absent.
 
