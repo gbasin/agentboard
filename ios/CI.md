@@ -43,4 +43,4 @@ Use `all` as the final argument to select every workflow. Omit `IOS_TEST_PRODUCT
 
 ## Results
 
-Each shard uploads separate `.xcresult` bundles for both appearances and fixture logs. A failed shard keeps its results. A new push cancels an obsolete run for the same PR. Keep a failed result as a failure when reporting follow-up verification.
+Each shard uploads `.xcresult` bundles and fixture logs immediately after each appearance. A light failure can be inspected while dark tests continue. A failed shard keeps its results. A new push cancels an obsolete run for the same PR. Keep a failed result as a failure when reporting follow-up verification.

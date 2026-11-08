@@ -62,15 +62,24 @@ jobs:
           tar -xzf ios-test-products.tar.gz -C ios/.build/Build
       - name: Light workflows
         run: IOS_E2E_MODE=light ios/scripts/ci-e2e.sh
-      - name: Dark and maximum-text workflows
-        if: ${{ !cancelled() && steps.products.outcome == 'success' }}
-        run: IOS_E2E_MODE=dark ios/scripts/ci-e2e.sh
-      - name: Preserve Simulator results and fixture logs
+      - name: Preserve light results immediately
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: native-ios-results-${{ matrix.shard }}
+          name: native-ios-light-${{ matrix.shard }}
           path: |
-            ios/evidence/*.xcresult
-            /tmp/ab-ios-fixture-logs/*/*.log
+            ios/evidence/*-light-*.xcresult
+            /tmp/ab-ios-fixture-logs/light-*/*.log
+            /tmp/ab-ios-parity/*.log
+      - name: Dark and maximum-text workflows
+        if: ${{ !cancelled() && steps.products.outcome == 'success' }}
+        run: IOS_E2E_MODE=dark ios/scripts/ci-e2e.sh
+      - name: Preserve dark results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-ios-dark-${{ matrix.shard }}
+          path: |
+            ios/evidence/*-dark-*.xcresult
+            /tmp/ab-ios-fixture-logs/dark-*/*.log
             /tmp/ab-ios-parity/*.log
