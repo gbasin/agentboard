@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.1](https://github.com/gbasin/agentboard/compare/v0.43.0...v0.43.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* clean image and continuation user previews ([#531](https://github.com/gbasin/agentboard/issues/531)) ([84fb771](https://github.com/gbasin/agentboard/commit/84fb7716941fd66d4e7b2f680e138cc0ce7d6d7d))
+
 ## [0.43.0](https://github.com/gbasin/agentboard/compare/v0.42.2...v0.43.0) (2026-11-08)
 
 
