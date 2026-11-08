@@ -51,6 +51,17 @@ for (const [schema, entry] of Object.entries(schemas)) {
       }
     })
 
+    test('cleans image wrappers and labels while preserving the prompt', () => {
+      expect(extract('<image name=[Image #1] path="/tmp/paste.png"></image>Fix this [Image #1]')).toBe('Fix this')
+      expect(extract('<image name=[Image #1] path="/tmp/paste.png">')).toBe('Image attached')
+      expect(extract('[Image #2]')).toBe('Image attached')
+      expect(extract('Compare [Image #1] with [Image #2]')).toBe('Compare with')
+    })
+
+    test('skips continuation summaries', () => {
+      expect(extract('This session is being continued from a previous conversation that ran out of context. Summary here')).toBe('real prior prompt')
+    })
+
     test('preserves ordinary XML and prose about tools', () => {
       expect(extract('<example>hello</example>')).toBe('<example>hello</example>')
       expect(extract('Tool loaded. Now fix the parser.')).toBe('Tool loaded. Now fix the parser.')
@@ -63,7 +74,44 @@ test('cached, truncated envelopes trigger re-extraction', () => {
     '<system-reminder>Result of calling the Read tool: ' + 'x'.repeat(300),
     '<send_user_message_question_reply>\n[{"answer":"' + 'x'.repeat(300),
     'Tool loaded.',
+    'This session is being continued from a previous conversation that ran out of context. Summary',
+    '<image name=[Image #1] path="' + 'x'.repeat(300),
+    '[Image #2]',
   ]) {
     expect(isToolNotificationText(text.slice(0, 250))).toBe(true)
+  }
+})
+
+test('joins text blocks before choosing the last prompt and skips flagged summaries', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ab-user-blocks-'))
+  dirs.push(dir)
+  const file = join(dir, 'session.jsonl')
+  const entries = [
+    { type: 'user', message: { role: 'user', content: [
+      { type: 'text', text: '[Image #1]' },
+      { type: 'image', source: { type: 'base64', data: 'ignored' } },
+      { type: 'text', text: 'Fix the layout' },
+      { type: 'text', text: 'Keep the colors' },
+    ] } },
+    { ...schemas.claude('A differently worded summary'), isCompactSummary: true },
+  ]
+  writeFileSync(file, entries.map(e => JSON.stringify(e)).join('\n'))
+  expect(extractLastUserMessageFromLog(file)).toBe('Fix the layout Keep the colors')
+})
+
+test('recognizes structured image-only messages without requiring a text label', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ab-user-images-'))
+  dirs.push(dir)
+  const file = join(dir, 'session.jsonl')
+  for (const entry of [
+    { type: 'user', message: { role: 'user', content: [{ type: 'image' }] } },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_image' }] } },
+    { type: 'event_msg', payload: { type: 'user_message', message: '', images: ['image'] } },
+    { type: 'event_msg', payload: { type: 'user_message', message: '', local_images: ['/tmp/image.png'] } },
+  ]) {
+    writeFileSync(file, JSON.stringify(entry))
+    expect(extractLastUserMessageFromLog(file)).toBe('Image attached')
+    writeFileSync(file, JSON.stringify({ ...entry, isMeta: true }))
+    expect(extractLastUserMessageFromLog(file)).toBeNull()
   }
 })
