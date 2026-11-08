@@ -21,6 +21,7 @@ function png(index: number): string {
   const pixels = Buffer.concat(Array.from({ length: 32 }, () => Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: 32 }, () => [index * 2, 100, 220 - index]).flat())])))
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', deflateSync(pixels)), chunk('IEND', Buffer.alloc(0))]).toString('base64')
 }
+await mkdir(`${root}/project`, { recursive: true })
 await mkdir(`${root}/${id}/subagents`, { recursive: true })
 const lines = Array.from({ length: 90 }, (_, index) => row({ type: 'user', message: { role: 'user', content: [
   { type: 'frame-link', title: `Catalog reference ${String(index).padStart(3, '0')}`, frameUrl: `https://example.com/native-${String(index).padStart(3, '0')}` },

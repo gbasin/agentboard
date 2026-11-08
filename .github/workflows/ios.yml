@@ -3,6 +3,17 @@ on:
   pull_request:
     paths: ['ios/**', 'src/**', 'bun.lock', 'package.json', '.bun-version', '.github/workflows/ios.yml']
   workflow_dispatch:
+    inputs:
+      shard:
+        description: Shard to run (PRs always run all shards)
+        type: choice
+        default: all
+        options: [all, terminal, catalog, lifecycle, media, settings]
+      appearance:
+        description: Appearance to run (PRs always run both)
+        type: choice
+        default: all
+        options: [all, light, dark]
 permissions:
   contents: read
 concurrency:
@@ -22,7 +33,7 @@ jobs:
       - run: brew install xcodegen
       - run: bun install --frozen-lockfile
       - name: Verify shard coverage
-        run: bun test ./ios/scripts/e2e-selection.test.ts
+        run: bun test ./ios/scripts/e2e-selection.test.ts ./ios/scripts/ci-diagnostics.test.ts ./ios/scripts/ci-e2e.test.ts
       - name: Build test products once
         run: ios/scripts/build-for-testing.sh
       - name: Archive test products with executable permissions and symlinks
@@ -39,7 +50,7 @@ jobs:
       # Five workers fit GitHub's standard macOS concurrency allowance.
       # Each worker runs both appearances against fresh, isolated fixtures.
       matrix:
-        shard: [terminal, catalog, lifecycle, media, settings]
+        shard: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.shard != 'all' && format('["{0}"]', inputs.shard) || '["terminal","catalog","lifecycle","media","settings"]') }}
     runs-on: macos-26
     timeout-minutes: 40
     env:
@@ -61,6 +72,7 @@ jobs:
           mkdir -p ios/.build/Build
           tar -xzf ios-test-products.tar.gz -C ios/.build/Build
       - name: Light workflows
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.appearance != 'dark' }}
         run: IOS_E2E_MODE=light ios/scripts/ci-e2e.sh
       - name: Preserve light results immediately
         if: always()
@@ -71,8 +83,9 @@ jobs:
             ios/evidence/*-light-*.xcresult
             /tmp/ab-ios-fixture-logs/light-*/*.log
             /tmp/ab-ios-parity/*.log
+            /tmp/ab-ios-diagnostics/**
       - name: Dark and maximum-text workflows
-        if: ${{ !cancelled() && steps.products.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.products.outcome == 'success' && (github.event_name != 'workflow_dispatch' || inputs.appearance != 'light') }}
         run: IOS_E2E_MODE=dark ios/scripts/ci-e2e.sh
       - name: Preserve dark results
         if: always()
@@ -83,3 +96,4 @@ jobs:
             ios/evidence/*-dark-*.xcresult
             /tmp/ab-ios-fixture-logs/dark-*/*.log
             /tmp/ab-ios-parity/*.log
+            /tmp/ab-ios-diagnostics/**
