@@ -42,7 +42,9 @@ ci_phase() (
   set -e
   # The EXIT trap records failures without wrapping the command in an if, which
   # would disable errexit inside shell functions. State changes stay local.
-  local phase=$1 started=$SECONDS started_utc
+  # Bash 3.2 unwinds function locals before its EXIT trap on errexit. These
+  # variables belong to this subshell so the trap retains them on every path.
+  phase=$1 started=$SECONDS started_utc=
   shift
   started_utc=$(date -u +%FT%TZ)
   trap 'status=$?; duration=$((SECONDS - started)); printf "%s\t%s\t%s\t%s\n" "$phase" "$started_utc" "$duration" "$status" >> "$CI_DIAGNOSTICS_PATH/phases.tsv"; printf "[ios-ci] %s: %ss (exit %s)\n" "$phase" "$duration" "$status" >&2; ci_snapshot "$phase:end"; exit "$status"' EXIT

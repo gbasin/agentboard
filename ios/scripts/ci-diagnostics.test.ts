@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 
 function run(command: string) {
   const directory = mkdtempSync(join(tmpdir(), 'ios-ci-diagnostics-'));
-  const result = Bun.spawnSync(['bash', '-c', `set -euo pipefail
+  const result = Bun.spawnSync(['/bin/bash', '-c', `set -euo pipefail
 source "$HELPER"
 ci_diagnostics_start test
 trap ci_diagnostics_stop EXIT
@@ -21,7 +21,7 @@ ${command}`], {
 
 test('phase timing preserves stdout and stops resource sampling', () => {
   const { result, phases, resources } = run('sampler=$CI_DIAGNOSTICS_PID; value=$(ci_phase output printf hello); ci_diagnostics_stop; if kill -0 "$sampler" 2>/dev/null; then exit 99; fi; printf "%s" "$value"');
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr.toString()).toBe(0);
   expect(result.stdout.toString()).toBe('hello');
   expect(phases).toMatch(/output\t[^\t]+\t\d+\t0/);
   expect(resources).toContain('phase=stop');
@@ -29,7 +29,7 @@ test('phase timing preserves stdout and stops resource sampling', () => {
 
 test('failed phases preserve status and stop compound functions at failure', () => {
   const { result, phases, resources } = run('fail() { return 37; echo must-not-run; }; ci_phase failure fail; echo must-not-run');
-  expect(result.exitCode).toBe(37);
+  expect(result.exitCode, result.stderr.toString()).toBe(37);
   expect(result.stdout.toString()).toBe('');
   expect(phases).toMatch(/failure\t[^\t]+\t\d+\t37/);
   expect(resources).toContain('phase=stop');
@@ -38,7 +38,7 @@ test('failed phases preserve status and stop compound functions at failure', () 
 
 test('captured phases retain strict failure handling', () => {
   const { result, phases } = run('fail() { return 23; echo must-not-run; }; value=$(ci_phase captured fail); echo must-not-run');
-  expect(result.exitCode).toBe(23);
+  expect(result.exitCode, result.stderr.toString()).toBe(23);
   expect(result.stdout.toString()).toBe('');
   expect(phases).toMatch(/captured\t[^\t]+\t\d+\t23/);
 });
