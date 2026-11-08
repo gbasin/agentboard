@@ -377,9 +377,9 @@ export function normalizeAgentLogEntry(entry: unknown): NormalizedEvent[] {
   if (!record) return []
 
   // Claude Code marks harness-injected entries (system-reminders, recap notices,
-  // compaction summaries) with isMeta:true. They aren't user-authored, so they
+  // compaction summaries) with isMeta or isCompactSummary. They aren't user-authored, so they
   // shouldn't surface as the last user message or count as conversation turns.
-  if (record.isMeta === true) return []
+  if (record.isMeta === true || record.isCompactSummary === true) return []
 
   // Grok injects <system-reminder> user entries marked with synthetic_reason.
   // They aren't user-authored, so they shouldn't surface as the last user
