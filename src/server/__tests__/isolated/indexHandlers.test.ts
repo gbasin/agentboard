@@ -1,5 +1,6 @@
+import { PreviewServers } from '../../outputs/previewServers'
 import { CopyModeQuery } from '../../copyModeQuery'
-import { afterAll, afterEach, beforeEach, describe, expect, test, mock } from 'bun:test'
+import { afterAll, afterEach, beforeEach, describe, expect, test, mock, spyOn } from 'bun:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -5169,6 +5170,31 @@ describe('server fetch handlers', () => {
     expect(serveHostnames).toEqual(['127.0.0.1', '100.64.0.7'])
     const listener = logEntries.find((entry) => entry.event === 'tailscale_listener_started')
     expect(listener?.data).toEqual({ tailscaleUrl: 'http://100.64.0.7:4040' })
+  })
+
+  test('registers the preview interface when Tailscale Serve owns the dashboard port', async () => {
+    configState.hostname = '127.0.0.1'
+    const syncImpl = spawnSyncImpl
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      if (command[0] === 'tailscale') return {
+        exitCode: 0, stdout: Buffer.from('100.64.0.7\n'), stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+      return syncImpl(...args)
+    }) as typeof Bun.spawnSync
+    const serve = bunAny.serve
+    bunAny.serve = ((options: Parameters<typeof Bun.serve>[0]) => {
+      if (options.hostname === '100.64.0.7') throw new Error('Address already in use')
+      return serve(options)
+    }) as typeof Bun.serve
+    const addHost = spyOn(PreviewServers.prototype, 'addHost')
+    try {
+      const mod = await import(`../../index?test=${++importCounter}`)
+      await mod.startupReady
+      await mod.tailscaleReady
+      expect(logEntries.some(entry => entry.event === 'tailscale_bind_failed')).toBe(true)
+      expect(addHost).toHaveBeenCalledWith('100.64.0.7')
+    } finally { addHost.mockRestore() }
   })
 
   test('tmux mouse mode timeout returns 504 and does not persist the setting', async () => {

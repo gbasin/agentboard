@@ -1,7 +1,8 @@
 /**
  * On-demand, capability-protected preview origins. Each output owns a separate
  * port so absolute app routes, fetch, cookies and WebSockets keep their paths.
- * Listeners bind to the same interfaces as Agentboard, never an extra interface.
+ * Listeners bind to the configured interface and detected Tailscale interface.
+ * Preview binding is independent of who owns the dashboard port.
  */
 import fs from 'node:fs/promises'
 import { crossOriginRejection } from '../requestOrigin'
