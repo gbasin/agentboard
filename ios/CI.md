@@ -4,7 +4,7 @@ The workflow builds the app and test bundles once. It archives `Build/Products`,
 
 | Shard | Workflows |
 |---|---|
-| terminal | Native unit tests, terminal input, selection, rotation and connection states |
+| terminal | Native unit/integration tests, terminal input, selection, rotation and connection states |
 | catalog | Glass catalog, filters, ordering, capability gates and recovery notices |
 | lifecycle | Create, duplicate, rename, end, hibernate, Library transcript and pin |
 | media | Media/activity, document previews, clipboard, file and photo insertion |
@@ -12,7 +12,7 @@ The workflow builds the app and test bundles once. It archives `Build/Products`,
 
 Pull requests run every shard in light/standard text and dark/maximum text. Manual dispatch accepts `shard` and `appearance` choices for a targeted development run; both default to `all`. A targeted run does not replace the full PR check. Simulator boot completes before fixture services start. Each appearance starts fresh private fixture data and an app container. Shards start only the backend and fixture services that their tests consume. Dark runs even if the light test step fails. Test execution stays serial inside each fixture host because workflows mutate shared sessions and settings. The wrapper checks every fixture process and backend health before starting tests. A dead fixture fails the job immediately. Catalog tests use their fixture proxy without starting the backend.
 
-`e2e-selection.test.ts` compares shard selections with the Swift test methods. It rejects duplicate, missing and empty selections. The existing light-only tests remain light-only. External-service acceptance tests remain opt-in. Unit tests run once in the light terminal shard.
+`e2e-selection.test.ts` compares shard selections with the Swift test methods. It rejects duplicate, missing and empty selections. The existing light-only tests remain light-only. External-service acceptance tests remain opt-in. The native test target runs once in the light terminal shard. It includes real-backend integration tests and requires parity seeding, lifecycle warming, and the media/activity fixture.
 
 Five workers fit the standard [GitHub macOS concurrency limit](https://docs.github.com/en/actions/reference/limits). Other workflows may still consume runner capacity. The build reuse follows Apple's [Build For Testing and Test Without Building workflow](https://developer.apple.com/library/archive/technotes/tn2339/_index.html). Hosted elapsed time must be measured after rollout; no fixed duration is guaranteed.
 
@@ -54,3 +54,9 @@ The optimized light/settings shard passed all four UI tests on m5p using the com
 A dedicated Simulator took 17 seconds to boot before the wrapper started. The wrapper took 195 seconds: nine seconds before tests and 186 seconds in the test phase. XCTest reported 171.818 seconds of test execution. Backend readiness took one second, parity warming one second, and app installation four seconds. This shard did not import Photos or Files. The dedicated Simulator and owned fixture processes were removed after validation.
 
 These timings establish a passing warm-host result for the shared artifact. They do not establish a hosted CI speedup: the hosted settings job had not finished, its exact runtime build was unverified, and machine load differed. Run the optimized workflow on hosted CI before rebalancing shards. Two simultaneous fixture-backed Simulators still require separate ports, paths, and mutable session state.
+
+### Full hosted validation
+
+Run [42527001881](https://github.com/gbasin/agentboard/actions/runs/42527001881) failed after 43m02s. It does not establish a speedup. Light setup took 238–353 seconds per shard; completed dark setup took 11–52 seconds. Settings test execution took 535 seconds in light and 419 seconds in dark. The hosted runtime was iOS 26.4.1 (23E254a), unlike the m5p runtime above.
+
+The run exposed omitted parity dependencies in the native test target and a media preview test that needed to follow the catalog's explicit refresh action. Lifecycle dark hit its job timeout during repeated native-menu gestures and animation-idle waits. Its transcript test passed. Retain these failures when comparing a corrected run; do not treat a faster failed run as successful full-suite validation.

@@ -111,7 +111,7 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue((app.textFields["session-project"].value as? String ?? "").hasSuffix("/tmp/ab-ios-parity/project"))
         app.buttons["Cancel"].tap()
         app.buttons["Session actions"].tap(); tapMenu("Hibernate session", in: app)
-        app.buttons["confirm-end-session"].tap()
+        let confirm = app.buttons["confirm-end-session"]; reveal(confirm, in: app); confirm.tap()
         XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 15))
         app.buttons["Library"].tap(); search(name, in: app)
         let row = app.buttons["saved-" + name]; XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
