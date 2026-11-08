@@ -7,7 +7,7 @@ The integration now includes current PWA baseline `35483b5`. The four feature ga
 Current verification on m5p:
 
 - Root lint, typecheck and all 2,581 Bun tests passed, including the pre-commit runs. No hook bypass was used for these follow-up commits.
-- All 72 native unit/integration tests passed against the isolated current backend. They cover attachment review and cancellation, preserving a pending review during frozen selection, input replacement, and snapshot request fencing.
+- All 76 native unit/integration tests passed against the isolated current backend. They cover attachment review and cancellation, preserving a pending review during frozen selection, input replacement, and snapshot request fencing.
 - Five new/updated UI workflows passed in light and dark/maximum Dynamic Type: frozen selection/refresh/copy/return to input, session-overview switching, clipboard preview/removal/insertion, photo review/upload, and file review/upload.
 - Device preference toggles persisted after reopening Settings in light and dark/maximum text. Frozen selection now has captures with active native selection handles in both modes.
 - Visual review found and corrected maximum-text attachment action wrapping, filename truncation, duplicate review controls, and snapshot initial scroll positioning. A passing UI test alone did not expose these issues.
@@ -41,6 +41,16 @@ Current follow-up captures: `evidence/ci-finish/`. All 72 native unit/integratio
 Read-only native SSH attachment also passed through a separate cross-host backend and actual SSH transport, with remote commands constrained to the private fixture socket. The test confirmed remote session selection, terminal readiness, rendered output and Back navigation. See `evidence/ci-finish/ssh-attach.md`; this closes successful SSH attachment for the tested topology, while remote management and physical-device networking remain outside its scope.
 
 Live GitHub retrieval also passed through this Mac’s existing authenticated backend (`100.82.11.20:4040`). The optional native UI test opened PR #530 directly from the catalog PR control, asserted its real title and check name, and captured the actual statuses. It never opened a terminal or changed settings/credentials. This verifies the complete native catalog → PR → live checks read path; m5p’s invalid gh token remains host-specific. Result: `/tmp/ab-live-github-checks.xcresult`, one passing test in 12 seconds. The capture shows the previous native CI failure accurately, not a green CI claim.
+
+## External acceptance and finite discovery renewal
+
+Commit `fbcdf1c` corrects the next hosted failures: native Clear text replaces a flaky Command-A search sequence, Files navigation respects its remembered directory and cold startup, Photos waits for its first-use notice, and menu taps use a verified visible center. Hosted run `42507761352` passed 72 native tests, 32/34 light UI tests and 24/26 dark UI tests; its failures remain recorded as failures.
+
+The real 500,001-reference transcript exposed an implementation gap: the PWA renews unfinished finite discovery streams automatically up to three times, while native stopped for manual continuation. Commit `6d2e781` adds the same bounded renewals, preserves a nonempty visible page, cancels delayed renewals, and resumes partial discovery on foreground. Stream events decide completion even if catalog broadcasts lag. Four new focused tests passed; the full native unit/integration suite passed 76/76.
+
+The real large-transcript workflow passed in light and dark/maximum text: visible progress, background/foreground recovery, completed discovery, refresh and page-two navigation. The final dark test also asserts the complete 500,001-item count. PDF Save to Files passed both appearances; the saved PDF's SHA-256 and 666-byte length exactly match the source. A real Codex CLI editor accepted the native clipboard image as `[Image #1]`, without submitting a prompt. See `evidence/external-acceptance/README.md` for result bundles, corrections, isolation and limits.
+
+Remaining acceptance boundaries are physical iPhone installation/performance, IME/VoiceOver/hardware keyboards, HEIC photos, model-side image interpretation and other agent editors, other share destinations, other Quick Look formats, and arbitrary SSH configurations/remote management. A successful hosted full native matrix is still required; source and targeted runs are not represented as that result.
 
 ## Historical audit
 

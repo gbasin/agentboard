@@ -4,6 +4,8 @@ This is a running record, not an approved feature plan. Implementation follows t
 
 ## 1. Parity we may want to reconsider
 
+- **Idle editor versus startup activity:** the real Codex fixture showed Working while MCP startup was running, although no prompt had been submitted. Native uses the shared backend status. Consider distinguishing startup from requested agent work rather than changing native status independently.
+
 - **Lifecycle marker ambiguity:** a live session can retain `isHibernating=true` after Wake. The PWA uses live registry membership and wire status; native previously treated the marker as Sleeping and disabled entry. Fix native decoding, not the shared marker. A clearer API distinction between dormant state and persisted lifecycle intent would prevent this mistake.
 
 - **Frozen selection copy shaping:** the PWA heuristically rejoins agent-wrapped lines and removes shared indentation. It improves prose copying but can join an intentional line break. Preserve its documented behavior for parity; consider an explicit exact-text option for code/data.
@@ -13,6 +15,10 @@ This is a running record, not an approved feature plan. Implementation follows t
 - **HTML attachments:** the server intentionally serves some HTML as downloads. Native source preview and file sharing preserve that contract; rendering downloaded HTML as trusted app content would change it.
 
 ## 2. Improvements to strengthen existing behavior
+
+- Slow discovery currently shows both “Discovering media…” and “Loading media…” while keeping existing items visible. Consider one progress message so the first screen carries more content, especially at maximum Dynamic Type.
+
+- Very long session names at maximum Dynamic Type can crowd the navigation title and chevron. The real image-acceptance capture makes this visible; consider a clearer truncation or wrapping policy in a later design pass.
 
 - Preserve pending attachment review when entering read-only selection. Blocking terminal input should not discard an attachment draft; interrupted uploads remain retryable.
 - Keep snapshot requests tied to the selected session and connection generation; reject late replies and prevent hardware/software input from reaching the terminal while selection is open.
@@ -61,3 +67,6 @@ This is a running record, not an approved feature plan. Implementation follows t
 - 2026-11-08: Final full native unit/integration run passed 72/72 after updating the older media-count assertion for the added PDF fixture. The PDF workflow passed both appearances, and the real SSH-backed read-only attach passed separately. Hosted native CI still needs a successful run.
 
 - 2026-11-08: Live native GitHub retrieval passed through `http://100.82.11.20:4040`: opened PR #530 directly from the selected session’s catalog PR control, asserted its real title and check name, and captured actual statuses. No terminal was opened and no metadata, settings or credentials changed. This closes live native GitHub retrieval for the authenticated backend; m5p’s invalid gh token remains a host-specific issue.
+
+- 2026-11-08: Real Codex CLI image-editor acceptance passed through native clipboard review/upload/insertion, without submitting a prompt. PDF Save to Files completed and the saved 666-byte PDF matched the source SHA-256. This does not certify model-side image interpretation, other agent editors, or other share destinations.
+- 2026-11-08: The large real-transcript test exposed a discovery parity gap missed by the small fixture: the PWA renews incomplete finite streams up to three times, while Swift required manual continuation. Bounded automatic renewal and foreground continuation are fixed in `6d2e781`. All 76 native tests passed, and the real 500,001-item discovery/background-recovery workflow passed light and dark/maximum text. Keep the existing visible page fixed while receiving newer discovery metadata.
