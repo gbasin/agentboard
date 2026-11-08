@@ -15,10 +15,10 @@ export default function SessionOutputs({ session, ready, children }: { session: 
   return <div className="relative flex min-h-0 min-w-0 flex-1" data-testid="session-outputs">
     <div className="relative flex min-h-0 min-w-0 flex-1">
       {children}
-      {session && <MediaRail session={session} ready={ready} choosePreview={choose}
+      {session && <MediaRail session={session} ready={ready} choosePreview={choose} chooseTab={selected?.item.kind === 'link' ? 'links' : 'previews'}
         onPreview={item => setSelection({ identity, item, open: true })} />}
     </div>
-    {selected && <OutputPreview item={selected.item} mobile={mobile} open={selected.open} onClose={close}
+    {selected && <OutputPreview key={selected.item.url} item={selected.item} mobile={mobile} open={selected.open} onClose={close}
       onChoose={() => setChoose(value => value + 1)} status={session?.status} />}
   </div>
 }

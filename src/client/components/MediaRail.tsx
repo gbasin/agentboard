@@ -136,25 +136,25 @@ function ImageThumbnail({ media, caption, enabled, root, onOpen }: {
   )
 }
 
-interface RailProps { session: Session; ready?: boolean; onPreview?: (item: SessionMedia) => void; choosePreview?: number }
-export default function MediaRail({ session, ready = false, onPreview, choosePreview = 0 }: RailProps) {
+interface RailProps { session: Session; ready?: boolean; onPreview?: (item: SessionMedia) => void; choosePreview?: number; chooseTab?: 'links' | 'previews' }
+export default function MediaRail({ session, ready = false, onPreview, choosePreview = 0, chooseTab = 'previews' }: RailProps) {
   // A new transcript starts with a clean baseline and closed previews.
   const identity = JSON.stringify([
     session.id, session.agentSessionId, session.logFilePath, session.remote, session.agentType,
   ])
-  return <SessionMediaRail key={identity} session={session} ready={ready} onPreview={onPreview} choosePreview={choosePreview} />
+  return <SessionMediaRail key={identity} session={session} ready={ready} onPreview={onPreview} choosePreview={choosePreview} chooseTab={chooseTab} />
 }
 
-function SessionMediaRail({ session, ready = false, onPreview, choosePreview = 0 }: RailProps) {
+function SessionMediaRail({ session, ready = false, onPreview, choosePreview = 0, chooseTab = 'previews' }: RailProps) {
   const [expanded, setExpanded] = useState(false)
   const [attention, setAttention] = useState<'idle' | 'pulsing' | 'unread'>('idle')
   const summary = session.mediaSummary
   const [tab, setTab] = useState<'media' | 'links' | 'previews'>(() => summary?.previews && summary.images + summary.documents + summary.links === 0 ? 'previews' : summary && summary.links > 0 && summary.images + summary.documents === 0 ? 'links' : 'media')
   const previousChoose = useRef(choosePreview)
   useEffect(() => {
-    if (choosePreview !== previousChoose.current) { setTab('previews'); setExpanded(true) }
+    if (choosePreview !== previousChoose.current) { setTab(chooseTab); setExpanded(true) }
     previousChoose.current = choosePreview
-  }, [choosePreview])
+  }, [choosePreview, chooseTab])
   const [searchOpen, setSearchOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
@@ -266,7 +266,7 @@ function SessionMediaRail({ session, ready = false, onPreview, choosePreview = 0
           {Boolean(counts?.omittedItems || pages.pages[0]?.page.omittedItems) && <p data-testid="media-omitted-items" className="px-3 py-2 text-xs text-muted">
             Some items could not be listed because their details are too large ({Math.max(counts?.omittedItems ?? 0, pages.pages[0]?.page.omittedItems ?? 0)}).
           </p>}
-          {tab === 'previews' ? <PreviewList session={session} ready={ready} onSelect={item => { onPreview?.(item); setExpanded(false) }} /> : tab === 'links' ? <SessionLinks key={query} session={session} ready={ready} search={query} onRefresh={() => setAttention('idle')} /> : <>
+          {tab === 'previews' ? <PreviewList session={session} ready={ready} onSelect={item => { onPreview?.(item); setExpanded(false) }} /> : tab === 'links' ? <SessionLinks onPreview={onPreview ? item => { setExpanded(false); onPreview(item) } : undefined} key={query} session={session} ready={ready} search={query} onRefresh={() => setAttention('idle')} /> : <>
           {pages.changed && (
             <button type="button" onClick={refresh} disabled={!ready || pages.status === 'loading'}
               className="px-3 py-2 text-xs text-accent" aria-label="Refresh media">Media changed · Refresh</button>
