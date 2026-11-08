@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.0](https://github.com/gbasin/agentboard/compare/v0.42.2...v0.43.0) (2026-11-08)
+
+
+### Features
+
+* preview assistant web links beside the terminal ([#527](https://github.com/gbasin/agentboard/issues/527)) ([d847b90](https://github.com/gbasin/agentboard/commit/d847b907cad8176175107f74931a48c802b3cb26))
+
 ## [0.42.2](https://github.com/gbasin/agentboard/compare/v0.42.1...v0.42.2) (2026-11-07)
 
 
