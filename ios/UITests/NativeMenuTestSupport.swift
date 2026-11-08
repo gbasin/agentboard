@@ -25,9 +25,11 @@ extension XCUIApplication {
             }
             let above = button.exists && button.frame.midY < viewport.minY
             guard viewport.width > 0, viewport.height > 0 else { break }
+            // Drag in the upper quarter; the embedded Appearance picker can
+            // consume gestures that start in the lower part of the popup.
             let origin = self.coordinate(withNormalizedOffset: .zero)
-            let upper = origin.withOffset(.init(dx: viewport.midX - self.frame.minX, dy: viewport.minY + viewport.height * 0.25 - self.frame.minY))
-            let lower = origin.withOffset(.init(dx: viewport.midX - self.frame.minX, dy: viewport.minY + viewport.height * 0.75 - self.frame.minY))
+            let upper = origin.withOffset(.init(dx: viewport.midX - self.frame.minX, dy: viewport.minY + viewport.height * 0.10 - self.frame.minY))
+            let lower = origin.withOffset(.init(dx: viewport.midX - self.frame.minX, dy: viewport.minY + viewport.height * 0.25 - self.frame.minY))
             // A single gesture can spend time waiting for UIKit to become idle.
             // Check elapsed time between gestures instead of multiplying that wait.
             guard Date() < deadline else { break }
