@@ -125,7 +125,12 @@ final class ParityGapUITests: XCTestCase {
         reveal(source, in: app)
         XCTAssertTrue(source.waitForExistence(timeout: 5))
         XCTAssertTrue(destination.isHittable, "Both reorder handles must be reachable for this drag: " + app.debugDescription)
-        source.press(forDuration: 1, thenDragTo: destination)
+        // Cross the first row's midpoint and let UIKit settle the insertion before release.
+        // A center-to-center drop can stop exactly on the unchanged-order threshold.
+        let target = destination.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5))
+            .withOffset(.init(dx: 0, dy: -first.frame.height * 0.25))
+        source.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5))
+            .press(forDuration: 1, thenDragTo: target, withVelocity: .slow, thenHoldForDuration: 0.5)
         app.buttons["Done"].tap()
         let moved = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             second.exists && first.exists && second.frame.midY < first.frame.midY

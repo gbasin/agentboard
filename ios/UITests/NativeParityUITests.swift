@@ -56,24 +56,9 @@ final class NativeParityUITests: XCTestCase {
         let button = app.buttons[title]; reveal(button, in: app, preferUp: preferUp); button.tap()
     }
     private func tapMenu(_ title: String, in app: XCUIApplication) {
-        for _ in 0..<12 {
-            let button = app.buttons[title]
-            // Context menus can overlay the navigation bar; form viewport bounds do not apply.
-            if button.exists && button.isHittable {
-                let center = CGPoint(x: button.frame.midX, y: button.frame.midY)
-                if app.frame.insetBy(dx: 8, dy: 8).contains(center) {
-                    // Native menu accessibility can change Button → PopUpButton while XCTest
-                    // auto-scrolls a tap. Tap its verified visible center without auto-scrolling.
-                    button.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap(); return
-                }
-            }
-            let menu = app.collectionViews.allElementsBoundByIndex.last ?? app.collectionViews.firstMatch
-            let above = button.exists && button.frame.midY < menu.frame.minY + 20
-            menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: above ? 0.10 : 0.25))
-                .press(forDuration: 0.05, thenDragTo: menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: above ? 0.25 : 0.10)))
-        }
-        XCTFail("Menu action is unreachable: \(title)")
+        app.tapNativeMenuAction(title)
     }
+
     private func search(_ value: String, in app: XCUIApplication) {
         let search = app.searchFields["Search saved sessions"]; XCTAssertTrue(search.waitForExistence(timeout: 5)); replace(search, value); search.typeText("\n")
     }
@@ -150,7 +135,10 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Media and links"].waitForExistence(timeout: 5)); capture("media-empty"); app.buttons["Done"].tap()
         app.buttons["Session actions"].tap(); tapMenu("Attach file", in: app)
         XCTAssertTrue(app.buttons["Choose file"].waitForExistence(timeout: 5)); capture("attach-file")
-        app.buttons["Choose file"].tap(); XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5)); app.buttons["Cancel"].tap(); app.buttons["Done"].tap()
+        app.buttons["Choose file"].tap()
+        XCTAssertTrue(app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
+        app.buttons["Cancel"].tap(); app.buttons["Done"].tap()
         app.buttons["Paste text"].tap()
         let editor = app.textViews["Text to paste"]; XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap(); editor.typeText("printf 'NUM_%s_OK\\n' ")

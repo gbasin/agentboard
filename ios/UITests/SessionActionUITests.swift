@@ -21,14 +21,9 @@ final class SessionActionUITests: XCTestCase {
     }
     private func openAction(_ title: String, in app: XCUIApplication) {
         app.buttons["Session actions"].tap()
-        // Native menus scroll at accessibility sizes; locate the requested action.
-        let end = app.buttons[title]
-        for _ in 0..<8 {
-            if end.exists && end.isHittable { break }
-            (app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch).swipeUp()
-        }
-        end.tap()
+        app.tapNativeMenuAction(title)
     }
+
     func testCreateRenameCancelAndEndLiveSession() {
         let app = XCUIApplication()
         app.launchArguments = ["-serverURL", "http://127.0.0.1:4151"]

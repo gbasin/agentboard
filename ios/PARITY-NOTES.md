@@ -16,6 +16,8 @@ This is a running record, not an approved feature plan. Implementation follows t
 
 ## 2. Improvements to strengthen existing behavior
 
+- At maximum Dynamic Type, the terminal action menu needs several scroll gestures to reach lifecycle actions. Consider grouping actions or a dedicated action sheet after parity; keep every action available and avoid shrinking accessibility text.
+
 - Slow discovery currently shows both “Discovering media…” and “Loading media…” while keeping existing items visible. Consider one progress message so the first screen carries more content, especially at maximum Dynamic Type.
 
 - Very long session names at maximum Dynamic Type can crowd the navigation title and chevron. The real image-acceptance capture makes this visible; consider a clearer truncation or wrapping policy in a later design pass.
@@ -70,3 +72,5 @@ This is a running record, not an approved feature plan. Implementation follows t
 
 - 2026-11-08: Real Codex CLI image-editor acceptance passed through native clipboard review/upload/insertion, without submitting a prompt. PDF Save to Files completed and the saved 666-byte PDF matched the source SHA-256. This does not certify model-side image interpretation, other agent editors, or other share destinations.
 - 2026-11-08: The large real-transcript test exposed a discovery parity gap missed by the small fixture: the PWA renews incomplete finite streams up to three times, while Swift required manual continuation. Bounded automatic renewal and foreground continuation are fixed in `6d2e781`. All 76 native tests passed, and the real 500,001-item discovery/background-recovery workflow passed light and dark/maximum text. Keep the existing visible page fixed while receiving newer discovery metadata.
+
+- 2026-11-08: Hosted run `42514977955` passed 76 native and 34 light UI tests. Dark passed 24/26; a clipped menu target and leftover shell command caused the two failures. Shared menu navigation now uses enclosing popup bounds; rotation cancels unfinished input through native Control-C. All three corrected dark workflows passed together. Full hosted verification of these test changes is pending.

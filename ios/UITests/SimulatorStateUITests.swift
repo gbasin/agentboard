@@ -77,6 +77,10 @@ final class SimulatorStateUITests: XCTestCase {
             assertVisible(app.buttons[name], in: app)
         }
         XCTAssertGreaterThan(app.webViews.firstMatch.frame.height, 30)
+        // A failed earlier workflow can leave an unfinished line in this shared
+        // disposable shell. Cancel it through the native Control key before typing.
+        app.buttons["Control"].tap(); app.typeText("c")
+        XCTAssertTrue(app.buttons["Control"].waitForExistence(timeout: 5))
         let token = String(UUID().uuidString.prefix(8))
         app.typeText("printf 'ROTATE_%s_OK\\n' \(token)")
         enter.tap()

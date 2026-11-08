@@ -12,7 +12,7 @@ Current verification on m5p:
 - Device preference toggles persisted after reopening Settings in light and dark/maximum text. Frozen selection now has captures with active native selection handles in both modes.
 - Visual review found and corrected maximum-text attachment action wrapping, filename truncation, duplicate review controls, and snapshot initial scroll positioning. A passing UI test alone did not expose these issues.
 - A fresh independent finish review returned **ship** for the new selection, attachment review, overview and settings surfaces in light and dark/maximum text. This is a scoped visual verdict, not full-app certification.
-- A native macOS/Xcode CI workflow now runs the fixture-backed matrix and uploads result bundles. Hosted execution is pending; adding the workflow is not evidence that CI has passed.
+- The hosted macOS/Xcode light matrix passed all 76 native tests and all 34 UI workflows. The dark/maximum-text job passed 24/26; its menu-navigation and cascading shell-input failures are being corrected. A fully green hosted matrix is still pending.
 
 The feature gaps below describe the earlier audit, not the current implementation. The physical-device and external-service verification boundaries still apply. Broad light and dark Simulator runs completed; the failures and correction runs are recorded below. This is evidence across runs, not a single green full-matrix bundle. Running observations and possible product changes are recorded in `PARITY-NOTES.md`; those ideas are not approved scope.
 
@@ -51,6 +51,12 @@ The real 500,001-reference transcript exposed an implementation gap: the PWA ren
 The real large-transcript workflow passed in light and dark/maximum text: visible progress, background/foreground recovery, completed discovery, refresh and page-two navigation. The final dark test also asserts the complete 500,001-item count. PDF Save to Files passed both appearances; the saved PDF's SHA-256 and 666-byte length exactly match the source. A real Codex CLI editor accepted the native clipboard image as `[Image #1]`, without submitting a prompt. See `evidence/external-acceptance/README.md` for result bundles, corrections, isolation and limits.
 
 Remaining acceptance boundaries are physical iPhone installation/performance, IME/VoiceOver/hardware keyboards, HEIC photos, model-side image interpretation and other agent editors, other share destinations, other Quick Look formats, and arbitrary SSH configurations/remote management. A successful hosted full native matrix is still required; source and targeted runs are not represented as that result.
+
+## Hosted full-matrix checkpoint
+
+Run `42514977955` at `68ee9db` passed all 76 native tests and all 34 light UI workflows. Dark/maximum text passed 24 of 26 UI workflows. Number keys failed because a context-menu item's accessibility frame extended below the visible popup. The later rotation check inherited the unfinished `NUM_…` shell command; its failure hierarchy shows `NUM_F1F886C8_OK` instead of the expected rotation prefix.
+
+The test correction reads the popup's enclosing accessibility bounds, shares that menu helper between workflow classes, and cancels unfinished input through native Control-C before the rotation test. Earlier hosted run `42513507774` also exposed a midpoint-only reorder drag and a cold Files picker. Reorder now crosses the destination midpoint and holds before release; Files waits for its system navigation bar. Order, backend persistence, relaunch, picker and terminal-output assertions remain in place. These changes affect tests only. The corrected settings/destinations, create/rename/cancel/end, and rotation workflows passed together in dark/maximum text (3/3, `/tmp/ab-menu-shared-dark.xcresult`). Reorder passed light and dark with backend persistence and relaunch checks. Earlier menu attempts using screen fractions and a shorter scroll budget failed and remain diagnostic results. Full hosted verification of the corrected tests is pending.
 
 ## Historical audit
 
