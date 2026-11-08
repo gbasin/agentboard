@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-11-07T19:19:15.893897+00:00",
-  "title": "Design System: Agentboard iPhone live-session slice",
+  "title": "Design System: Agentboard Native precision",
   "extensions": {
     "platform": "iOS / SwiftUI with WKWebView xterm.js output and UIKit input",
     "nativeAuthority": "Preserve user-approved Apple-native defaults. Semantic colors and native controls are not translated into normative CSS or fabricated tonal ramps.",
@@ -11,11 +11,12 @@
       "secondaryText": "Color.secondary",
       "background": "UIColor.systemBackground",
       "keyFill": "UIColor.tertiarySystemFill",
-      "keyBar": "Material.bar",
+      "keyBar": "NativeGlassSurface: regular Liquid Glass on iOS 26+, regular material on iOS 18\u201325; opaque secondarySystemGroupedBackground with Reduce Transparency",
       "workingSymbol": "Color.green",
       "waitingSymbol": "Color.orange",
       "sleepingSymbol": "Color.secondary",
-      "error": "Color.red for live validation and session-action error symbols; Color.primary for their body text; legacy demo uses red validation text"
+      "error": "Color.red for live validation and session-action error symbols; Color.primary for their body text; legacy demo uses red validation text",
+      "catalogBackground": "UIColor.systemGroupedBackground"
     },
     "nativeTypography": {
       "sessionName": "headline",
@@ -34,13 +35,15 @@
       "terminalHorizontalPadding": 8,
       "keyBarHorizontalPadding": 8,
       "titleStatusMinimumGap": 8,
-      "keyMinimumTarget": 44
+      "keyMinimumTarget": 44,
+      "glassRadius": 18,
+      "catalogGlassPadding": 14
     },
     "nativeComponents": [
       {
         "name": "Session list",
         "source": "AgentboardSpike/LiveSessionListView.swift",
-        "implementation": "NavigationStack, List, project Sections, searchable, refreshable; connection state and native empty states; sleeping and restricted remote rows disabled with reasons; New session toolbar action enabled while connected"
+        "implementation": "Plain List with independent primary, PR and activity actions in glass rows; compact healthy connection toolbar; existing search, filters, native reorder and capability gating."
       },
       {
         "name": "Session status",
@@ -55,7 +58,7 @@
       {
         "name": "Terminal quick keys",
         "source": "AgentboardSpike/TerminalKeyBar.swift",
-        "implementation": "Non-scrolling HStack in bottom safeAreaInset: Enter, Escape, Tab, arrows popover, Control and Paste sheet; Hide keyboard only while input has focus"
+        "implementation": "Single glass quick-key row: Enter, Escape, Tab, arrows/one-shot Shift popover, Control, Paste; Hide keyboard only while focused. Shift+Tab sends ESC[Z and Shift+Enter sends LF."
       },
       {
         "name": "Connection form",
@@ -92,7 +95,7 @@
   "components": [],
   "narrative": {
     "northStar": "A native iPhone window onto working agents",
-    "overview": "Use the user-approved Apple-native direction: San Francisco, semantic iOS surfaces, system blue actions, SF Symbols, native navigation and sheets. The terminal owns the detail screen. This documents the SwiftUI live-session slice, preserving the visual world established by the earlier spike.",
+    "overview": "User-approved Native precision with glass throughout interface chrome, system typography and native navigation. Sessions, Terminal and Library are the first implementation checkpoint; solid terminal output preserves legibility. See NATIVE-GLASS.md for scope and validation limits.",
     "keyCharacteristics": [
       "Native controls and system typography.",
       "Dense terminal content with compact surrounding controls.",

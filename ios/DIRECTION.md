@@ -25,3 +25,9 @@ Extend the existing native world with New session in the catalog toolbar and Ren
 ## Full parity implementation
 
 The user superseded the slice-by-slice plan with full PWA capability parity. Preserve the Apple-native direction. Keep the terminal compact and give supplemental workflows native destinations: settings, filters, library, conversations, transcripts, media, pull requests and uploads. A flat session list supports manual reordering; project labels retain context without duplicating groups. Keep conversation navigation near the top of Library, ahead of paginated saved rows. Put older-transcript loading in the toolbar so a long transcript cannot bury it. Shared settings use the existing server contract; terminal typography and renderer settings stay on-device. Validate complete workflows against a private backend and inspect light, dark and accessibility text captures before declaring completion.
+
+## Approved Native precision glass checkpoint
+
+The user selected Native precision with glass throughout interface chrome. Use real Liquid Glass on iOS 26+, regular system material on earlier supported systems, and an opaque semantic surface under Reduce Transparency. Keep terminal output solid and readable. Use compact native navigation, plain lists with glass session surfaces, and semantic typography. Monospace is also appropriate for short identifiers and counts.
+
+Sessions, keyboard-open Terminal and Library are the first native review checkpoint. Preserve every existing action while adding recency, PR state chips, optional backend-reported subagent activity and one-shot Shift. Healthy connection status belongs in the toolbar. Full media totals and pagination remain a separate backend-contract integration. See NATIVE-GLASS.md for current evidence and limits; earlier slice restrictions above are historical.
