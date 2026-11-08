@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.2](https://github.com/gbasin/agentboard/compare/v0.43.1...v0.43.2) (2026-11-08)
+
+
+### Bug Fixes
+
+* reap private tmux children after integration tests ([#533](https://github.com/gbasin/agentboard/issues/533)) ([e9be305](https://github.com/gbasin/agentboard/commit/e9be3056f186ac8758cdcb1f914adb07f758c93b))
+
 ## [0.43.1](https://github.com/gbasin/agentboard/compare/v0.43.0...v0.43.1) (2026-11-08)
 
 
