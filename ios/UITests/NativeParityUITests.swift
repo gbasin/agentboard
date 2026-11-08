@@ -13,6 +13,11 @@ final class NativeParityUITests: XCTestCase {
     }
     private func replace(_ field: XCUIElement, _ value: String) {
         field.tap(); sleep(1)
+        if field.elementType == .searchField {
+            if field.buttons["Clear text"].exists { field.buttons["Clear text"].tap() }
+            XCTAssertTrue((field.value as? String ?? "") == "" || (field.value as? String) == field.placeholderValue)
+            field.typeText(value); return
+        }
         for _ in 0..<4 {
             field.typeKey("a", modifierFlags: .command); field.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
             if (field.value as? String ?? "") == "" || (field.value as? String) == field.placeholderValue { break }
@@ -54,7 +59,14 @@ final class NativeParityUITests: XCTestCase {
         for _ in 0..<12 {
             let button = app.buttons[title]
             // Context menus can overlay the navigation bar; form viewport bounds do not apply.
-            if button.exists && button.isHittable { button.tap(); return }
+            if button.exists && button.isHittable {
+                let center = CGPoint(x: button.frame.midX, y: button.frame.midY)
+                if app.frame.insetBy(dx: 8, dy: 8).contains(center) {
+                    // Native menu accessibility can change Button → PopUpButton while XCTest
+                    // auto-scrolls a tap. Tap its verified visible center without auto-scrolling.
+                    button.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap(); return
+                }
+            }
             let menu = app.collectionViews.allElementsBoundByIndex.last ?? app.collectionViews.firstMatch
             let above = button.exists && button.frame.midY < menu.frame.minY + 20
             menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: above ? 0.10 : 0.25))
@@ -193,12 +205,15 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
         app.buttons["Session actions"].tap(); tapMenu("Attach file", in: app)
         app.buttons["Choose photo"].tap()
-        sleep(2)
-        let notice = app.otherElements["PXGSingleViewContainerView_AX"]
-        if notice.buttons["Close"].firstMatch.exists { notice.buttons["Close"].firstMatch.tap() }
-        capture("photo-picker")
+        let notice = app.otherElements["PXGSingleViewContainerView_AX"].firstMatch
         let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
-        XCTAssertTrue(photo.waitForExistence(timeout: 5)); photo.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
+        let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            notice.buttons["Close"].firstMatch.exists || photo.exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: 30), .completed)
+        if notice.buttons["Close"].firstMatch.exists { notice.buttons["Close"].firstMatch.tap() }
+        XCTAssertTrue(photo.waitForExistence(timeout: 20)); capture("photo-picker")
+        photo.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
         // PhotosUI exposes its checkmark as identifier Add / label Done. Its remote
         // sheet may report isHittable=false despite a valid visible accessibility frame.
         let add = app.buttons["Add"]
@@ -220,14 +235,23 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
         app.buttons["Session actions"].tap(); tapMenu("Attach file", in: app)
         app.buttons["Choose file"].tap()
-        XCTAssertTrue(app.buttons["Browse"].waitForExistence(timeout: 5)); app.buttons["Browse"].tap()
-        if app.buttons["Browse"].exists { app.buttons["Browse"].tap() }
-        let location = app.staticTexts["On My iPhone"]
-        XCTAssertTrue(location.waitForExistence(timeout: 5)); location.tap()
-        app.cells["Agentboard, Container"].images.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
-        sleep(1)
-        let file = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "parity-upload")).firstMatch
-        XCTAssertTrue(file.waitForExistence(timeout: 5)); app.cells["parity-upload, txt"].images.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
+        // Files can reopen the last folder. Do not navigate away from an already visible fixture.
+        XCTAssertTrue(app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].waitForExistence(timeout: 30))
+        let file = app.cells["parity-upload, txt"]
+        if !file.waitForExistence(timeout: 3) {
+            let browse = app.buttons["Browse"].firstMatch
+            XCTAssertTrue(browse.waitForExistence(timeout: 15)); browse.tap()
+            if !file.waitForExistence(timeout: 3) {
+                let location = app.staticTexts["On My iPhone"]
+                if !location.exists { browse.tap() }
+                XCTAssertTrue(location.waitForExistence(timeout: 10)); location.tap()
+                let folder = app.cells["Agentboard, Container"]
+                XCTAssertTrue(folder.waitForExistence(timeout: 10))
+                folder.images.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
+            }
+        }
+        XCTAssertTrue(file.waitForExistence(timeout: 10))
+        file.images.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
         let open = app.buttons["Open"]
         if open.waitForExistence(timeout: 3) { open.tap() }
         XCTAssertTrue(app.buttons["confirm-attachments"].waitForExistence(timeout: 10))

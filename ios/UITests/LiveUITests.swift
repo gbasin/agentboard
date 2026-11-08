@@ -21,8 +21,9 @@ final class LiveUITests: XCTestCase {
     }
     func open(_ name: String, app: XCUIApplication) {
         let search = app.searchFields["Find a session"]
-        search.tap(); search.typeKey("a", modifierFlags: .command)
-        search.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
+        search.tap()
+        if search.buttons["Clear text"].exists { search.buttons["Clear text"].tap() }
+        XCTAssertTrue((search.value as? String ?? "") == "" || (search.value as? String) == search.placeholderValue)
         search.typeText(name + "\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
