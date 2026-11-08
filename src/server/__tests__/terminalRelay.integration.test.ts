@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { reapPrivateTmuxServer, socketPath } from '../../../tests/e2e/tmuxReap'
 import type { ClientMessage, ServerMessage, Session } from '../../shared/types'
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -83,12 +84,17 @@ describe('isolated terminal relay with real tmux', () => {
     }
   }, 15000)
   afterAll(async () => {
-    for (const peer of peers) peer.ws.close()
-    if (child) { child.kill(); expect(await child.exited).toBe(0); expect(child.signalCode).toBeNull() }
-    if (env) {
-      try { for (const session of tmux('list-sessions', '-F', '#{session_name}').split('\n')) tmux('kill-session', '-t', `=${session}`) } catch {}
+    try {
+      for (const peer of peers) peer.ws.close()
+      if (child) { child.kill(); expect(await child.exited).toBe(0); expect(child.signalCode).toBeNull() }
+    } finally {
+      if (dir) {
+        // Capture the private server's children before it exits. Closing its
+        // last session alone can leave discarded login shells adopted by PID 1.
+        reapPrivateTmuxServer(socketPath(dir))
+        rmSync(dir, { recursive: true, force: true })
+      }
     }
-    if (dir) rmSync(dir, { recursive: true, force: true })
   })
 
 
@@ -130,6 +136,11 @@ describe('isolated terminal relay with real tmux', () => {
   })
 
   test('resume retains observer, revalidates target, and fences old attach IDs', async () => {
+    // Prior tests close their sockets, but retained leases expire asynchronously.
+    // Drain those observers before comparing this lease's tty across resume.
+    const deadline = Date.now() + 2000
+    while (tmux('list-clients', '-F', '#{client_tty}') && Date.now() < deadline) await wait(20)
+    expect(tmux('list-clients', '-F', '#{client_tty}')).toBe('')
     const first = await connect(); await first.attach(sessions[0], 1)
     const before = tmux('list-clients', '-F', '#{client_tty}').split('\n').sort()
     const second = await connect(first.token, 2); await second.attach(sessions[1], 2)
