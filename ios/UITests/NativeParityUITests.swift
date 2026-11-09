@@ -215,7 +215,7 @@ final class NativeParityUITests: XCTestCase {
         tap("gbasin/agentboard #1", in: app, preferUp: true)
         XCTAssertTrue(app.navigationBars["Pull request"].waitForExistence(timeout: 5))
         capture("pull-request")
-        reveal(app.buttons["Open pull request"], in: app)
+        reveal(app.links["Open pull request"], in: app)
     }
     func testPhotoUploadAndInsertIntoShell() {
         let app = app()
