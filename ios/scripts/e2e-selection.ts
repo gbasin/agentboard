@@ -1,7 +1,7 @@
 /** Balanced by hosted workflow timings; each appearance keeps its existing coverage. */
 export const shards = ['terminal', 'catalog', 'lifecycle', 'media', 'settings'] as const
 const groups: Record<typeof shards[number], string[]> = {
-  terminal: ['LiveUITests', 'SimulatorStateUITests', 'SpikeUITests'],
+  terminal: ['LiveUITests', 'SimulatorStateUITests', 'SpikeUITests', 'CompactTerminalUITests'],
   catalog: ['NativeGlassUITests', 'ParityGapUITests'],
   lifecycle: [
     'SessionActionUITests',
