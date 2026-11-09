@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.44.0](https://github.com/gbasin/agentboard/compare/v0.43.4...v0.44.0) (2026-11-09)
+
+
+### Features
+
+* render inline images through tmux terminal passthrough ([#546](https://github.com/gbasin/agentboard/issues/546)) ([5e4ebfa](https://github.com/gbasin/agentboard/commit/5e4ebfab09609e11fc555021fc49b4c12387189f))
+
+## [0.43.4](https://github.com/gbasin/agentboard/compare/v0.43.3...v0.43.4) (2026-11-08)
+
+
+### Bug Fixes
+
+* keep iOS keyboard detection stable while scrolling ([#537](https://github.com/gbasin/agentboard/issues/537)) ([a297748](https://github.com/gbasin/agentboard/commit/a297748c472ec40dbf640b266c07881ca361b61e))
+
+## [0.43.3](https://github.com/gbasin/agentboard/compare/v0.43.2...v0.43.3) (2026-11-08)
+
+
+### Bug Fixes
+
+* keep previews reachable when Tailscale Serve owns the dashboard port ([#535](https://github.com/gbasin/agentboard/issues/535)) ([8847c93](https://github.com/gbasin/agentboard/commit/8847c9372102b117ccec90fcf95f71f5649997e8))
+
+## [0.43.2](https://github.com/gbasin/agentboard/compare/v0.43.1...v0.43.2) (2026-11-08)
+
+
+### Bug Fixes
+
+* reap private tmux children after integration tests ([#533](https://github.com/gbasin/agentboard/issues/533)) ([e9be305](https://github.com/gbasin/agentboard/commit/e9be3056f186ac8758cdcb1f914adb07f758c93b))
+
+## [0.43.1](https://github.com/gbasin/agentboard/compare/v0.43.0...v0.43.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* clean image and continuation user previews ([#531](https://github.com/gbasin/agentboard/issues/531)) ([84fb771](https://github.com/gbasin/agentboard/commit/84fb7716941fd66d4e7b2f680e138cc0ce7d6d7d))
+
 ## [0.43.0](https://github.com/gbasin/agentboard/compare/v0.42.2...v0.43.0) (2026-11-08)
 
 

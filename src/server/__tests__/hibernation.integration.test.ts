@@ -1,3 +1,4 @@
+import { reapPrivateTmuxServer, socketPath } from '../../../tests/e2e/tmuxReap'
 import { afterAll, describe, expect, test } from 'bun:test'
 import fs from 'node:fs'
 import net from 'node:net'
@@ -123,15 +124,8 @@ if (!tmuxAvailable || !localhostBindable) {
 
     afterAll(async () => {
       await stopServer()
-      try {
-        Bun.spawnSync(['tmux', 'kill-session', '-t', sessionName], {
-          stdout: 'ignore',
-          stderr: 'ignore',
-          env: tmuxEnv(),
-        })
-      } catch {
-        // ignore cleanup errors
-      }
+      // Reap children while the private server still proves their ownership.
+      if (tmuxTmpDir) reapPrivateTmuxServer(socketPath(tmuxTmpDir))
       if (tmuxTmpDir) {
         try {
           fs.rmSync(tmuxTmpDir, { recursive: true, force: true })

@@ -54,6 +54,16 @@ test('worker pipeline replaces shrinking/equal-size prompts, clears removed prom
     expect((await ingest()).lastUserMessage).toBe('captured Enter')
     locked = false
     expect((await ingest()).lastUserMessage).toBe('later')
+    // Repairs must run even when the transcript's revision has not changed.
+    for (const stale of [
+      'This session is being continued from a previous conversation that ran out of context. Summary',
+      '<image name=[Image #1] path="/tmp/paste.png">',
+      '[Image #2]',
+      '<system-reminder id="4506f64571faf1f5">cached coordinator message',
+    ]) {
+      db.updateSession('rewrite', { lastUserMessage: stale })
+      expect((await ingest()).lastUserMessage).toBe('later')
+    }
     fs.appendFileSync(logPath, JSON.stringify({ type: 'assistant', message: { content: 'x'.repeat(3 * 1024 * 1024) } }) + '\n')
     expect((await ingest()).lastUserMessage).toBe('later')
     fs.writeFileSync(logPath, JSON.stringify({ type: 'assistant', timestamp: '2026-01-01T00:00:00.000Z', message: { content: 'done' } }) + '\n')

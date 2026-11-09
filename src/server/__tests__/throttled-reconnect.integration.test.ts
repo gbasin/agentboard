@@ -29,6 +29,7 @@
  * faster time-to-first-output.
  */
 
+import { reapPrivateTmuxServer, socketPath } from '../../../tests/e2e/tmuxReap'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import fs from 'node:fs'
 import net from 'node:net'
@@ -158,15 +159,9 @@ if (!tmuxAvailable || !localhostBindable) {
         }
       }
 
-      try {
-        Bun.spawnSync(['tmux', 'kill-session', '-t', sessionName], {
-          stdout: 'ignore',
-          stderr: 'ignore',
-          env: tmuxEnv(),
-        })
-      } catch {
-        // ignore
-      }
+      // Preserve process ownership until cleanup: killing only the final
+      // session reparents surviving throwaway shells and loses that evidence.
+      if (tmuxTmpDir) reapPrivateTmuxServer(socketPath(tmuxTmpDir))
 
       for (const f of [dbPath, logFilePath]) {
         try {

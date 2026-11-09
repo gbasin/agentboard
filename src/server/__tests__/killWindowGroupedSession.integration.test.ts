@@ -13,6 +13,7 @@
 
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import fs from 'node:fs'
+import { reapPrivateTmuxServer } from '../../../tests/e2e/tmuxReap'
 import os from 'node:os'
 import path from 'node:path'
 import { SessionManager } from '../SessionManager'
@@ -174,13 +175,11 @@ if (!isTmuxAvailable()) {
         }
       }
       for (const proxy of proxies) await proxy.dispose()
-      try {
-        tmux(['kill-server'])
-      } catch {
-        // Already gone
-      }
+      // This fixture owns the entire private socket, including discarded
+      // login-shell children that may outlive their panes.
+      if (ownsDir && socket) reapPrivateTmuxServer(socket)
       // Only ever remove the mkdtemp dir this file created. (Not gated on the
-      // socket: kill-server above removes it.)
+      // socket: reaping above removes it.)
       if (ownsDir && dir) {
         fs.rmSync(dir, { recursive: true, force: true })
       }

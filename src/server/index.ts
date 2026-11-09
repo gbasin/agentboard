@@ -2444,6 +2444,9 @@ export const tailscaleReady = (async () => {
     logger.info('tailscale_detected', { tailscaleUrl })
     return
   }
+  // Tailscale Serve may already own the dashboard port. Preview ports are
+  // independent and still need the tailnet interface when that bind fails.
+  previews.addHost(detectedIp)
   try {
     if (terminalRelay) {
       await terminalRelay.bind(detectedIp)
@@ -2455,7 +2458,6 @@ export const tailscaleReady = (async () => {
       websocket: websocketHandlers,
     })
     boundTailscaleIp = detectedIp
-    previews.addHost(detectedIp)
     logger.info('tailscale_listener_started', { tailscaleUrl })
   } catch (error) {
     logger.warn('tailscale_bind_failed', {

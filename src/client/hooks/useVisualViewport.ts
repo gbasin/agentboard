@@ -24,7 +24,12 @@ export function updateKeyboardInset({
 
   const offsetTop = Math.max(0, viewport.offsetTop || 0)
   const offsetLeft = Math.max(0, viewport.offsetLeft || 0)
-  const keyboardHeight = win.innerHeight - (viewport.height + offsetTop)
+  // iOS can shrink innerHeight while panning a keyboard-open page. The root's
+  // clientHeight remains the layout viewport height. Panning changes the visible
+  // area's position, not how much height the keyboard occupies; exclude offsetTop.
+  // Undo pinch zoom before comparing heights so zoom alone is not a keyboard.
+  const layoutHeight = doc.documentElement.clientHeight || win.innerHeight
+  const keyboardHeight = layoutHeight - viewport.height * (viewport.scale || 1)
   const clampedKeyboardHeight = Math.max(0, keyboardHeight)
   const viewportHeight = Math.max(0, viewport.height || 0)
   const viewportWidth = Math.max(0, viewport.width || 0)

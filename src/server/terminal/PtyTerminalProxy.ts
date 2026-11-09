@@ -723,6 +723,19 @@ class PtyTerminalProxy extends TerminalProxyBase {
     try {
       const expectedIdentity = await this.readTargetIdentity(effectiveTarget)
       this.checkSwitchCurrent()
+      // Passthrough is a window option. Configuring the grouped session at
+      // startup only changes its then-current window, not later selections.
+      try {
+        await this.runTmuxNonBlocking([
+          'set-option', '-w', '-t', effectiveTarget, 'allow-passthrough', 'on',
+        ])
+      } catch (error) {
+        this.logEvent('terminal_passthrough_enable_failed', {
+          target: effectiveTarget,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+      this.checkSwitchCurrent()
       await this.runTmuxNonBlocking(['switch-client', '-c', clientTty, '-t', effectiveTarget])
       this.checkSwitchCurrent()
       const actualIdentity = await this.verifyClientTarget(

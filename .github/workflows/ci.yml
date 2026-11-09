@@ -138,6 +138,12 @@ jobs:
             id: autocorrect
             run: bunx playwright test --config playwright.autocorrect.config.ts
 
+          - name: preview network regression
+            id: preview-network
+            run: >-
+              PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-preview-network-report
+              bunx playwright test --config playwright.preview-network.config.ts --reporter=line,html
+
           - name: terminal resume
             id: resume
             run: >-
