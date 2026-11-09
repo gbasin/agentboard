@@ -87,4 +87,45 @@ final class CompactTerminalUITests: XCTestCase {
         XCTAssertEqual((request("input")["input"] as? [String])?.last, "\r", "Leaving selection must restore terminal input")
     }
 
+    func testActionsMenuKeepsScrollPositionDuringOutput() {
+        _ = request("reset", reset: true)
+        let app = XCUIApplication(); app.launchArguments = ["-serverURL", base]; app.launch()
+        XCTAssertTrue(app.buttons["session-alpha-local"].waitForExistence(timeout: 15))
+        app.buttons["session-alpha-local"].tap()
+        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        app.buttons["Session actions"].tap()
+        XCTAssertTrue(app.collectionViews.firstMatch.waitForExistence(timeout: 5))
+        let menu = app.collectionViews.allElementsBoundByIndex.last!
+        // Pan within the clipped popup, without XCTest auto-scrolling to a row.
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let menuFrame = menu.frame
+        let enclosing = app.otherElements.containing(NSPredicate(format: "elementType == %d", XCUIElement.ElementType.collectionView.rawValue))
+            .allElementsBoundByIndex.map { $0.frame }.filter {
+                abs($0.minX - menuFrame.minX) < 1 && abs($0.width - menuFrame.width) < 1 && $0.height > 0
+            }.min { $0.height < $1.height }
+        let frame = (enclosing ?? menuFrame).intersection(app.frame).insetBy(dx: 8, dy: 8)
+        origin.withOffset(.init(dx: frame.midX, dy: frame.minY + frame.height * 0.75))
+            .press(forDuration: 0, thenDragTo: origin.withOffset(.init(dx: frame.midX, dy: frame.minY + frame.height * 0.25)),
+                   withVelocity: XCUIGestureVelocity(rawValue: 1000), thenHoldForDuration: 0.5)
+        capture("menu-scrolled")
+        let candidates = ["Copy selection", "Copy server selection", "Exit copy mode", "Interrupt", "Delete word", "Insert newline", "Larger text"]
+        guard let reference = candidates.map({ menu.buttons[$0] }).first(where: { $0.exists && $0.isHittable }) else {
+            add(XCTAttachment(string: app.debugDescription))
+            XCTFail("No terminal action visible after scrolling"); return
+        }
+        let before = reference.frame
+        capture("menu-before-output")
+        for _ in 0..<4 { _ = request("menu-update", reset: true) }
+        // A fresh accessibility read waits for the received UI updates to settle.
+        XCTAssertTrue(reference.exists)
+        XCTAssertEqual(reference.frame.minY, before.minY, accuracy: 2, "Background output must not move an open menu")
+        capture("menu-after-output")
+        app.tapNativeMenuAction("Insert newline")
+        XCTAssertEqual((request("input")["input"] as? [String])?.last, "\n")
+        app.buttons["Session actions"].tap()
+        app.tapNativeMenuAction("Switch session")
+        XCTAssertTrue(app.buttons["Alpha updated"].waitForExistence(timeout: 5), "Reopening must use current session metadata")
+        capture("menu-reopened")
+    }
+
 }
