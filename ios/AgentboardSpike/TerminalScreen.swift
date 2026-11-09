@@ -84,83 +84,8 @@ struct TerminalScreen: View {
                     } else { sessionTitle(showDisclosure: false) }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Section {
-                            Label(terminal.connection, systemImage: endpoint.isEmpty ? "doc.text" : "network")
-                        }
-                        if let live {
-                            Menu("Switch session") {
-                                ForEach(live.sessions) { item in
-                                    Button(item.name) { onSwitch?(item) }.disabled(!live.canOpen(item))
-                                }
-                            }
-                            if SessionCapabilities.canControl(terminal.liveSession ?? session, remoteAllowed: live.remoteAllowControl) {
-                                Button("Duplicate session", systemImage: "plus.square.on.square") { onManage?(.duplicate(terminal.liveSession ?? session)) }
-                            }
-                            if SessionCapabilities.canHibernate(terminal.liveSession ?? session) {
-                                Button("Hibernate session", systemImage: "moon") { onManage?(.hibernate(terminal.liveSession ?? session)) }
-                            }
-                            Button("Media and links", systemImage: "photo.on.rectangle") { terminal.hideKeyboard(); showContent = true }
-                            Button("Transcript", systemImage: "text.bubble") { terminal.hideKeyboard(); showTranscript = true }
-                                .disabled((terminal.liveSession ?? session).agentSessionID == nil)
-                            Button("Attach file", systemImage: "paperclip") { terminal.hideKeyboard(); showUpload = true }.disabled(!terminal.ready || session.remote)
-                            if SessionCapabilities.canControl(terminal.liveSession ?? session, remoteAllowed: live.remoteAllowControl) {
-                                Button("Rename session", systemImage: "pencil") { onManage?(.rename(terminal.liveSession ?? session)) }
-                            }
-                        }
-                        if live == nil {
-                        Button("Rename sample", systemImage: "pencil") { name = session.name; showRename = true }
-                        Button(session.status == .sleeping ? "Wake sample" : "Sleep sample", systemImage: "moon") {
-                            session.status = session.status == .sleeping ? .waiting : .sleeping
-                        }
-                        }
-                        Section("Terminal") {
-                            Button("Number keys", systemImage: "number") { terminal.hideKeyboard(); showNumbers = true }
-                            if live != nil { Button("Select text", systemImage: "text.cursor") { terminal.hideKeyboard(); terminal.readingSnapshot = true; showSelection = true }.accessibilityIdentifier("terminal-select-text").disabled(!terminal.ready) }
-                            Button("Copy selection", systemImage: "doc.on.doc") { terminal.call("copySelection") }
-                            if let live {
-                                Button("Copy server selection", systemImage: "clipboard") {
-                                    if let text = live.clipboardOffer { UIPasteboard.general.string = text }
-                                }.disabled(live.clipboardOffer == nil)
-                                Button("Exit copy mode", systemImage: "escape") { live.exitCopyMode() }
-                            }
-                            Button("Interrupt", systemImage: "stop") { terminal.send("\u{3}") }
-                            Button("Delete word", systemImage: "delete.left") { terminal.send("\u{17}") }
-                            Button("Insert newline", systemImage: "arrow.turn.down.left") { terminal.send("\n") }
-                            Button("Larger text", systemImage: "textformat.size.larger") { terminal.setFont(min(24, terminal.fontSize + 1)) }
-                            Button("Smaller text", systemImage: "textformat.size.smaller") { terminal.setFont(max(6, terminal.fontSize - 1)) }
-                            Button("Scroll to bottom", systemImage: "arrow.down.to.line") { terminal.call("bottom") }
-                            if let live {
-                                Button("Reconnect", systemImage: "arrow.clockwise") { live.reconnect() }
-                            } else if !endpoint.isEmpty {
-                                Button("Reconnect shell", systemImage: "arrow.clockwise") { terminal.call("reconnect") }
-                            }
-                        }
-                        if let live {
-                            Picker("Appearance", selection: live.preferences.selection("theme", fallback: "system")) {
-                                Text("System").tag("system")
-                                Text("Light").tag("light")
-                                Text("Dark").tag("dark")
-                            }
-                        } else {
-                            Picker("Appearance", selection: $appearance) {
-                                Text("System").tag("System")
-                                Text("Light").tag("Light")
-                                Text("Dark").tag("Dark")
-                            }
-                        }
-                        if let live, SessionCapabilities.canControl(terminal.liveSession ?? session, remoteAllowed: live.remoteAllowControl) {
-                            Button("End session", systemImage: "xmark.circle", role: .destructive) {
-                                onManage?(.end(terminal.liveSession ?? session))
-                            }
-                        }
-                        if live == nil {
-                            Button("End sample session", systemImage: "xmark.circle", role: .destructive) { showEnd = true }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis").frame(minWidth: 44, minHeight: 44)
-                    }
-                    .accessibilityLabel("Session actions")
+                    StableMenuButton(makeItems: makeSessionMenuItems)
+                        .frame(width: 44, height: 44)
                 }
             }
             .sheet(isPresented: $showContent) { NavigationStack {
@@ -192,6 +117,94 @@ struct TerminalScreen: View {
                 if phase != .active { terminal.shift = false }
             }
     }
+    /// Metadata may change while this snapshot is open. Resolve the current
+    /// session/capabilities again inside actions before handing off management.
+    private func makeSessionMenuItems() -> [UIMenuElement] {
+        func action(_ title: String, _ icon: String, enabled: Bool = true,
+                    destructive: Bool = false, state: UIMenuElement.State = .off,
+                    perform: @escaping () -> Void) -> UIAction {
+            var attributes: UIMenuElement.Attributes = []
+            if !enabled { attributes.insert(.disabled) }
+            if destructive { attributes.insert(.destructive) }
+            return UIAction(title: title, image: icon.isEmpty ? nil : UIImage(systemName: icon), attributes: attributes, state: state) { _ in perform() }
+        }
+        var items: [UIMenuElement] = [UIMenu(options: .displayInline, children: [
+            action(terminal.connection, endpoint.isEmpty ? "doc.text" : "network", enabled: false) {}
+        ])]
+        if let live {
+            items.append(UIMenu(title: "Switch session", children: live.sessions.map { item in
+                action(item.name, "", enabled: live.canOpen(item)) {
+                    if let latest = live.sessions.first(where: { $0.id == item.id }), live.canOpen(latest) { onSwitch?(latest) }
+                }
+            }))
+            if canControlSession {
+                items.append(action("Duplicate session", "plus.square.on.square") { if canControlSession { onManage?(.duplicate(currentSession)) } })
+            }
+            if SessionCapabilities.canHibernate(currentSession) {
+                items.append(action("Hibernate session", "moon") { if SessionCapabilities.canHibernate(currentSession) { onManage?(.hibernate(currentSession)) } })
+            }
+            items.append(action("Media and links", "photo.on.rectangle") { terminal.hideKeyboard(); showContent = true })
+            items.append(action("Transcript", "text.bubble", enabled: currentSession.agentSessionID != nil) {
+                if currentSession.agentSessionID != nil { terminal.hideKeyboard(); showTranscript = true }
+            })
+            items.append(action("Attach file", "paperclip", enabled: terminal.ready && !session.remote) {
+                if terminal.ready && !currentSession.remote { terminal.hideKeyboard(); showUpload = true }
+            })
+            if canControlSession {
+                items.append(action("Rename session", "pencil") { if canControlSession { onManage?(.rename(currentSession)) } })
+            }
+        } else {
+            items.append(action("Rename sample", "pencil") { name = session.name; showRename = true })
+            items.append(action(session.status == .sleeping ? "Wake sample" : "Sleep sample", "moon") {
+                session.status = session.status == .sleeping ? .waiting : .sleeping
+            })
+        }
+        var controls: [UIMenuElement] = [action("Number keys", "number") { terminal.hideKeyboard(); showNumbers = true }]
+        if live != nil {
+            let select = action("Select text", "text.cursor", enabled: terminal.ready) {
+                if terminal.ready { terminal.hideKeyboard(); terminal.readingSnapshot = true; showSelection = true }
+            }
+            select.accessibilityIdentifier = "terminal-select-text"
+            controls.append(select)
+        }
+        controls.append(action("Copy selection", "doc.on.doc") { terminal.call("copySelection") })
+        if let live {
+            controls.append(action("Copy server selection", "clipboard", enabled: live.clipboardOffer != nil) {
+                if let text = live.clipboardOffer { UIPasteboard.general.string = text }
+            })
+            controls.append(action("Exit copy mode", "escape") { live.exitCopyMode() })
+        }
+        controls += [
+            action("Interrupt", "stop") { terminal.send("\u{3}") },
+            action("Delete word", "delete.left") { terminal.send("\u{17}") },
+            action("Insert newline", "arrow.turn.down.left") { terminal.send("\n") },
+            action("Larger text", "textformat.size.larger") { terminal.setFont(min(24, terminal.fontSize + 1)) },
+            action("Smaller text", "textformat.size.smaller") { terminal.setFont(max(6, terminal.fontSize - 1)) },
+            action("Scroll to bottom", "arrow.down.to.line") { terminal.call("bottom") },
+        ]
+        if let live { controls.append(action("Reconnect", "arrow.clockwise") { live.reconnect() }) }
+        else if !endpoint.isEmpty { controls.append(action("Reconnect shell", "arrow.clockwise") { terminal.call("reconnect") }) }
+        items.append(UIMenu(title: "Terminal", options: .displayInline, children: controls))
+        let selected = live?.preferences.string("theme", "system") ?? appearance.lowercased()
+        items.append(UIMenu(title: "Appearance", options: .singleSelection, children: ["System", "Light", "Dark"].map { title in
+            action(title, "", state: selected == title.lowercased() ? .on : .off) {
+                if let live { live.preferences.set("theme", .string(title.lowercased())) }
+                else { appearance = title }
+            }
+        }))
+        if live != nil, canControlSession {
+            items.append(action("End session", "xmark.circle", destructive: true) { if canControlSession { onManage?(.end(currentSession)) } })
+        } else if live == nil {
+            items.append(action("End sample session", "xmark.circle", destructive: true) { showEnd = true })
+        }
+        return items
+    }
+
+    private var canControlSession: Bool {
+        guard let live else { return false }
+        return SessionCapabilities.canControl(currentSession, remoteAllowed: live.remoteAllowControl)
+    }
+
     private var mediaButton: some View {
         NativeMediaSummaryButton(summary: mediaSummary) { terminal.hideKeyboard(); showContent = true }
     }
