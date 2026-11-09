@@ -31,7 +31,7 @@ for (const scenario of [
         ios/scripts/e2e-fixtures.ts) printf '%s\\n' "$FIXTURES" ;;
         -e) cat >/dev/null; echo mock-udid ;;
         ios/scripts/seed-parity.ts) touch "$TMUX_TMPDIR/photo.png" "$TMUX_TMPDIR/upload.txt" ;;
-        ios/scripts/seed-live.ts|ios/scripts/warm-parity.ts) ;;
+        ios/scripts/seed-live.ts|ios/scripts/warm-parity.ts|ios/scripts/parity-media-ready.ts) ;;
         *) trap 'exit 0' TERM; while :; do /bin/sleep 0.05; done ;;
       esac\n`)
       stub('xcrun', (cacheFailure ? 'if [[ "$*" == *dyld_shared_cache* ]]; then exit 75; fi\n' : '') + 'if [[ "$*" == *get_app_container* ]]; then echo "$APP_DATA"; fi\n')
@@ -52,6 +52,11 @@ for (const scenario of [
       const plan = e2eFixtures('light', shard)
       for (const [fixture, command] of Object.entries({ backend: 'bun src/server/index.ts', live: 'bun ios/scripts/seed-live.ts', parity: 'bun ios/scripts/seed-parity.ts', warm: 'bun ios/scripts/warm-parity.ts', 'shell-server': 'bun ios/scripts/shell-server.ts', 'pr-fixture': 'bun ios/scripts/pr-fixture.ts', 'parity-gap-fixture': 'bun ios/scripts/parity-gap-fixture.ts', 'media-activity-fixture': 'bun ios/scripts/media-activity-fixture.ts', photos: 'xcrun simctl addmedia', files: 'xcrun simctl get_app_container' })) {
         expect(calls.includes(command)).toBe(plan.includes(fixture as typeof plan[number]))
+      }
+      expect(calls.includes('phase parity-media-ready')).toBe(plan.includes('warm'))
+      if (plan.includes('warm')) {
+        expect(calls.indexOf('phase parity-media-ready')).toBeGreaterThan(calls.indexOf('bun ios/scripts/warm-parity.ts'))
+        expect(calls.indexOf('phase parity-media-ready')).toBeLessThan(calls.indexOf('xcrun simctl install '))
       }
       const cache = calls.indexOf('xcrun simctl runtime dyld_shared_cache update --all')
       expect(cache).toBeGreaterThanOrEqual(0)

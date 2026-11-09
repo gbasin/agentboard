@@ -59,7 +59,10 @@ if needs backend; then
   if needs parity; then ci_phase seed-parity bun ios/scripts/seed-parity.ts; fi
 fi
 export NATIVE_PARITY_SHELL_RESUME=1
-if needs warm; then ci_phase warm-parity bun ios/scripts/warm-parity.ts; fi
+if needs warm; then
+  ci_phase warm-parity bun ios/scripts/warm-parity.ts
+  ci_phase parity-media-ready bun ios/scripts/parity-media-ready.ts
+fi
 for fixture in shell-server pr-fixture parity-gap-fixture media-activity-fixture; do
   if ! needs "$fixture"; then continue; fi
   bun "ios/scripts/$fixture.ts" > "$fixture_root/$fixture.log" 2>&1 & pids+=("$!")
