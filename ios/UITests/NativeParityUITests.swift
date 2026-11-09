@@ -163,9 +163,11 @@ final class NativeParityUITests: XCTestCase {
         app.buttons["Session actions"].tap(); tapMenu("Attach file", in: app)
         XCTAssertTrue(app.buttons["Choose file"].waitForExistence(timeout: 5)); capture("attach-file")
         app.buttons["Choose file"].tap()
-        XCTAssertTrue(app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].waitForExistence(timeout: 30))
-        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
-        app.buttons["Cancel"].tap(); app.buttons["Cancel"].tap()
+        let filePicker = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"]
+        XCTAssertTrue(filePicker.waitForExistence(timeout: 30))
+        filePicker.buttons["Cancel"].tap()
+        XCTAssertTrue(filePicker.waitForNonExistence(timeout: 10))
+        app.navigationBars["Attach to session"].buttons["Cancel"].tap()
         app.tapTerminalKey("Paste text")
         let editor = app.textViews["Text to paste"]; XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap(); editor.typeText("printf 'NUM_%s_OK\\n' ")
@@ -344,7 +346,7 @@ final class NativeParityUITests: XCTestCase {
         capture("pull-request-checks")
         for status in ["Passed", "In progress", "Failed"] {
             reveal(app.staticTexts[status], in: app)
-            XCTAssertTrue(app.buttons.matching(identifier: "Open check").firstMatch.exists)
+            XCTAssertTrue(app.links.matching(identifier: "Open check").firstMatch.exists)
         }
         capture("pull-request-checks-bottom")
     }
