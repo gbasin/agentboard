@@ -164,7 +164,7 @@ struct LiveSessionListView: View {
             .scrollContentBackground(.hidden)
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Sessions")
-            .searchable(text: $search, prompt: "Find a session")
+            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Find a session")
             .refreshable { board.refresh() }
             .toolbar {
                 ToolbarItemGroup(placement: .bottomBar) {
