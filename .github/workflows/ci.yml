@@ -34,6 +34,9 @@ jobs:
       - name: Type check
         run: bun run typecheck
 
+      - name: Test iOS publishing logic
+        run: bun test ./ios/scripts/release-metadata.test.ts ./ios/scripts/testflight-status.test.ts ./ios/scripts/app-store-connect.test.ts
+
       - name: Test
         run: bun run test:ci
 
