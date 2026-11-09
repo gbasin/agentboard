@@ -1,0 +1,5 @@
+.build/
+*.xcodeproj/
+AgentboardSpike/Web/vendor/
+evidence/*.xcresult/
+.build-*/

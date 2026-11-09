@@ -1,0 +1,112 @@
+name: Native iOS
+on:
+  pull_request:
+    paths: ['ios/**', 'src/**', 'bun.lock', 'package.json', '.bun-version', '.github/workflows/ios.yml']
+  workflow_dispatch:
+    inputs:
+      shard:
+        description: Shard to run (PRs always run all shards)
+        type: choice
+        default: all
+        options: [all, terminal, catalog, lifecycle, media, settings]
+      appearance:
+        description: Appearance to run (PRs always run both)
+        type: choice
+        default: all
+        options: [all, light, dark]
+permissions:
+  contents: read
+concurrency:
+  group: native-ios-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+env:
+  DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+jobs:
+  build:
+    outputs:
+      workers: ${{ steps.workers.outputs.matrix }}
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: .bun-version
+      - run: brew install xcodegen
+      - run: bun install --frozen-lockfile
+      - name: Plan balanced workers
+        id: workers
+        env:
+          SHARD: ${{ github.event_name == 'workflow_dispatch' && inputs.shard || 'all' }}
+          APPEARANCE: ${{ github.event_name == 'workflow_dispatch' && inputs.appearance || 'all' }}
+        run: |
+          matrix=$(bun ios/scripts/ci-workers.ts "$SHARD" "$APPEARANCE")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+      - name: Verify shard coverage
+        run: bun test ./ios/scripts/e2e-selection.test.ts ./ios/scripts/ci-diagnostics.test.ts ./ios/scripts/ci-e2e.test.ts ./ios/scripts/ci-workers.test.ts ./ios/scripts/parity-media-ready.test.ts ./ios/scripts/tmux-ready.test.ts
+      - name: Build test products once
+        run: ios/scripts/build-for-testing.sh
+      - name: Archive test products with executable permissions and symlinks
+        run: tar -czf ios-test-products.tar.gz -C ios/.build/Build Products
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-ios-test-products
+          path: ios-test-products.tar.gz
+          retention-days: 3
+  simulator:
+    needs: build
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      # Keep five warm simulators; balance measured appearance batches across them.
+      matrix: ${{ fromJSON(needs.build.outputs.workers) }}
+    runs-on: xcode-27
+    timeout-minutes: 40
+    env:
+      IOS_TEST_PRODUCTS_DIR: ${{ github.workspace }}/ios/.build/Build/Products
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: .bun-version
+      - run: brew install tmux
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: native-ios-test-products
+      - name: Restore shared test products
+        id: products
+        run: |
+          mkdir -p ios/.build/Build
+          tar -xzf ios-test-products.tar.gz -C ios/.build/Build
+      - name: First batch (${{ matrix.firstMode }} ${{ matrix.firstShard }})
+        env:
+          IOS_E2E_MODE: ${{ matrix.firstMode }}
+          IOS_E2E_SHARD: ${{ matrix.firstShard }}
+        run: ios/scripts/ci-e2e.sh
+      - name: Preserve first batch immediately
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-ios-${{ matrix.firstMode }}-${{ matrix.firstShard }}
+          path: |
+            ios/evidence/*-${{ matrix.firstMode }}-${{ matrix.firstShard }}.xcresult
+            /tmp/ab-ios-fixture-logs/${{ matrix.firstMode }}-${{ matrix.firstShard }}-*/*.log
+            /tmp/ab-ios-parity/*.log
+            /tmp/ab-ios-diagnostics/**
+      - name: Second batch (${{ matrix.secondMode }} ${{ matrix.secondShard }})
+        if: ${{ !cancelled() && steps.products.outcome == 'success' && matrix.secondShard != '' }}
+        env:
+          IOS_E2E_MODE: ${{ matrix.secondMode }}
+          IOS_E2E_SHARD: ${{ matrix.secondShard }}
+        run: ios/scripts/ci-e2e.sh
+      - name: Preserve second batch
+        if: ${{ always() && matrix.secondShard != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-ios-${{ matrix.secondMode }}-${{ matrix.secondShard }}
+          path: |
+            ios/evidence/*-${{ matrix.secondMode }}-${{ matrix.secondShard }}.xcresult
+            /tmp/ab-ios-fixture-logs/${{ matrix.secondMode }}-${{ matrix.secondShard }}-*/*.log
+            /tmp/ab-ios-parity/*.log
+            /tmp/ab-ios-diagnostics/**

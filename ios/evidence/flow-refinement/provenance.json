@@ -1,0 +1,123 @@
+[
+  {
+    "file": "light/library.png",
+    "sourceExport": "/tmp/ab-flow-light-shots/36BA5BE6-6774-4FF5-8EA7-48CFC3A941AE.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "36BA5BE6-6774-4FF5-8EA7-48CFC3A941AE.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "native-glass-library_0_1BF65261-E395-4A35-8CE5-4E24822B0A9D.png",
+    "timestamp": 1794175762.157
+  },
+  {
+    "file": "light/sessions.png",
+    "sourceExport": "/tmp/ab-flow-light-shots/BEECCDA8-4656-40A9-AC09-A759E2E78F5B.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "BEECCDA8-4656-40A9-AC09-A759E2E78F5B.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "native-glass-sessions_0_AF9919C2-4810-4DAD-AD7D-8DE6D6E1FEAB.png",
+    "timestamp": 1794175734.369
+  },
+  {
+    "file": "light/saved-detail.png",
+    "sourceExport": "/tmp/ab-flow-light-shots/54960A09-D9A1-4BA3-8006-C5D5446982D8.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "54960A09-D9A1-4BA3-8006-C5D5446982D8.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "parity-saved-detail_0_F3312C00-7FB4-4B4E-BC27-E96096789692.png",
+    "timestamp": 1794175835.147
+  },
+  {
+    "file": "light/recovery-reminder.png",
+    "sourceExport": "/tmp/ab-flow-core-shots/42EDED00-FD10-4A26-83B3-7AEBB5DD2135.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "42EDED00-FD10-4A26-83B3-7AEBB5DD2135.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "gap-recovery-notice_0_F4FD6A40-BCD9-4696-AED2-4F8E047A5CA5.png",
+    "timestamp": 1794175554.44
+  },
+  {
+    "file": "dark-large/library.png",
+    "sourceExport": "/tmp/ab-flow-dark-shots/ACB539AF-B17E-4546-8A5C-C2A09922B232.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "ACB539AF-B17E-4546-8A5C-C2A09922B232.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "native-glass-library_0_CAEBC036-0340-4EBF-BC88-A7ABDC364C8C.png",
+    "timestamp": 1794175993.893
+  },
+  {
+    "file": "dark-large/sessions.png",
+    "sourceExport": "/tmp/ab-flow-dark-shots/155CC769-30C1-464E-AF79-0CF319F0148A.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "155CC769-30C1-464E-AF79-0CF319F0148A.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "native-glass-sessions_0_180706F5-3BB3-4C79-8EC2-E51891B3F9CC.png",
+    "timestamp": 1794175960.422
+  },
+  {
+    "file": "dark-large/recovery-reminder.png",
+    "sourceExport": "/tmp/ab-flow-dark-shots/20DC475B-7FE8-42C6-A1F3-0F44C4029663.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "20DC475B-7FE8-42C6-A1F3-0F44C4029663.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "gap-recovery-notice_0_8ED6101C-C45D-45B5-AFDB-DC0FD0B64C0D.png",
+    "timestamp": 1794176186.514
+  },
+  {
+    "file": "dark-large/saved-detail.png",
+    "sourceExport": "/tmp/ab-flow-final-dark-shots/D58D162E-D3D8-4148-95D8-D90E7F5B7DEE.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "D58D162E-D3D8-4148-95D8-D90E7F5B7DEE.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "parity-saved-detail-top_0_65386CA7-6111-463D-82B6-52255CBFE5FA.png",
+    "timestamp": 1794176506.136
+  },
+  {
+    "file": "dark-large/recovery.png",
+    "sourceExport": "/tmp/ab-flow-final-dark-shots/B300C968-C78D-4570-91CB-D94919D19E7A.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "B300C968-C78D-4570-91CB-D94919D19E7A.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "gap-recovery-resume-action_0_FA5AEF41-80D5-4D94-8559-FEFEA1A6EC20.png",
+    "timestamp": 1794176637.553
+  },
+  {
+    "file": "dark-large/attachment-review.png",
+    "sourceExport": "/tmp/ab-flow-polish-dark-shots/38D5DF75-961F-4E3A-82A9-17235930B2FC.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "38D5DF75-961F-4E3A-82A9-17235930B2FC.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "parity-attachment-review_0_53B86EED-E5EC-49B2-83BB-5103C8E9ACDB.png",
+    "timestamp": 1794176980.497
+  },
+  {
+    "file": "light/attachment-review.png",
+    "sourceExport": "/tmp/ab-flow-final-light-shots/A18636E0-C730-4F8D-90BB-24EEAC286159.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "A18636E0-C730-4F8D-90BB-24EEAC286159.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "parity-attachment-review_0_4AD34FD4-95E9-4F42-B1DF-C583861B4878.png",
+    "timestamp": 1794176759.705
+  }
+]

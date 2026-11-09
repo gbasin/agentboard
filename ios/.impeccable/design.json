@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-09T18:14:03.752897+00:00",
+  "title": "Design System: Agentboard iPhone client",
+  "extensions": {
+    "platform": "iOS / SwiftUI with WKWebView xterm.js output and UIKit input",
+    "nativeAuthority": "Preserve user-approved Apple-native defaults. Semantic colors and native controls are not translated into normative CSS or fabricated tonal ramps.",
+    "nativeColors": {
+      "action": "Color.accentColor",
+      "primaryText": "Color.primary",
+      "secondaryText": "Color.secondary",
+      "background": "UIColor.systemBackground",
+      "keyFill": "Transparent inactive background; accent fill at 12% opacity for Enter and armed Control or Shift",
+      "keyBar": "NativeGlassSurface: regular Liquid Glass on iOS 26+, regular material on iOS 18–25; opaque secondarySystemGroupedBackground with Reduce Transparency",
+      "workingSymbol": "Color.green",
+      "waitingSymbol": "Color.orange",
+      "sleepingSymbol": "Color.secondary",
+      "error": "Color.red for live validation and session-action error symbols; Color.primary for their body text; legacy demo uses red validation text",
+      "catalogBackground": "UIColor.systemGroupedBackground"
+    },
+    "nativeTypography": {
+      "sessionName": "headline",
+      "summary": "subheadline",
+      "agentAndStatus": "caption",
+      "terminalKeys": "caption.weight(.medium)",
+      "listTitle": "system large title",
+      "detailAndSheetTitle": "inline"
+    },
+    "nativeSpacingPoints": {
+      "detailTitle": 2,
+      "keyGap": 0,
+      "keyMinimumTarget": 44,
+      "keyFaceMinimumWidth": 38,
+      "keyFaceHeight": 32,
+      "keyRowHeight": 44,
+      "keyContentHorizontalPadding": 2,
+      "keyStripOuterPadding": 4,
+      "terminalHorizontalPadding": 8,
+      "glassRadius": 18,
+      "keyStripGlassRadius": 16,
+      "catalogHorizontalPadding": 14,
+      "catalogVerticalPadding": 8,
+      "catalogHorizontalInset": 16,
+      "catalogVerticalInset": 2,
+      "pillHorizontalInset": 12,
+      "pillVerticalInset": 4,
+      "pillFaceVerticalPadding": 6
+    },
+    "nativeComponents": [
+      {
+        "name": "Session row",
+        "implementation": "name, provider/project/remote-host caption, optional short ID, latest message and recency. Status text stays primary and its symbol carries color. Sleeping and server-restricted sessions disable only terminal opening and explain why. PR chips show up to four requests, or two at accessibility sizes, plus overflow; their shared action opens a PR-only destination. States come from `/api/pr-info`; unavailable states remain explicit. Optional `session.activity` adds a count and a read-only activity sheet. Missing activity is unavailable, never a fabricated zero."
+      },
+      {
+        "name": "Navigation",
+        "implementation": "Sessions uses system large-title behavior, search, pull-to-refresh and a Connection action. New session is available in the live catalog toolbar while connected. The bottom toolbar opens Library, Filter and sort, Edit and Settings. Detail uses native back navigation, a compact name/project/status session-switcher menu and a session-actions menu. Applicable rename, duplicate, hibernate and end actions are also available from catalog context menus. Remote Rename, Duplicate and End appear only when the server permits control and the source is managed; remote Hibernate is omitted."
+      },
+      {
+        "name": "Quick keys",
+        "implementation": "the first ten controls follow PWA order: Enter, Escape, arrows, Paste, Select text, Delete word, Number keys, Tab, Shift and Control. Copy selection, Interrupt (Ctrl C), Insert newline and Attach file follow in the same scrolling row, with Hide keyboard last and only while terminal input has focus. Tapping the terminal opens the keyboard; there is no show-keyboard button. Control highlights while armed and clears after a single-character input. Arrows open a native popover that also offers Shift; Shift additionally has its own quick key. Shift is a one-shot modifier: Shift+Tab emits ESC `[Z`, and Shift+Enter emits LF without submitting CR. It clears after input, keyboard dismissal or leaving the active scene. This preserves the modified key output, not the PWA’s held-button interaction. Keys retain accessible labels. Existing session-actions menu equivalents remain available. Select text and Attach file disable when their callbacks are unavailable; attachment also remains unavailable for remote sessions."
+      },
+      {
+        "name": "Connection",
+        "implementation": "native Form and URL keyboard within a medium/large sheet. The live sheet accepts the browser's base HTTP(S) URL. Invalid URLs show text and disable Connect. The catalog shows connection state and Retry in place."
+      },
+      {
+        "name": "Paste",
+        "implementation": "native TextEditor in a medium/large sheet with system autocorrection and sentence capitalization enabled, independent of the direct-terminal keyboard preference. Insert is disabled while empty. The explicit Paste from clipboard action uses the public UIKit `UIPasteControl`, which authorizes access and delivers item providers asynchronously. Native edit-menu paste retains the operating system paste path. Both accept public text/image/file representations. Upload progress, Cancel and recoverable error/Retry appear only while needed above the existing single key row. Repeated pastes queue in order; a failed request pauses later requests until Retry or Dismiss, and explicit Cancel clears the queue. Unsupported clipboard representations explain the Attach file fallback. Text/document insertion and agent-specific image input never add Enter. Current agent metadata is resolved at delivery; changing terminal ownership cancels pending work."
+      },
+      {
+        "name": "Editable form fields",
+        "implementation": "`FormField` keeps a persistent primary-color caption above the native TextField, with 6-point spacing and 2-point vertical padding. Create/duplicate project, command, optional name and remote host, Settings default directory and terminal font, and preset label/command use this pattern so populated values remain identifiable. The duplicate visual caption is accessibility-hidden; the TextField retains its original native label. This source-level arrangement does not establish VoiceOver validation."
+      },
+      {
+        "name": "Session actions",
+        "implementation": "`SessionActionSheet` presents a native Form with an inline navigation title. Create requires a project directory and command, with optional name and configured remote host; field footers explain where the command runs. Rename starts with the current name and requires a nonempty value. End names the session, explains that its terminal and running processes will stop, and requires an explicit destructive End session button. Errors appear above the fields as primary text with a red symbol. When a server error arrives, the form scrolls to its identified error row so failure remains visible after submission from lower fields, including at accessibility text sizes. Submission dismisses the keyboard and preserves the draft on failure. While awaiting the server, a progress indicator appears and the form, confirmation, Cancel and swipe dismissal are disabled to prevent duplicate requests. Cancel is available before submission or after a failure; backgrounding or leaving the sheet cancels an in-flight request."
+      },
+      {
+        "name": "Action results",
+        "implementation": "`SessionActions` uses a separate one-request socket with a timeout and no automatic replay. An unconfirmed sent request tells the user to check the session list before retrying because the server may have completed it; failure before sending asks the user to check the connection. Acknowledged create clears search and opens the new session; acknowledged rename refreshes the catalog; confirmed removal returns to the catalog. These live actions extend the native world; explicit demo mode retains its local sample actions."
+      },
+      {
+        "name": "Create and duplicate",
+        "implementation": "extend the existing action form with a command-preset picker, command and permission controls, configured host, directory browsing and recent paths. Directory browsing uses its own native navigation stack, parent-directory action and Choose confirmation. Duplicate starts with the source session's values."
+      },
+      {
+        "name": "Catalog filters and attention",
+        "implementation": "the filter toolbar reports the active selection count. Project and host choices include live sessions, dormant conversations, configured hosts and retained selections. Search narrows options without removing selected choices; unavailable hosts show Offline and their server error. Selection switches disable while shared settings save. A written hidden-approval notice clears the obscuring filters and search when tapped. Its text explicitly uses `Color.primary` inside the button, with orange confined to the warning symbol."
+      },
+      {
+        "name": "Recovery notice",
+        "implementation": "the catalog shows interrupted-session counts or recovery-error text with an orange symbol and primary body text. A single item-based Library route carries the selected scope into sheet construction; Review opens Library in Recovery scope; a separate dismissal action records only the current IDs/error for that server. Polling belongs to the always-mounted catalog, runs only in the foreground and refreshes on library changes. New interruption IDs or errors reappear after a prior dismissal."
+      },
+      {
+        "name": "Library and history",
+        "implementation": "Recovery, Saved and History categories use searchable native lists. Saved-state and pinned filters live in a sheet. Recovery rows offer Resume and Details. Project/host selections also filter hibernating conversations and conversation history, including their displayed counts; Library search further narrows conversation names and projects. Saved rows use semantic secondary metadata. Saved detail leads with identity, state and Resume; rename and lifecycle details use disclosures. Pin, confirmed archive, terminal preview and conversations remain available. Archive is omitted for already archived sessions. Hibernating conversations offer Wake and Move to history; historical conversations offer Resume."
+      },
+      {
+        "name": "Transcript",
+        "implementation": "an inline detail destination with a Messages/Events segmented picker. Role sections hold readable messages; disclosure groups contain tool calls, results and raw events. Text supports selection. Load earlier stays in the toolbar so pagination remains reachable above a long transcript."
+      },
+      {
+        "name": "Media and pull requests",
+        "implementation": "a compact glass terminal button uses caption-sized, monospaced-digit labels for image, link and file counts, with a compact total when the full row cannot fit. Its full counts remain in its accessibility label and Large Content Viewer. The companion session-overview menu uses caption-sized status counts with semantic colored symbols and primary count text, falling back to the total when needed; its accessibility value and Large Content Viewer retain the full status summary. Indexed servers supply catalog totals and discovery state; older servers retain explicitly labeled available-snapshot counts. The button remains available for a pending index even before any media is found. Catalog browsing retains one bounded page, with search/type filters and a persistent glass previous/page/next bar. Identity and revision changes require refresh before further paging. A native list opens image, document and link sheets or pull-request detail. Images support pinch zoom and scrolling. Indexed image arrows use server neighbors across page boundaries; legacy lists retain positional navigation. Share/browser actions prefer an original external link when supplied. Documents download to a bounded private temporary file for native Quick Look and file sharing. HTML attachments show a bounded source preview, not an executable page; unsupported formats retain save/open sharing. Web links and live previews use the document web view. Loading and failure states appear in place with Retry. Pull-request checks use written status labels and links, not color alone. State, draft and author metadata share a secondary subheadline; empty values and the entire empty metadata row are omitted."
+      },
+      {
+        "name": "Settings and presets",
+        "implementation": "a searchable native Form groups shared settings and device terminal rendering controls. Use native pickers, toggles, steppers and sliders. Preset rows explicitly use primary text for both label and command so button tint does not reduce subtitle contrast. Preset editing is a focused form with Cancel and Save."
+      },
+      {
+        "name": "Upload",
+        "implementation": "a native Form opens multi-selection system file/photo pickers and adds selections to attachment review. Insert attachments uploads and inserts in one explicit action. Its footer explains the 40 MB per-file limit and that insertion does not press Enter. Documents use quoted server paths; supported images use the PWA's agent-specific attachment input. Selection controls disable while reading/uploading. Cancel or leaving the sheet cancels pending work. The same upload controller handles clipboard and picker delivery, retry and ownership checks."
+      },
+      {
+        "name": "Number keys",
+        "implementation": "a separate scrollable sheet uses a three-column native bordered-button grid. Columns range from 64 to 96 points with 12-point spacing; labels have at least 44-point height. Only grid glyphs cap Dynamic Type at `.xxxLarge`. The sheet offers 500-point and large detents, keeping the Done toolbar separate from the keys at accessibility sizes."
+      },
+      {
+        "name": "Terminal",
+        "implementation": "WKWebView hosts xterm output and scrolling, follows appearance and refits to available space. `TerminalInputView`, a public-API UIKit text-view proxy, owns keyboard input. Native `BoardConnection` owns the live socket; the web view renders output and bridges input. Connection state appears in the actions menu and, while attachment is not ready, above the disabled quick-key row with Reconnect. Input is accepted only after readiness. Background suspension and foreground reattachment preserve the selected session; disconnected input is not replayed."
+      }
+    ],
+    "previewPolicy": "Native component metadata is authoritative. HTML/CSS previews are omitted because they cannot reproduce SwiftUI controls and would imply an unapproved web design.",
+    "evidence": "See ios/README.md and ios/evidence for scoped validation. ios/TESTFLIGHT.md records the user-confirmed physical-device install and connection; that does not establish complete physical-device parity or VoiceOver validation.",
+    "keyboardInput": "TerminalInputView owns input through public UIKit APIs. The SwiftUI quick-key strip is the sole accessory row; IME, VoiceOver and full physical-device parity remain unverified.",
+    "liveLifecycle": "Native URLSession socket at /ws?catalog=2; heartbeat and reconnect backoff; background suspension and foreground selected-session reattachment; no disconnected input replay; fresh socket per selection isolates same-ID stale responses.",
+    "dynamicType": {
+      "catalog": "Uncapped semantic text styles. At accessibility sizes, AnyLayout stacks session name/status and connection state/Retry vertically with 8-point spacing; standard sizes retain horizontal layout. Session names use intrinsic wrapped height at accessibility sizes.",
+      "terminalQuickKeys": "Only accessory glyphs and text cap Dynamic Type at .xxxLarge and use one line. Minimum 44-by-44-point targets; a single horizontal scrolling row exposes later controls.",
+      "sheets": "Native connection, paste and session-action sheets retain uncapped Dynamic Type."
+    },
+    "sessionActionLifecycle": "SessionActions uses a separate one-request socket with a timeout and no automatic replay. Unconfirmed sent requests direct the user to check the session list before retrying; pre-send failures ask the user to check the connection. Acknowledged create clears search and opens the session; rename refreshes the catalog; confirmed removal returns to the catalog."
+  },
+  "components": [],
+  "narrative": {
+    "northStar": "A native iPhone window onto working agents",
+    "overview": "Use the user-approved Apple-native direction: San Francisco, semantic iOS surfaces, system blue actions, SF Symbols, native navigation and sheets. The terminal owns the detail screen. The approved Native precision direction adds native glass to the session catalog, saved-session rows and terminal controls while preserving the terminal palette. Supplemental workflows retain native lists, forms, sheets and navigation destinations. This is an implementation checkpoint; the earlier visual verdicts below do not approve the new glass treatment. See [NATIVE-GLASS.md](NATIVE-GLASS.md) for its scope and limits.",
+    "keyCharacteristics": [
+      "Native controls and system typography.",
+      "Dense terminal content with compact surrounding controls.",
+      "Adaptive light and dark appearance."
+    ],
+    "rules": [],
+    "dos": [
+      "Do preserve native semantic colors, typography and presentation.",
+      "Do keep status text primary and pair its colored symbol with a written label.",
+      "Do keep terminal controls reachable with minimum 44-point targets."
+    ],
+    "donts": [
+      "Don't introduce large titles on terminal detail or duplicate dashboard cards.",
+      "Don't treat terminal pixel sizes as native text-style tokens.",
+      "Don't remove keyboard accessories through private class swizzling."
+    ]
+  }
+}

@@ -9,6 +9,7 @@ import type {
   SavedSession,
 } from '../../shared/persistence'
 import type { Session } from '../../shared/types'
+import { SessionManager } from '../SessionManager'
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-recovery-'))
 const socket = path.join(root, `tmux-${process.getuid?.() ?? 0}`, 'default')
@@ -291,4 +292,59 @@ test('opt-in automatic recovery reopens interrupted runs and saves bounded termi
   )
   expect(detail.terminalPreviewAt).toBeTruthy()
   expect(detail.terminalPreview!.length).toBeLessThanOrEqual(32768)
+}, 30000)
+
+
+test('atomic window allocation honors gaps and concurrent durable identities', async () => {
+  const allocationSocket = path.join(root, 'allocation.sock')
+  const session = 'atomic-allocation'
+  const commandEnv = { ...env, TMUX: undefined }
+  const commands: string[][] = []
+  const runTmux = (args: string[]) => {
+    commands.push(args)
+    const result = Bun.spawnSync(['tmux', '-S', allocationSocket, ...args], {
+      env: commandEnv, stdout: 'pipe', stderr: 'pipe',
+    })
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    return result.stdout.toString()
+  }
+  try {
+    runTmux(['-f', '/dev/null', 'new-session', '-d', '-s', session, '-n', 'bootstrap', 'tail -f /dev/null'])
+    runTmux(['set-option', '-t', session, 'base-index', '3'])
+    runTmux(['move-window', '-s', `${session}:0`, '-t', `${session}:3`])
+    runTmux(['new-window', '-d', '-t', `${session}:5`, '-n', 'occupied', 'tail -f /dev/null'])
+    const manager = new SessionManager(session, {
+      runTmux, rememberTmuxServerPid: () => {}, capturePaneContent: () => ({ content: '', width: 80, height: 24 }),
+    })
+    const created = manager.createWindow(root, 'allocated', 'tail -f /dev/null', {
+      boardSessionId: 'board-template', runId: 'run-template',
+    })
+    expect(runTmux(['display-message', '-p', '-t', created.tmuxWindow, '#{window_index}']).trim()).toBe('4')
+    const template = commands.find(args => args[0] === 'new-window' && args.includes('board-template'))!
+    expect(template).toBeDefined()
+    expect(commands.some(args => args.includes('base-index') && args.includes('show-options'))).toBe(false)
+    expect(commands.some(args => args.includes('#{window_index}') && args.includes('list-windows'))).toBe(false)
+    const launches = Array.from({ length: 8 }, (_, index) => {
+      const args = template.map(arg => arg.replaceAll('board-template', `board-${index}`)
+        .replaceAll('run-template', `run-${index}`).replaceAll('allocated', `concurrent-${index}`))
+      return Bun.spawn(['tmux', '-S', allocationSocket, ...args], {
+        env: commandEnv, stdout: 'pipe', stderr: 'pipe',
+      })
+    })
+    expect(await Promise.all(launches.map(child => child.exited))).toEqual(Array(8).fill(0))
+    const rows = runTmux(['list-windows', '-t', session, '-F', '#{window_index}\t#{window_name}\t#{@agentboard-session-id}\t#{@agentboard-run-id}'])
+      .trim().split('\n').map(row => row.split('\t'))
+    const concurrent = rows.filter(row => row[1].startsWith('concurrent-'))
+    expect(concurrent).toHaveLength(8)
+    expect(new Set(concurrent.map(row => row[0])).size).toBe(8)
+    for (let index = 0; index < 8; index++) {
+      expect(concurrent.find(row => row[1] === `concurrent-${index}`)?.slice(2)).toEqual([`board-${index}`, `run-${index}`])
+    }
+    // A freed gap remains the next allocation even after concurrent clients.
+    runTmux(['kill-window', '-t', created.tmuxWindow])
+    const reused = manager.createWindow(root, 'reused', 'tail -f /dev/null')
+    expect(runTmux(['display-message', '-p', '-t', reused.tmuxWindow, '#{window_index}']).trim()).toBe('4')
+  } finally {
+    if (fs.existsSync(allocationSocket)) runTmux(['kill-session', '-t', `=${session}`])
+  }
 }, 30000)

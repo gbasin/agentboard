@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Agentboard terminal</title>
+<link rel="stylesheet" href="vendor/xterm.css">
+<style>
+:root { color-scheme: light dark; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+#terminal { height: 100%; padding-top: 8px; box-sizing: border-box; }
+.xterm-viewport { scrollbar-width: thin; background-color: var(--terminal-background, #fff) !important; }
+</style>
+</head>
+<body><div id="terminal" aria-label="Session terminal"></div>
+<script src="vendor/xterm.js"></script>
+<script src="vendor/addon-fit.js"></script>
+<script src="vendor/addon-webgl.js"></script>
+<script>
+const terminal = new Terminal({ fontFamily: 'Menlo, monospace', fontSize: 13, lineHeight: 1.3,
+    cursorBlink: true, scrollback: 5000, allowProposedApi: true, screenReaderMode: true });
+const fit = new FitAddon.FitAddon();
+terminal.loadAddon(fit);
+terminal.open(document.getElementById('terminal'));
+let socket, endpoint = '', control = false, configured = false, disposed = false, native = false;
+const notify = value => window.webkit?.messageHandlers?.terminal?.postMessage(value);
+// Native UIKit owns text input. Leave xterm's touch scrolling and selection
+// intact, but never let its hidden textarea activate WebKit's form keyboard.
+if (window.webkit) {
+    terminal.options.disableStdin = true;
+    terminal.textarea.readOnly = true;
+    terminal.textarea.setAttribute('inputmode', 'none');
+    terminal.textarea.disabled = true;
+}
+
+const theme = dark => {
+    document.body.style.background = dark ? '#000000' : '#ffffff';
+    document.body.style.setProperty('--terminal-background', dark ? '#000000' : '#ffffff');
+    terminal.options.theme = { background: dark ? '#000000' : '#ffffff', foreground: dark ? '#e5e5ea' : '#1c1c1e',
+        cursor: '#007aff', selectionBackground: dark ? '#264b76' : '#c6dfff',
+        blue: dark ? '#64aaff' : '#005bc4', green: dark ? '#63d98a' : '#16783a',
+        yellow: dark ? '#ffce64' : '#865800', brightBlack: dark ? '#a0a0a7' : '#68686f' };
+};
+function send(data) {
+    if (control && data.length === 1) {
+        const code = data.toUpperCase().charCodeAt(0);
+        if (code >= 65 && code <= 90) data = String.fromCharCode(code - 64);
+        control = false; notify({ control: false });
+    }
+    if (native) notify({type:'input', data});
+    else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'input', data}));
+    else if (!endpoint) notify({status: 'Sample transcript · connect a shell to type'});
+}
+terminal.registerLinkProvider({provideLinks(y, callback) {
+    const text = terminal.buffer.active.getLine(y - 1)?.translateToString() || '';
+    callback([...text.matchAll(/https?:\/\/[^\s<>"']+/g)].map(match => ({
+        text: match[0], range: {start: {x: match.index + 1, y}, end: {x: match.index + match[0].length, y}},
+        activate: () => notify({type: 'link', url: match[0]})
+    })));
+}});
+let webgl;
+terminal.onData(send);
+terminal.onResize(({cols, rows}) => {
+    if (native) notify({type:'viewport', cols, rows});
+    else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'resize', cols, rows}));
+});
+function resize() { if (!disposed) fit.fit(); }
+new ResizeObserver(resize).observe(document.getElementById('terminal'));
+function connect() {
+    if (!endpoint || disposed) return;
+    if (socket) { socket.onclose = null; socket.close(); }
+    notify({ status: 'Connecting…' });
+    socket = new WebSocket(endpoint);
+    socket.onopen = () => {
+        terminal.reset(); fit.fit();
+        socket.send(JSON.stringify({type:'resize', cols:terminal.cols, rows:terminal.rows}));
+        notify({status:'Connected to isolated shell'});
+    };
+    socket.onmessage = event => terminal.write(event.data);
+    socket.onclose = () => { notify({status:'Disconnected · use Reconnect shell'}); terminal.writeln('\r\n\x1b[33mDisconnected. Reconnect from Session actions.\x1b[0m'); };
+    socket.onerror = () => notify({status:'Connection failed · check the server address'});
+}
+function sample(name) {
+    terminal.writeln('\x1b[90mSample transcript · ' + name + '\x1b[0m\r\n');
+    terminal.writeln('\x1b[1m› Make Agentboard feel at home on iPhone.\x1b[0m\r\n');
+    terminal.writeln('  Keep the terminal. Make everything around');
+    terminal.writeln('  it feel native.\r\n');
+    terminal.writeln('\x1b[34m•\x1b[0m I’ll start with the screen you use most:');
+    terminal.writeln('  the running session.\r\n');
+    terminal.writeln('  The terminal keeps its space. Session');
+    terminal.writeln('  controls move into the navigation bar,');
+    terminal.writeln('  and quick keys sit above the keyboard.\r\n');
+    terminal.writeln('\x1b[90m  Exploring the current interface\x1b[0m');
+    terminal.writeln('  Read Terminal.tsx');
+    terminal.writeln('  Read TerminalControls.tsx\r\n');
+    terminal.writeln('\x1b[1m  What stays familiar\x1b[0m\r\n');
+    terminal.writeln('  • Full terminal output and scrollback');
+    terminal.writeln('  • Escape, arrows, Control, and paste');
+    terminal.writeln('  • Switching between running sessions\r\n');
+    terminal.writeln('\x1b[1m  What feels different\x1b[0m\r\n');
+    terminal.writeln('  Native navigation, system typography,');
+    terminal.writeln('  and controls that stay within reach.\r\n');
+    terminal.writeln('\x1b[90m  UI sample — no agent is running here.\x1b[0m\r\n');
+    terminal.write('\x1b[34m›\x1b[0m ');
+}
+window.agentboard = {
+    start(options) {
+        if (configured) return;
+        configured = true; theme(options.dark); fit.fit();
+        native = options.native === true; endpoint = options.endpoint;
+        if (native) notify({type:'viewport', cols:terminal.cols, rows:terminal.rows});
+        else endpoint ? connect() : sample(options.name);
+    },
+    options: options => {
+        for (const key of ['fontFamily', 'fontSize', 'lineHeight', 'letterSpacing']) {
+            if (terminal.options[key] !== options[key]) terminal.options[key] = options[key];
+        }
+        if (options.webGL && !webgl) {
+            try { webgl = new WebglAddon.WebglAddon(); terminal.loadAddon(webgl); webgl.onContextLoss(() => { webgl?.dispose(); webgl = null; }); }
+            catch { webgl?.dispose(); webgl = null; }
+        } else if (!options.webGL && webgl) { webgl.dispose(); webgl = null; }
+        fit.fit();
+    },
+    copySelection: () => { const text = terminal.getSelection(); if (text) notify({type: 'copy', text}); },
+    write: ({data}) => terminal.write(data),
+    // Queue the reset behind pending writes, so buffered old output cannot
+    // reappear after the next attachment's history.
+    reset: () => terminal.write('\x1bc'),
+    send: ({data}) => send(data),
+    paste: ({data}) => { if (native) notify({type:'paste', data}); else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'paste', data})); },
+    prepareInput: () => { if (terminal.hasSelection()) return false; document.activeElement?.blur(); return true; },
+    focus: () => terminal.focus(), blur: () => terminal.blur(),
+    control: ({active}) => { control = active; },
+    theme: ({dark}) => theme(dark), font: ({size}) => { terminal.options.fontSize = size; fit.fit(); },
+    bottom: () => terminal.scrollToBottom(), reconnect: connect,
+    resume: () => { resize(); if (endpoint && socket?.readyState === WebSocket.CLOSED) connect(); },
+    dispose: () => { disposed = true; if(socket) {socket.onclose = null; socket.close();} terminal.dispose(); }
+};
+// Browser-only preview; WKWebView is configured by the native coordinator.
+if (!window.webkit) window.agentboard.start({name:'pure-pod-2', endpoint:new URLSearchParams(location.search).get('endpoint') || '', dark: false});
+</script></body></html>
