@@ -3,7 +3,9 @@ import XCTest
 /// Native context menus report a scrolling frame larger than their visible popup.
 extension XCUIApplication {
     func tapNativeMenuAction(_ title: String, file: StaticString = #filePath, line: UInt = #line) {
-        let deadline = Date().addingTimeInterval(60)
+        // Maximum text creates an eight-page menu. Hosted gestures take about
+        // six seconds each; 60 seconds reached only 71% of the menu in CI.
+        let deadline = Date().addingTimeInterval(120)
         while Date() < deadline {
             let button = self.buttons[title]
             // UIKit can show the menu's loading placeholder before exposing its
