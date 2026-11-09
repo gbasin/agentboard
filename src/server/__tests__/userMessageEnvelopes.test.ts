@@ -41,6 +41,14 @@ for (const [schema, entry] of Object.entries(schemas)) {
       expect(extract('fix the parser<system-reminder>context</system-reminder>')).toBe('fix the parser')
     })
 
+    test('handles reminder IDs on both tags without discarding adjacent user text', () => {
+      const reminder = '<system-reminder id="4506f64571faf1f5">Coordinator message</system-reminder id="4506f64571faf1f5">'
+      expect(extract(reminder)).toBe('real prior prompt')
+      expect(extract(`${reminder}fix the parser`)).toBe('fix the parser')
+      expect(extract(`fix the parser${reminder}`)).toBe('fix the parser')
+      expect(extract('<system-reminder id="4506f64571faf1f5">truncated')).toBe('real prior prompt')
+    })
+
     test('extracts question answers without the transport envelope', () => {
       expect(extract('<send_user_message_question_reply>\n[{"answer":"use option B"},{"answer":"keep tests"}]\n</send_user_message_question_reply>')).toBe('use option B · keep tests')
     })
@@ -73,6 +81,8 @@ test('cached, truncated envelopes trigger re-extraction', () => {
   for (const text of [
     '<system-reminder>Result of calling the Read tool: ' + 'x'.repeat(300),
     '<send_user_message_question_reply>\n[{"answer":"' + 'x'.repeat(300),
+    '<system-reminder id="4506f64571faf1f5">' + 'x'.repeat(300),
+    '<system-reminder id="unfinished',
     'Tool loaded.',
     'This session is being continued from a previous conversation that ran out of context. Summary',
     '<image name=[Image #1] path="' + 'x'.repeat(300),
