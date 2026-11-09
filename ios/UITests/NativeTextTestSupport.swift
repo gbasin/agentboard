@@ -7,7 +7,9 @@ extension XCUIElement {
         sleep(1) // Let the field finish scrolling above the keyboard.
         let current = self.value as? String
         if current != "" && current != placeholderValue {
-            press(forDuration: 1)
+            // A second tap at the insertion point opens edit options; a hold
+            // moves the caret and can leave the edit menu closed.
+            tap()
             let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
                 let selectAll = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Select All")).firstMatch
                 let forward = app.buttons["Forward"].firstMatch

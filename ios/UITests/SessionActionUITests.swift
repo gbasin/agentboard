@@ -27,6 +27,7 @@ final class SessionActionUITests: XCTestCase {
         let project = app.textFields["session-project"]
         replace(project, with: "/ab-missing", in: app)
         XCTAssertEqual(app.textFields["session-command"].value as? String, "/bin/zsh -f")
+        replace(app.textFields["session-command"], with: "/bin/zsh", in: app)
         app.textFields["session-name"].tap(); app.textFields["session-name"].typeText(name)
         capture("actions-create")
         app.buttons["Create"].tap()
