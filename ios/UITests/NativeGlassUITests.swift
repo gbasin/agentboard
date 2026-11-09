@@ -40,11 +40,27 @@ final class NativeGlassUITests: XCTestCase {
             let search = app.searchFields.firstMatch
             let toolbar = app.toolbars.firstMatch
             let top = (app.navigationBars.allElementsBoundByIndex.last ?? app.navigationBars.firstMatch).frame.maxY
-            var bottom = toolbar.exists ? toolbar.frame.minY : list.frame.maxY
+            // Liquid Glass exposes a full-screen toolbar container. Its visible
+            // buttons, not the container origin, bound the content viewport.
+            let toolbarTop = toolbar.buttons.allElementsBoundByIndex.map(\.frame)
+                .filter { $0.height > 0 && $0.minY > app.frame.midY }.map(\.minY).min()
+            var bottom = min(list.frame.maxY, toolbarTop ?? app.frame.maxY)
             if search.exists && search.frame.midY > app.frame.midY { bottom = min(bottom, search.frame.minY) }
             if element.exists && element.isHittable && element.frame.maxY < bottom && element.frame.minY >= top { return }
-            if element.exists && element.frame.minY < top { list.swipeDown(velocity: .slow) }
-            else { list.swipeUp(velocity: .slow) }
+            // Large accessibility rows can be taller than a swipe's travel.
+            // Move toward the target without flinging past it in both directions.
+            let upper = max(top, list.frame.minY) + 12
+            let lower = min(bottom, list.frame.maxY) - 12
+            guard lower > upper else { return }
+            let middle = (upper + lower) / 2
+            let limit = (lower - upper) * 0.4
+            let distance = element.exists ? element.frame.midY - middle : limit
+            let travel = min(limit, max(-limit, distance))
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(.init(dx: list.frame.midX, dy: middle))
+            let end = origin.withOffset(.init(dx: list.frame.midX, dy: middle - travel))
+            start.press(forDuration: 0, thenDragTo: end,
+                        withVelocity: XCUIGestureVelocity(rawValue: 400), thenHoldForDuration: 0.2)
         }
     }
     func testCatalogMetadataAtCurrentTextSize() {
