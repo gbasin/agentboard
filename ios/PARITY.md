@@ -1,5 +1,7 @@
 # iPhone parity implementation
 
+Latest combined release evidence: [RELEASE-VALIDATION.md](RELEASE-VALIDATION.md).
+
 Latest audit and remote regression: [READINESS-AUDIT.md](READINESS-AUDIT.md). Current baseline is `35483b5`, with frozen native selection, terminal autocorrect, attachment preview/removal, and cross-session status overview added. Running product observations: [PARITY-NOTES.md](PARITY-NOTES.md). The results below describe earlier checkpoints.
 
 The native iPhone client targets the PWA behavior at repository reference `74ed561`. This document separates implemented behavior from exercised workflows; it is not a certification of complete functional parity. A subsequent source audit found five omissions in the earlier broad parity claim. The corrections and their evidence are recorded below. Presentation follows PRODUCT.md and DIRECTION.md. Historical validation below used the m5p iPhone 17 Pro Simulator, iOS 26.4, and an isolated real backend. Physical-device signing, TestFlight installation and connection were confirmed for build 2 on 2026-11-09; see [TESTFLIGHT.md](TESTFLIGHT.md).

@@ -65,3 +65,9 @@ Do not commit archives, provisioning profiles, certificates, or private keys.
 - Lint, typechecking, and all pre-commit checks passed for `47cb217` with
   `LOG_LEVEL` removed from the command environment. Earlier attempts encountered
   an inherited logger setting and a transient wall-clock timing failure.
+
+## Release metadata follow-up — 2026-11-09
+
+The project now sets `ITSAppUsesNonExemptEncryption=false`, matching the system-only networking answer used for build 2. The app uses URLSession/WebKit networking and does not bundle a separate encryption implementation. Reassess the declaration if that changes. [Apple documents this property and the operating-system networking exemption](https://developer.apple.com/documentation/security/complying-with-encryption-export-regulations).
+
+Build 4 (`0.1.0`) is signed and strictly verified. Build 3 was not uploaded. Current validation limits are in [RELEASE-VALIDATION.md](RELEASE-VALIDATION.md).
