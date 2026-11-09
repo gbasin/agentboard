@@ -17,6 +17,8 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      ios_release_created: ${{ steps.release.outputs['ios--release_created'] }}
+      ios_tag_name: ${{ steps.release.outputs['ios--tag_name'] }}
       # 'success' when the app-token step ran, 'skipped'/'failure' when the
       # GITHUB_TOKEN fallback was used — decides whether the tag push already
       # triggers release.yml.
@@ -62,3 +64,19 @@ jobs:
       - run: gh workflow run release.yml -R ${{ github.repository }} -f tag=${{ needs.release-please.outputs.tag_name }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # App-token tag pushes trigger the iOS workflow directly. Dispatch only for
+  # GITHUB_TOKEN-created tags, which cannot trigger another push workflow.
+  ios-release:
+    needs: release-please
+    if: >-
+      needs.release-please.outputs.ios_release_created == 'true'
+      && needs.release-please.outputs.app_token != 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - run: gh workflow run ios-testflight.yml -R "$GITHUB_REPOSITORY" -f ref="$IOS_TAG" -f publish=true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IOS_TAG: ${{ needs.release-please.outputs.ios_tag_name }}

@@ -3,7 +3,69 @@
 Use the personal Apple developer team for Agentboard. Keep the bundle identifier
 `dev.agentboard.ios-spike` so a TestFlight install can replace the development app.
 
-## Create an archive
+## Automated releases
+
+The iOS app has its own release-please package. Conventional commits that change
+`ios/` update an iOS release PR. Merge that PR to bump `ios/version.txt`,
+`MARKETING_VERSION`, and the iOS changelog. The resulting `ios-vX.Y.Z` tag starts
+**Publish TestFlight**. Server/npm releases keep their existing `vX.Y.Z` tags.
+
+The workflow archives the tagged source, signs it, uploads an internal-only
+build, waits for Apple processing, and confirms assignment to **Personal**.
+A successful upload alone does not count as a successful publishing run.
+
+For a build between releases:
+
+1. Open **Actions → Publish TestFlight → Run workflow** on `master`.
+2. Select a commit already on `master`, or an `ios-vX.Y.Z` tag.
+3. Leave **publish** off to validate a signed export without uploading.
+4. Enable **publish** to distribute the build to internal testers.
+5. Check the run summary for processing and group-assignment confirmation.
+6. Install the update through TestFlight.
+7. Verify connection, terminal input, attachments, and reconnection on the phone.
+
+Each workflow run uses build number `1000 + run number`, followed by the run
+attempt (for example, `1001.1`). The marketing version comes from
+`ios/version.txt`. Start a new run if a newer build has already been uploaded;
+rerunning an older workflow can produce a lower build number. Do not rename the
+workflow or reset its numbering without updating this allocation scheme.
+
+Publishing is serialized. GitHub retains one running and one pending run per
+concurrency group; a newer pending run can replace an older pending run. Check
+that the intended release completed, and dispatch it again if necessary.
+
+If Apple processing times out, inspect App Store Connect before uploading again.
+The existing upload may finish later. Build logs, exported IPAs, and debug symbols
+remain available as workflow artifacts for seven days. The workflow does not
+replace the native test suite or the physical-device acceptance checks in
+[RELEASE-VALIDATION.md](RELEASE-VALIDATION.md).
+
+### Credentials and renewal
+
+The `ios-testflight` GitHub environment permits only `master` and `ios-v*` tags.
+The workflow also requires the selected source to be an ancestor of `master`.
+PR workflows do not receive publishing credentials.
+
+Environment secrets:
+
+- `ASC_PRIVATE_KEY`: App Store Connect App Manager API key.
+- `IOS_SIGNING_P12_BASE64`: Base64-encoded Apple Distribution certificate and key.
+- `IOS_SIGNING_P12_PASSWORD`: Password for the P12 file.
+- `IOS_PROFILE_BASE64`: Base64-encoded App Store provisioning profile.
+
+Environment variables: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `IOS_TEAM_ID`,
+`IOS_APP_ID`, and `IOS_BETA_GROUP_ID`.
+
+The dedicated **Agentboard GitHub TestFlight** certificate/profile expire on
+**November 9, 2027**. Replace the P12, password, and profile secrets before then.
+Run a signed-export validation after renewal. Rotate the API key separately if
+revoked or compromised. Keep the business Apple account unchanged.
+
+Signing uses a temporary keychain. Cleanup removes the imported credentials and
+profile and restores the previous keychain search list. Private keys and
+passwords must never be committed or uploaded as workflow artifacts.
+
+## Manual recovery archive
 
 1. Sign into Xcode with the Apple Account that owns the team.
 2. Run `bash ios/scripts/prepare.sh` from the repository root.
