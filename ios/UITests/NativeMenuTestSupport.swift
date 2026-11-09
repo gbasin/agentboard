@@ -4,31 +4,63 @@ import XCTest
 extension XCUIApplication {
     func tapNativeMenuAction(_ title: String, file: StaticString = #filePath, line: UInt = #line) {
         let deadline = Date().addingTimeInterval(120)
+        // Popup bounds stay fixed while its virtualized content scrolls. Read
+        // them once so each pan does not repeat accessibility geometry queries.
+        let appFrame = self.frame
+        var popup: (collection: XCUIElement, frame: CGRect)?
+        func actions(in node: XCUIElementSnapshot) -> [XCUIElementSnapshot] {
+            var matches = node.children.flatMap { actions(in: $0) }
+            if matches.isEmpty && (node.elementType == .button || node.elementType == .popUpButton),
+               (node.label == title || node.identifier == title) { matches.append(node) }
+            return matches
+        }
+        func center(of node: XCUIElementSnapshot) -> CGPoint? {
+            let frame = node.frame
+            guard frame.minX.isFinite, frame.minY.isFinite, frame.width.isFinite, frame.height.isFinite,
+                  frame.width > 0, frame.height > 0 else { return nil }
+            let point = CGPoint(x: frame.midX, y: frame.midY)
+            return point.x.isFinite && point.y.isFinite ? point : nil
+        }
         while Date() < deadline {
-            // UIKit changes menu actions between Button and PopUpButton while
-            // scrolling. Keep the query independent of that transient type.
-            let button = self.descendants(matching: .any).matching(NSPredicate(
-                format: "(label == %@ OR identifier == %@) AND (elementType == %d OR elementType == %d)",
-                title, title, XCUIElement.ElementType.button.rawValue, XCUIElement.ElementType.popUpButton.rawValue
-            )).firstMatch
-            if button.exists && button.isHittable { button.tap(); return }
-            let remaining = deadline.timeIntervalSinceNow
-            guard remaining > 0,
-                  self.collectionViews.firstMatch.waitForExistence(timeout: remaining),
-                  let menu = self.collectionViews.allElementsBoundByIndex.last else { break }
-            let menuFrame = menu.frame
-            guard menuFrame.minX.isFinite, menuFrame.minY.isFinite, menuFrame.width > 0, menuFrame.height > 0 else { break }
-            // The collection's accessibility frame extends below the popup.
-            // Swipe its visible enclosing view so XCTest places a native swipe
-            // inside the menu, rather than dragging a menu action.
-            let enclosing = self.otherElements.containing(NSPredicate(format: "elementType == %d", XCUIElement.ElementType.collectionView.rawValue))
-                .allElementsBoundByIndex.filter {
-                    let frame = $0.frame
-                    return abs(frame.minX - menuFrame.minX) < 1 && abs(frame.width - menuFrame.width) < 1 && frame.height > 0
-                }.min { $0.frame.height < $1.frame.height }
-            let scroller = enclosing ?? menu
-            if button.exists && button.frame.midY < scroller.frame.minY { scroller.swipeDown(velocity: .fast) }
-            else { scroller.swipeUp(velocity: .fast) }
+            if popup == nil {
+                let remaining = deadline.timeIntervalSinceNow
+                guard remaining > 0,
+                      self.collectionViews.firstMatch.waitForExistence(timeout: remaining),
+                      let menu = self.collectionViews.allElementsBoundByIndex.last else { break }
+                let menuFrame = menu.frame
+                guard menuFrame.minX.isFinite, menuFrame.minY.isFinite, menuFrame.width > 0, menuFrame.height > 0 else { break }
+                // The collection extends below the clipped popup. Cache each
+                // enclosing frame once, then choose the smallest visible bound.
+                let enclosing = self.otherElements.containing(NSPredicate(format: "elementType == %d", XCUIElement.ElementType.collectionView.rawValue))
+                    .allElementsBoundByIndex.map { $0.frame }.filter {
+                        abs($0.minX - menuFrame.minX) < 1 && abs($0.width - menuFrame.width) < 1 && $0.height > 0
+                    }.min { $0.height < $1.height }
+                popup = (menu, (enclosing ?? menuFrame).intersection(appFrame))
+            }
+            guard let popup, popup.frame.width > 0, popup.frame.height > 0 else { break }
+            let viewport = popup.frame.insetBy(dx: 8, dy: 8)
+            guard viewport.width > 0, viewport.height > 0 else { break }
+            let snapshot: XCUIElementSnapshot
+            do { snapshot = try popup.collection.snapshot() } catch { break }
+            // A virtualized action can disappear between live attribute reads.
+            // One snapshot keeps its type, enabled state, and geometry together.
+            // This front menu's clipped bounds provide the visibility check.
+            let matches = actions(in: snapshot)
+            if let point = matches.lazy.filter(\.isEnabled).compactMap({ center(of: $0) }).first(where: { viewport.contains($0) }) {
+                // An element tap can auto-scroll and re-resolve the menu node.
+                self.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(.init(dx: point.x - appFrame.minX, dy: point.y - appFrame.minY)).tap()
+                return
+            }
+            let above = matches.compactMap({ center(of: $0) }).first.map { $0.y < viewport.minY } ?? false
+            let startY = above ? viewport.minY + viewport.height * 0.2 : viewport.maxY - viewport.height * 0.2
+            let endY = startY + viewport.height * (above ? 0.45 : -0.45)
+            let origin = self.coordinate(withNormalizedOffset: .zero)
+            let from = origin.withOffset(.init(dx: viewport.midX - appFrame.minX, dy: startY - appFrame.minY))
+            let to = origin.withOffset(.init(dx: viewport.midX - appFrame.minX, dy: endY - appFrame.minY))
+            // Fast travel wins the menu's pan recognizer. The endpoint hold
+            // prevents release from flinging past a virtualized action.
+            from.press(forDuration: 0, thenDragTo: to, withVelocity: XCUIGestureVelocity(rawValue: 1000), thenHoldForDuration: 0.2)
         }
         attachNavigationFailure("menu-" + title)
         XCTFail("Menu action is unreachable: \(title)", file: file, line: line)
