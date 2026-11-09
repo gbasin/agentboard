@@ -53,10 +53,12 @@ Do not commit archives, provisioning profiles, certificates, or private keys.
   unavailable. The home-screen name remains Agentboard.
 - The personal team's explicit bundle registration is confirmed. The app uses
   English (U.S.) and SKU `agentboard-ios`.
-- Internal-only upload of build 2 succeeded on 2026-11-09. Apple processing is
-  pending. Do not treat upload success as tester availability.
-- Internal group **Personal** has automatic distribution enabled and the account
-  owner added as its only tester. Verify build processing and group assignment.
+- Internal-only upload of build 2 succeeded on 2026-11-09. Apple processing
+  completed. Encryption information was saved for the system-only networking
+  implementation. The build is ready to test.
+- Internal group **Personal** has automatic distribution enabled, build 2
+  assigned, and the account owner as its only tester. App Store Connect confirms
+  **Invited** for the personal account. Installation on the iPhone is pending.
 - Computer use recovered after restarting the Codex session.
 - Lint, typechecking, and all pre-commit checks passed for `47cb217` with
   `LOG_LEVEL` removed from the command environment. Earlier attempts encountered
