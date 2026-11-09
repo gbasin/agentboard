@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-09T17:07:42.693923+00:00",
+  "generatedAt": "2026-11-09T18:14:03.752897+00:00",
   "title": "Design System: Agentboard iPhone client",
   "extensions": {
     "platform": "iOS / SwiftUI with WKWebView xterm.js output and UIKit input",
@@ -53,7 +53,7 @@
       },
       {
         "name": "Navigation",
-        "implementation": "Sessions uses system large-title behavior, search, pull-to-refresh and a Connection action. New session is available in the live catalog toolbar while connected. The bottom toolbar opens Library, Filter and sort, Edit and Settings. Detail uses native back navigation, a compact name/status session-switcher menu and a session-actions menu. Applicable rename, duplicate, hibernate and end actions are also available from catalog context menus. Remote Rename, Duplicate and End appear only when the server permits control and the source is managed; remote Hibernate is omitted."
+        "implementation": "Sessions uses system large-title behavior, search, pull-to-refresh and a Connection action. New session is available in the live catalog toolbar while connected. The bottom toolbar opens Library, Filter and sort, Edit and Settings. Detail uses native back navigation, a compact name/project/status session-switcher menu and a session-actions menu. Applicable rename, duplicate, hibernate and end actions are also available from catalog context menus. Remote Rename, Duplicate and End appear only when the server permits control and the source is managed; remote Hibernate is omitted."
       },
       {
         "name": "Quick keys",
@@ -65,7 +65,7 @@
       },
       {
         "name": "Paste",
-        "implementation": "native TextEditor in a medium/large sheet; Insert is disabled while empty. The explicit Paste from clipboard action uses the public UIKit `UIPasteControl`, which authorizes access and delivers item providers asynchronously. Native edit-menu paste retains the operating system paste path. Both accept public text/image/file representations. Upload progress, Cancel and recoverable error/Retry appear only while needed above the existing single key row. Repeated pastes queue in order; a failed request pauses later requests until Retry or Dismiss, and explicit Cancel clears the queue. Unsupported clipboard representations explain the Attach file fallback. Text/document insertion and agent-specific image input never add Enter. Current agent metadata is resolved at delivery; changing terminal ownership cancels pending work."
+        "implementation": "native TextEditor in a medium/large sheet with system autocorrection and sentence capitalization enabled, independent of the direct-terminal keyboard preference. Insert is disabled while empty. The explicit Paste from clipboard action uses the public UIKit `UIPasteControl`, which authorizes access and delivers item providers asynchronously. Native edit-menu paste retains the operating system paste path. Both accept public text/image/file representations. Upload progress, Cancel and recoverable error/Retry appear only while needed above the existing single key row. Repeated pastes queue in order; a failed request pauses later requests until Retry or Dismiss, and explicit Cancel clears the queue. Unsupported clipboard representations explain the Attach file fallback. Text/document insertion and agent-specific image input never add Enter. Current agent metadata is resolved at delivery; changing terminal ownership cancels pending work."
       },
       {
         "name": "Editable form fields",
