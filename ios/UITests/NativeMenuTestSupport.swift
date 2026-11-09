@@ -46,7 +46,16 @@ extension XCUIApplication {
             // One snapshot keeps its type, enabled state, and geometry together.
             // This front menu's clipped bounds provide the visibility check.
             let matches = actions(in: snapshot)
-            if let point = matches.lazy.filter(\.isEnabled).compactMap({ center(of: $0) }).first(where: { viewport.contains($0) }) {
+            func visiblePoint(of node: XCUIElementSnapshot) -> CGPoint? {
+                guard center(of: node) != nil else { return nil }
+                // A large row can be usable while its full center is clipped.
+                // Require a normal touch target, not a thin edge fragment.
+                let visible = node.frame.intersection(viewport)
+                guard !visible.isNull, visible.width >= min(44, node.frame.width),
+                      visible.height >= min(44, node.frame.height) else { return nil }
+                return CGPoint(x: visible.midX, y: visible.midY)
+            }
+            if let point = matches.lazy.filter(\.isEnabled).compactMap({ visiblePoint(of: $0) }).first {
                 // An element tap can auto-scroll and re-resolve the menu node.
                 self.coordinate(withNormalizedOffset: .zero)
                     .withOffset(.init(dx: point.x - appFrame.minX, dy: point.y - appFrame.minY)).tap()
