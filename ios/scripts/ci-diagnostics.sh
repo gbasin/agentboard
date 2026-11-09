@@ -13,6 +13,11 @@ ci_diagnostics_start() {
   CI_DIAGNOSTICS_PATH="${IOS_CI_DIAGNOSTICS_DIR:-/tmp/ab-ios-diagnostics}/$1-$$"
   export CI_DIAGNOSTICS_PATH
   mkdir -p "$CI_DIAGNOSTICS_PATH"
+  {
+    printf 'ImageOS=%s\nImageVersion=%s\nDEVELOPER_DIR=%s\n' "${ImageOS:-unknown}" "${ImageVersion:-unknown}" "${DEVELOPER_DIR:-}"
+    printf 'CoreSimulatorVersion='
+    /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/Resources/Info.plist 2>/dev/null || printf 'unknown\n'
+  } > "$CI_DIAGNOSTICS_PATH/environment.txt"
   printf 'phase\tstarted_utc\tduration_seconds\texit_status\n' > "$CI_DIAGNOSTICS_PATH/phases.tsv"
   ci_snapshot start
   # Sleep is a child we explicitly reap when the sampler is stopped.

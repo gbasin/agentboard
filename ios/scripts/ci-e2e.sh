@@ -8,6 +8,7 @@ case "$mode" in all|light|dark) ;; *) echo "Invalid IOS_E2E_MODE" >&2; exit 2 ;;
 fixtures=$(bun ios/scripts/e2e-fixtures.ts "$mode" "$shard")
 needs() { [[ $'\n'"$fixtures"$'\n' == *$'\n'"$1"$'\n'* ]]; }
 source ios/scripts/ci-diagnostics.sh
+source ios/scripts/ci-readiness.sh
 ci_diagnostics_start "$mode-$shard"
 trap ci_diagnostics_stop EXIT
 if [ -z "${IOS_TEST_PRODUCTS_DIR:-}" ]; then ci_phase build ./ios/scripts/build-for-testing.sh; fi
@@ -17,6 +18,7 @@ discover_simulator() {
   xcrun simctl list devices available -j | bun -e 'const data=await Bun.stdin.json(); const phone=Object.entries(data.devices).filter(([runtime])=>runtime.includes("iOS-26-4")).flatMap(([,devices])=>devices).find(d=>d.name.includes("iPhone") && d.isAvailable); if(!phone) throw Error("No available iPhone Simulator"); console.log(phone.udid)'
 }
 udid=${IOS_SIMULATOR_UDID:-}
+ci_phase simulator-cache xcrun simctl runtime dyld_shared_cache update --all
 if [ -z "$udid" ]; then udid=$(ci_phase simulator-discovery discover_simulator); fi
 ci_phase simulator-boot xcrun simctl boot "$udid" || true
 ci_phase simulator-ready xcrun simctl bootstatus "$udid" -b
@@ -43,7 +45,8 @@ export TMUX_TMPDIR="$fixture_root" AGENTBOARD_DATA_DIR="$fixture_root/data" TMUX
 export CLAUDE_RESUME_CMD="/bin/zsh -f -c 'exec /bin/zsh -f' {sessionId}"
 unset TMUX
 if needs backend; then
-  bun src/server/index.ts > "$fixture_root/backend.log" 2>&1 & pids+=("$!")
+  bun src/server/index.ts > "$fixture_root/backend.log" 2>&1 & backend_pid=$!
+  pids+=("$backend_pid")
   wait_backend() {
     for attempt in {1..60}; do
       if curl --max-time 10 -fsS http://127.0.0.1:4151/api/library/health >/dev/null; then return; fi
@@ -88,5 +91,5 @@ for pid in "${pids[@]}"; do
     exit 1
   fi
 done
-if needs backend; then curl --max-time 10 -fsS http://127.0.0.1:4151/api/library/health >/dev/null; fi
+if needs backend; then ci_phase backend-pre-tests wait_backend_ready "$backend_pid" 30; fi
 ci_phase tests ./ios/scripts/test-e2e.sh "$udid" "$mode" "$shard"
