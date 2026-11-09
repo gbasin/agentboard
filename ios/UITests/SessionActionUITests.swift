@@ -9,12 +9,7 @@ final class SessionActionUITests: XCTestCase {
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
     private func replace(_ field: XCUIElement, with value: String, in app: XCUIApplication) {
-        field.tap()
-        sleep(1) // Wait for the native field to finish scrolling above the keyboard.
-        // Triple-tap selects the paragraph in this single-line native field.
-        field.tap(withNumberOfTaps: 3, numberOfTouches: 1)
-        field.typeText(value)
-        XCTAssertEqual(field.value as? String, value)
+        field.replaceNativeText(with: value, in: app)
     }
     private func openAction(_ title: String, in app: XCUIApplication) {
         app.buttons["Session actions"].tap()

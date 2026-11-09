@@ -21,17 +21,13 @@ final class NativeParityUITests: XCTestCase {
         attachment.name = "parity-" + name; attachment.lifetime = .keepAlways; add(attachment)
     }
     private func replace(_ field: XCUIElement, _ value: String) {
-        field.tap(); sleep(1)
         if field.elementType == .searchField {
+            field.tap(); sleep(1)
             if field.buttons["Clear text"].exists { field.buttons["Clear text"].tap() }
             XCTAssertTrue((field.value as? String ?? "") == "" || (field.value as? String) == field.placeholderValue)
             field.typeText(value); return
         }
-        for _ in 0..<4 {
-            field.typeKey("a", modifierFlags: .command); field.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
-            if (field.value as? String ?? "") == "" || (field.value as? String) == field.placeholderValue { break }
-        }
-        field.typeText(value)
+        field.replaceNativeText(with: value, in: XCUIApplication())
     }
     private func reveal(_ element: XCUIElement, in app: XCUIApplication, preferUp: Bool = false, refreshMedia: Bool = false) {
         for _ in 0..<20 {
