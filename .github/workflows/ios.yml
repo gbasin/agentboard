@@ -43,7 +43,7 @@ jobs:
           matrix=$(bun ios/scripts/ci-workers.ts "$SHARD" "$APPEARANCE")
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
       - name: Verify shard coverage
-        run: bun test ./ios/scripts/e2e-selection.test.ts ./ios/scripts/ci-diagnostics.test.ts ./ios/scripts/ci-e2e.test.ts ./ios/scripts/ci-workers.test.ts ./ios/scripts/parity-media-ready.test.ts
+        run: bun test ./ios/scripts/e2e-selection.test.ts ./ios/scripts/ci-diagnostics.test.ts ./ios/scripts/ci-e2e.test.ts ./ios/scripts/ci-workers.test.ts ./ios/scripts/parity-media-ready.test.ts ./ios/scripts/tmux-ready.test.ts
       - name: Build test products once
         run: ios/scripts/build-for-testing.sh
       - name: Archive test products with executable permissions and symlinks

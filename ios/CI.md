@@ -2,7 +2,7 @@
 
 The workflow builds the app and test bundles once. It archives `Build/Products`, including the `.xctestrun` file, in a tar file to preserve executable permissions and symlinks. Five macOS workers download that artifact and run `xcodebuild test-without-building`.
 
-Both jobs use the standard `xcode-27` runner, currently a free public preview. CI pins Xcode 27.2 at `/Applications/Xcode_27.2.app/Contents/Developer` and selects the available `iPhone 17` on the exact iOS 27.2 runtime. The [runner image manifest](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md) lists the installed toolchain and Simulators. The app's minimum deployment target remains iOS 18.
+Both jobs use the standard `xcode-27` runner, [generally available](https://github.blog/changelog/2026-10-15-xcode-27-runner-image-generally-available/). CI pins Xcode 27.2 at `/Applications/Xcode_27.2.app/Contents/Developer` and selects the available `iPhone 17` on the exact iOS 27.2 runtime. The [runner image manifest](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md) lists the installed toolchain and Simulators. The app's minimum deployment target remains iOS 18.
 
 | Shard | Workflows |
 |---|---|
@@ -78,3 +78,18 @@ The workflow keeps five workers and assigns whole shard/appearance batches as fo
 | 5 | settings light | settings dark |
 
 `ci-workers.ts` filters these assignments for manual runs and drops empty workers. Each selected batch runs once. Whole-batch assignments preserve the existing test selections and fixture plans. Each invocation of `ci-e2e.sh` removes the app container, creates fresh fixture data, checks readiness, archives fixture logs, and records phase/resource diagnostics. The simulator remains booted between batches. Results upload after each batch. No test executes concurrently against the same fixture host.
+
+### Cold Simulator startup readiness
+
+Run 42662550144 failed before terminal/media tests: `tmux -V` exceeded the
+production three-second startup limit while the hosted Simulator load average
+rose above 490. Do not treat these fixture failures as app test results.
+
+After Simulator boot, backend-dependent batches probe `tmux -V` until three
+consecutive probes finish within three seconds, with a total two-minute budget.
+The probe does not connect to a tmux server. It never retries mutations or tests.
+Production tmux timeouts remain unchanged. If the host cannot become responsive,
+the batch fails with resource diagnostics instead of launching the backend.
+Both initial and pre-test HTTP readiness checks stop if the backend exits.
+A passing readiness gate reduces the observed cold-start race; hosted validation
+is still required and it does not guarantee later host responsiveness.
