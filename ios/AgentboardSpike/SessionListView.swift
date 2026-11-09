@@ -84,13 +84,13 @@ struct SessionListView: View {
         NavigationLink(value: session.id) {
             VStack(alignment: .leading, spacing: 7) {
                 HStack(alignment: .firstTextBaseline) {
+                    HarnessIcon(agent: session.agent)
                     Text(session.name).font(.headline)
                     Spacer(minLength: 8)
                     SessionStatus(status: session.status)
                 }
                 Text(session.summary).font(.subheadline).foregroundStyle(.secondary)
                     .lineLimit(2)
-                Text(session.agent).font(.caption).foregroundStyle(.secondary)
             }
             .padding(.vertical, 5)
         }
