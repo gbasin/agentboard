@@ -1,8 +1,9 @@
 /**
  * Deterministic native UI protocol fixture. Run: bun ios/scripts/parity-gap-fixture.ts
- * Binds only 127.0.0.1:4192; never contacts tmux, SSH, GitHub or a live backend.
+ * Binds only loopback (default port 4192; override with IOS_PARITY_GAP_PORT); never contacts tmux, SSH, GitHub or a live backend.
  * POST /__fixture/reset {scenario:"filters"|"hidden"|"remote"|"recovery"|"reorder"} before each test.
  * POST /__fixture/control {allowed:true} and /__fixture/interrupt simulate server events.
+ * POST /__fixture/menu-update injects terminal output and session metadata while a menu is open.
  */
 import type { ServerWebSocket } from 'bun'
 
@@ -62,7 +63,7 @@ function reset(next: string) {
 }
 reset('filters')
 Bun.serve<Record<string, never>>({
-  hostname: '127.0.0.1', port: 4192,
+  hostname: '127.0.0.1', port: Number(process.env.IOS_PARITY_GAP_PORT) || 4192,
   async fetch(request, server) {
     const url = new URL(request.url)
     if (url.pathname === '/ws') {
@@ -79,6 +80,13 @@ Bun.serve<Record<string, never>>({
     }
     if (url.pathname === '/__fixture/interrupt' && request.method === 'POST') {
       interruptedIds.push(generation + '-' + crypto.randomUUID()); broadcast({ type: 'library-changed' }); return Response.json({ ok: true })
+    }
+    if (url.pathname === '/__fixture/menu-update' && request.method === 'POST') {
+      const lastActivity = new Date().toISOString()
+      const session = { ...glassSessions[0], name: 'Alpha updated', lastActivity, lastUserMessage: 'Background update ' + lastActivity }
+      broadcast({ type: 'session-update', session })
+      broadcast({ type: 'terminal-output', sessionId: glassSessions[0].id, data: 'Background output\r\n' })
+      return Response.json({ ok: true })
     }
     if (url.pathname === '/__fixture/input') return Response.json({ input })
     if (url.pathname === '/api/pr-info') return Response.json([{ url: glassSessions[0].prs[0].url, state: 'MERGED', isDraft: false }])
@@ -117,4 +125,4 @@ Bun.serve<Record<string, never>>({
     },
   },
 })
-console.log('Native parity gap fixture: http://127.0.0.1:4192')
+console.log(`Native parity gap fixture: http://127.0.0.1:${Number(process.env.IOS_PARITY_GAP_PORT) || 4192}`)
