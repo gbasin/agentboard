@@ -29,9 +29,9 @@ Open Connection. Enter the browser's `http://` or `https://` base URL. Tap Conne
 
 The prepare script copies xterm and its licenses from the locked root dependencies. Generated vendor files and the Xcode project are ignored. Keep the bundled folder named `Web`: a top-level `Resources` folder makes macOS bundle discovery treat this iOS app as a different bundle layout and fail installation with “Missing bundle ID.”
 
-## Install on a paired iPhone (deferred)
+## Install on a paired iPhone
 
-The user deferred physical-device signing and installation. Current validation continues in Simulator only; no account or device action is needed now. These instructions remain for a future device pass.
+The personal TestFlight setup is active. Build 2 was installed and connected successfully on the user’s iPhone; build 4 is available to the Personal internal group. See [TESTFLIGHT.md](TESTFLIGHT.md) for distribution status and [RELEASE-VALIDATION.md](RELEASE-VALIDATION.md) for remaining acceptance checks. The commands below support direct development installs.
 
 Sign in to your Apple developer account in Xcode → Settings → Accounts. Enable Developer Mode on the iPhone. Pair it with the build Mac and unlock it. Prepare the project locally, or sync the generated project and vendor files to the build Mac.
 
@@ -41,7 +41,7 @@ Sign in to your Apple developer account in Xcode → Settings → Accounts. Enab
 
 The script permits Xcode to create development signing assets and register the paired device. It installs and launches the debug app. The optional third argument sets the server address for that launch. Team and device identifiers are not stored in the project. Build logs remain in `ios/.build-device/cli-build.log`.
 
-The first m5p device-build attempt stopped at Xcode's “No Accounts” error and missing development provisioning profile. The paired iPhone was reachable with Developer Mode enabled. The device pass is deferred; no physical-device validation is claimed.
+An early m5p signing attempt failed before the later successful m5p-2 setup. Installation and connection are confirmed on the phone; broader physical-device acceptance remains open.
 
 ## Isolated real-backend tests
 
