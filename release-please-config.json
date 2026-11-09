@@ -4,7 +4,26 @@
   "include-component-in-tag": false,
   "packages": {
     ".": {
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "exclude-paths": [
+        "ios"
+      ]
+    },
+    "ios": {
+      "release-type": "simple",
+      "component": "ios",
+      "include-component-in-tag": true,
+      "tag-separator": "-",
+      "version-file": "version.txt",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "project.yml"
+        }
+      ],
+      "initial-version": "0.1.0"
     }
-  }
+  },
+  "separate-pull-requests": true
 }

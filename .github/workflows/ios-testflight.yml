@@ -1,0 +1,100 @@
+name: Publish TestFlight
+on:
+  push:
+    tags: ['ios-v*']
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Master commit or iOS release tag to build'
+        type: string
+        default: master
+        required: true
+      publish:
+        description: 'Upload to internal TestFlight (off = signed export only)'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: ios-testflight-publishing
+  cancel-in-progress: false
+jobs:
+  source:
+    # Secret-bearing workflows run only from master or an iOS release tag.
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/ios-v')
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.identity.outputs.sha }}
+      version: ${{ steps.identity.outputs.version }}
+      build: ${{ steps.identity.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: .bun-version
+      - name: Validate released source and build identity
+        id: identity
+        env:
+          RELEASE_REF: ${{ inputs.ref || github.ref_name }}
+        run: |
+          git merge-base --is-ancestor HEAD origin/master || { echo 'Only commits already on master can be published'; exit 1; }
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          bun ios/scripts/release-metadata.ts >> "$GITHUB_OUTPUT"
+  publish:
+    needs: source
+    runs-on: xcode-27
+    timeout-minutes: 60
+    environment: ios-testflight
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+      IOS_VERSION: ${{ needs.source.outputs.version }}
+      IOS_BUILD_NUMBER: ${{ needs.source.outputs.build }}
+      IOS_PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+      IOS_TEAM_ID: ${{ vars.IOS_TEAM_ID }}
+      IOS_APP_ID: ${{ vars.IOS_APP_ID }}
+      IOS_BETA_GROUP_ID: ${{ vars.IOS_BETA_GROUP_ID }}
+      ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: .bun-version
+      - run: brew install xcodegen
+      - run: bun install --frozen-lockfile
+      - name: Check publishing logic
+        run: bun test ./ios/scripts/release-metadata.test.ts ./ios/scripts/testflight-status.test.ts ./ios/scripts/app-store-connect.test.ts
+      - name: Archive, sign and distribute
+        env:
+          IOS_SIGNING_P12_BASE64: ${{ secrets.IOS_SIGNING_P12_BASE64 }}
+          IOS_SIGNING_P12_PASSWORD: ${{ secrets.IOS_SIGNING_P12_PASSWORD }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: ios/scripts/publish-testflight.sh
+      - name: Record outcome
+        run: |
+          echo "iOS $IOS_VERSION ($IOS_BUILD_NUMBER), source $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$IOS_PUBLISH" = true ]; then
+            echo 'Apple processing and internal tester-group assignment confirmed.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Signed export verified. Nothing uploaded.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+        env:
+          SOURCE_SHA: ${{ needs.source.outputs.sha }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: ios-publishing-${{ needs.source.outputs.build }}
+          retention-days: 7
+          path: |
+            ios/.build-testflight/*/archive.log
+            ios/.build-testflight/*/export.log
+            ios/.build-testflight/*/export/*.ipa
+            ios/.build-testflight/*/Agentboard.xcarchive/dSYMs/**
