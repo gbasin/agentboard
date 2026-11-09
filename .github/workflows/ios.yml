@@ -23,6 +23,8 @@ env:
   DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
 jobs:
   build:
+    outputs:
+      simulator-matrix: ${{ steps.matrix.outputs.matrix }}
     runs-on: macos-26
     timeout-minutes: 20
     steps:
@@ -30,10 +32,19 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: .bun-version
+      - name: Plan independent simulator jobs
+        id: matrix
+        env:
+          IOS_EVENT_NAME: ${{ github.event_name }}
+          IOS_REQUESTED_SHARD: ${{ inputs.shard }}
+          IOS_REQUESTED_APPEARANCE: ${{ inputs.appearance }}
+        run: |
+          simulator_matrix=$(bun ios/scripts/e2e-matrix.ts)
+          echo "matrix=$simulator_matrix" >> "$GITHUB_OUTPUT"
       - run: brew install xcodegen
       - run: bun install --frozen-lockfile
       - name: Verify shard coverage
-        run: bun test ./ios/scripts/e2e-selection.test.ts ./ios/scripts/ci-diagnostics.test.ts ./ios/scripts/ci-e2e.test.ts
+        run: bun test ./ios/scripts/e2e-selection.test.ts ./ios/scripts/e2e-matrix.test.ts ./ios/scripts/ci-diagnostics.test.ts ./ios/scripts/ci-e2e.test.ts
       - name: Build test products once
         run: ios/scripts/build-for-testing.sh
       - name: Archive test products with executable permissions and symlinks
@@ -47,14 +58,14 @@ jobs:
     needs: build
     strategy:
       fail-fast: false
-      # Five workers fit GitHub's standard macOS concurrency allowance.
-      # Each worker runs both appearances against fresh, isolated fixtures.
-      matrix:
-        shard: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.shard != 'all' && format('["{0}"]', inputs.shard) || '["terminal","catalog","lifecycle","media","settings"]') }}
+      # Keep five runners busy while each shard/appearance finishes independently.
+      max-parallel: 5
+      matrix: ${{ fromJSON(needs.build.outputs.simulator-matrix) }}
     runs-on: macos-26
     timeout-minutes: 40
     env:
       IOS_E2E_SHARD: ${{ matrix.shard }}
+      IOS_E2E_MODE: ${{ matrix.appearance }}
       IOS_TEST_PRODUCTS_DIR: ${{ github.workspace }}/ios/.build/Build/Products
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -67,33 +78,18 @@ jobs:
         with:
           name: native-ios-test-products
       - name: Restore shared test products
-        id: products
         run: |
           mkdir -p ios/.build/Build
           tar -xzf ios-test-products.tar.gz -C ios/.build/Build
-      - name: Light workflows
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.appearance != 'dark' }}
-        run: IOS_E2E_MODE=light ios/scripts/ci-e2e.sh
-      - name: Preserve light results immediately
+      - name: ${{ matrix.appearance }} workflows
+        run: ios/scripts/ci-e2e.sh
+      - name: Preserve results and diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: native-ios-light-${{ matrix.shard }}
+          name: native-ios-${{ matrix.appearance }}-${{ matrix.shard }}
           path: |
-            ios/evidence/*-light-*.xcresult
-            /tmp/ab-ios-fixture-logs/light-*/*.log
-            /tmp/ab-ios-parity/*.log
-            /tmp/ab-ios-diagnostics/**
-      - name: Dark and maximum-text workflows
-        if: ${{ !cancelled() && steps.products.outcome == 'success' && (github.event_name != 'workflow_dispatch' || inputs.appearance != 'light') }}
-        run: IOS_E2E_MODE=dark ios/scripts/ci-e2e.sh
-      - name: Preserve dark results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: native-ios-dark-${{ matrix.shard }}
-          path: |
-            ios/evidence/*-dark-*.xcresult
-            /tmp/ab-ios-fixture-logs/dark-*/*.log
+            ios/evidence/*-${{ matrix.appearance }}-*.xcresult
+            /tmp/ab-ios-fixture-logs/${{ matrix.appearance }}-*/*.log
             /tmp/ab-ios-parity/*.log
             /tmp/ab-ios-diagnostics/**
