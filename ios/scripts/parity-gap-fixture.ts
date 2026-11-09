@@ -84,8 +84,13 @@ Bun.serve<Record<string, never>>({
     if (url.pathname === '/api/pr-info') return Response.json([{ url: glassSessions[0].prs[0].url, state: 'MERGED', isDraft: false }])
     if (url.pathname === '/api/settings/synced') {
       if (request.method === 'PUT') {
+        const startedAt = new Date().toISOString()
         const body = await request.json() as { settings: Settings }
+        const keys = Object.keys(body.settings).sort()
+        console.log(JSON.stringify({ event: 'settings-put-start', timestamp: startedAt, keys }))
         settings = { ...settings, ...body.settings }; broadcast({ type: 'synced-settings', settings })
+        console.log(JSON.stringify({ event: 'settings-put-result', timestamp: new Date().toISOString(), keys, status: 200,
+          manualSessionOrder: settings.manualSessionOrder ?? null, sessionSortMode: settings.sessionSortMode ?? null }))
       }
       return Response.json({ settings })
     }
