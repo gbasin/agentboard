@@ -80,7 +80,7 @@ struct TerminalScreen: View {
                             }
                         } label: { sessionTitle(showDisclosure: true) }
                         .accessibilityLabel("Switch session, \(terminal.liveSession?.name ?? session.name)")
-                        .accessibilityValue((terminal.liveSession ?? session).status.rawValue)
+                        .accessibilityValue("\(currentSession.project), \(currentSession.status.rawValue)")
                     } else { sessionTitle(showDisclosure: false) }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -214,7 +214,16 @@ struct TerminalScreen: View {
                 Text(terminal.liveSession?.name ?? session.name).font(.headline).lineLimit(1)
                 if showDisclosure { Image(systemName: "chevron.down").font(.caption2.weight(.semibold)) }
             }
-            SessionStatus(status: terminal.liveSession?.status ?? session.status)
+            HStack(spacing: 4) {
+                if !currentSession.project.isEmpty {
+                    Text((currentSession.project as NSString).lastPathComponent)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                        .accessibilityLabel(currentSession.project)
+                    Text("·").font(.caption).foregroundStyle(.secondary).accessibilityHidden(true)
+                }
+                SessionStatus(status: currentSession.status).fixedSize()
+            }
         }.frame(minHeight: 44).foregroundStyle(.primary)
             .accessibilityElement(children: .combine)
     }

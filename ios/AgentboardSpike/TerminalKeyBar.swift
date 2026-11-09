@@ -74,7 +74,8 @@ struct TerminalKeyBar: View {
                 VStack(alignment: .leading) {
                     NativePasteControl(controller: terminal.clipboard) { showPaste = false }
                         .frame(width: 180, height: 48).padding(.horizontal).padding(.top)
-                    TextEditor(text: $pastedText).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextEditor(text: $pastedText)
+                        .textInputAutocapitalization(.sentences).autocorrectionDisabled(false)
                         .padding().accessibilityLabel("Text to paste")
                 }
                     .navigationTitle("Paste into terminal").navigationBarTitleDisplayMode(.inline)

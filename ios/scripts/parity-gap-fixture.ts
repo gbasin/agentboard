@@ -16,6 +16,7 @@ let generation = crypto.randomUUID()
 let interruptedIds: string[] = []
 let settings: Settings = {}
 let input: string[] = []
+let pastes: string[] = []
 const time = '2026-11-07T12:00:00.000Z'
 const sessions = [
   { id: 'alpha-local', name: 'Alpha local', projectPath: '/work/alpha', host: 'laptop', remote: false, source: 'managed', status: 'working' },
@@ -55,7 +56,7 @@ function snapshot(socket: Socket) {
   send(socket, { type: 'sessions', sessions: scenario === 'recovery' ? [] : scenario === 'reorder' ? sessions.slice(0, 2) : scenario === 'glass' ? glassSessions : sessions })
 }
 function reset(next: string) {
-  input = []; scenario = next; allowControl = false; generation = crypto.randomUUID()
+  input = []; pastes = []; scenario = next; allowControl = false; generation = crypto.randomUUID()
   interruptedIds = (next === 'recovery' || next === 'glass') ? [generation + '-first'] : []
   settings = { projectFilters: next === 'hidden' ? ['/work/alpha'] : [], hostFilters: [], sessionSortMode: 'created', sessionSortDirection: 'desc', showProjectName: true, theme: 'system' }
   for (const socket of clients) snapshot(socket)
@@ -88,7 +89,7 @@ Bun.serve<Record<string, never>>({
       broadcast({ type: 'terminal-output', sessionId: glassSessions[0].id, data: 'Background output\r\n' })
       return Response.json({ ok: true })
     }
-    if (url.pathname === '/__fixture/input') return Response.json({ input })
+    if (url.pathname === '/__fixture/input') return Response.json({ input, pastes })
     if (url.pathname === '/api/pr-info') return Response.json([{ url: glassSessions[0].prs[0].url, state: 'MERGED', isDraft: false }])
     if (url.pathname === '/api/settings/synced') {
       if (request.method === 'PUT') {
@@ -116,6 +117,7 @@ Bun.serve<Record<string, never>>({
     message(socket, raw) {
       const message = JSON.parse(String(raw)) as { type: string; seq?: number; sessionId?: string; data?: string }
       if (message.type === 'terminal-input' && message.data) input.push(message.data)
+      if (message.type === 'terminal-paste' && message.data) pastes.push(message.data)
       if (message.type === 'ping') send(socket, { type: 'pong', seq: message.seq })
       if (message.type === 'terminal-attach') {
         send(socket, { type: 'terminal-ready', sessionId: message.sessionId })

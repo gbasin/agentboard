@@ -24,6 +24,63 @@ final class CompactTerminalUITests: XCTestCase {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = "compact-" + name; attachment.lifetime = .keepAlways; add(attachment)
     }
+    private func openAlpha() -> XCUIApplication {
+        _ = request("reset", reset: true)
+        let app = XCUIApplication(); app.launchArguments = ["-serverURL", base]; app.launch()
+        XCTAssertTrue(app.buttons["session-alpha-local"].waitForExistence(timeout: 15))
+        app.buttons["session-alpha-local"].tap()
+        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        return app
+    }
+    func testProjectContextFollowsSessionSwitch() {
+        let app = openAlpha()
+        let alpha = app.buttons["Switch session, Alpha local"]
+        XCTAssertTrue(alpha.waitForExistence(timeout: 5))
+        capture("project-alpha")
+        XCTAssertEqual(alpha.value as? String, "/work/alpha, Working")
+        alpha.tap()
+        app.buttons["Beta approval"].tap()
+        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        let beta = app.buttons["Switch session, Beta approval"]
+        XCTAssertTrue(beta.waitForExistence(timeout: 5))
+        XCTAssertEqual(beta.value as? String, "/work/beta, Permission")
+        capture("project-beta")
+    }
+    func testPasteAutocorrectAndExplicitInsert() {
+        let app = openAlpha()
+        app.tapTerminalKey("Paste text")
+        let editor = app.textViews["Text to paste"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Insert"].isEnabled)
+        editor.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        // Tap software keys: typeText does not exercise the keyboard's correction pipeline.
+        for letter in "recieve" {
+            app.keyboards.keys.matching(NSPredicate(format: "label ==[c] %@", String(letter))).firstMatch.tap()
+        }
+        app.keyboards.keys["space"].tap()
+        // Capitalization follows the Simulator's global keyboard preference.
+        let corrected = NSPredicate(format: "value ==[c] %@", "receive ")
+        let correction = XCTNSPredicateExpectation(predicate: corrected, object: editor)
+        let result = XCTWaiter.wait(for: [correction], timeout: 5)
+        capture("paste-autocorrect")
+        XCTAssertEqual(result, .completed, "The system keyboard should correct recieve to receive")
+        let correctedText = editor.value as? String ?? ""
+        XCTAssertEqual(request("input")["input"] as? [String], [], "Editing must not send terminal input")
+        XCTAssertEqual(request("input")["pastes"] as? [String], [], "Editing must not paste the draft")
+        app.buttons["Cancel"].tap()
+        XCTAssertEqual(request("input")["input"] as? [String], [], "Cancel must not insert the draft")
+        XCTAssertEqual(request("input")["pastes"] as? [String], [], "Cancel must not paste the draft")
+        app.tapTerminalKey("Paste text")
+        XCTAssertEqual(editor.value as? String, correctedText, "Cancel preserves the draft")
+        app.buttons["Insert"].tap()
+        XCTAssertTrue(app.buttons["Session actions"].waitForExistence(timeout: 5))
+        XCTAssertEqual(request("input")["pastes"] as? [String], [correctedText], "Insert pastes the corrected draft exactly once")
+        XCTAssertEqual(request("input")["input"] as? [String], [], "Insert must not press Enter")
+        app.tapTerminalKey("Paste text")
+        XCTAssertEqual(editor.value as? String, "", "Successful insertion clears the draft")
+        app.buttons["Cancel"].tap()
+    }
     func testSingleRowSwipeInputAndKeyboard() {
         _ = request("reset", reset: true)
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", base]; app.launch()
