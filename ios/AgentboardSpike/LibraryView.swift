@@ -3,6 +3,7 @@ import SwiftUI
 struct LibraryView: View {
     let server: String
     @ObservedObject var board: BoardConnection
+    @ObservedObject private var conversations: AgentConversationCatalog
     @ObservedObject var preferences: NativePreferences
     let open: (BoardSession) -> Void
     @State private var sessions: [SavedSession] = []
@@ -17,6 +18,7 @@ struct LibraryView: View {
     init(server: String, board: BoardConnection, preferences: NativePreferences, initialState: String = "all", open: @escaping (BoardSession) -> Void) {
         self.server = server
         self.board = board
+        self.conversations = board.conversations
         self.preferences = preferences
         self.open = open
         _state = State(initialValue: initialState)
@@ -34,10 +36,10 @@ struct LibraryView: View {
                 }
                 if query.isEmpty { Section("Agent conversations") {
                     NavigationLink("Hibernating conversations (\(filteredSleeping.count))") {
-                        AgentHistoryView(server: server, sessions: board.sleeping, sleeping: true, preferences: preferences, open: finish)
+                        AgentHistoryView(server: server, sessions: conversations.snapshot.sleeping, sleeping: true, preferences: preferences, open: finish)
                     }
                     NavigationLink("Conversation history (\(filteredHistory.count))") {
-                        AgentHistoryView(server: server, sessions: board.history, sleeping: false, preferences: preferences, open: finish)
+                        AgentHistoryView(server: server, sessions: conversations.snapshot.history, sleeping: false, preferences: preferences, open: finish)
                     }
                 }
                 }
@@ -83,8 +85,8 @@ struct LibraryView: View {
             .sheet(item: $detail) { saved in SavedDetailView(server: server, saved: saved, open: finish) }
         }
     }
-    private var filteredSleeping: [AgentLogSession] { selection.conversations(board.sleeping) }
-    private var filteredHistory: [AgentLogSession] { selection.conversations(board.history) }
+    private var filteredSleeping: [AgentLogSession] { selection.conversations(conversations.snapshot.sleeping) }
+    private var filteredHistory: [AgentLogSession] { selection.conversations(conversations.snapshot.history) }
     private var selection: CatalogSelection { CatalogSelection(projects: preferences.strings("projectFilters"), hosts: preferences.strings("hostFilters")) }
     private func finish(_ session: BoardSession) { dismiss(); open(session) }
     private func load(more: Bool = false) async {

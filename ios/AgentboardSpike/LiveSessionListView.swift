@@ -229,7 +229,7 @@ struct LiveSessionListView: View {
                 board.refresh(); search = ""; path = [session]
             } }
             .sheet(isPresented: $showSettings) { NativeSettingsView(preferences: preferences) }
-            .sheet(isPresented: $showFilters) { CatalogFilters(preferences: preferences, sessions: board.sessions, conversations: board.sleeping + board.history, hosts: board.hosts, status: $statusFilter) }
+            .sheet(isPresented: $showFilters) { CatalogFilters(preferences: preferences, sessions: board.sessions, conversations: board.conversations, hosts: board.hosts, status: $statusFilter) }
             .sheet(isPresented: $showConnection) {
                 ServerConnectionSheet(address: serverURL) { value in
                     path.removeAll()

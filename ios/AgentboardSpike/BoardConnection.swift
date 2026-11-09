@@ -1,5 +1,20 @@
 import SwiftUI
 
+/// Dormant conversation updates notify only views that display that catalog.
+@MainActor
+final class AgentConversationCatalog: ObservableObject {
+    struct Snapshot: Equatable {
+        let sleeping: [AgentLogSession]
+        let history: [AgentLogSession]
+    }
+    @Published private(set) var snapshot = Snapshot(sleeping: [], history: [])
+
+    func replace(sleeping: [AgentLogSession], history: [AgentLogSession]) {
+        let next = Snapshot(sleeping: sleeping, history: history)
+        if snapshot != next { snapshot = next }
+    }
+}
+
 /// One socket owns the catalog and the visible terminal. Every async callback is
 /// scoped to a connection generation; disconnected keystrokes are never queued.
 @MainActor
@@ -46,8 +61,7 @@ final class BoardConnection: ObservableObject {
     }
     let preferences: NativePreferences
     @Published private(set) var hosts: [HostState] = []
-    @Published private(set) var sleeping: [AgentLogSession] = []
-    @Published private(set) var history: [AgentLogSession] = []
+    let conversations = AgentConversationCatalog()
     @Published private(set) var libraryVersion = 0
     @Published var clipboardOffer: String?
     @Published private(set) var inCopyMode = false
@@ -76,7 +90,8 @@ final class BoardConnection: ObservableObject {
     func configure(_ value: String) {
         stopSocket()
         preferences.serverURL = value; preferences.shared = [:]; preferences.error = nil
-        hosts = []; sleeping = []; history = []; clipboardOffer = nil; inCopyMode = false; remoteAllowControl = false
+        conversations.replace(sleeping: [], history: [])
+        hosts = []; clipboardOffer = nil; inCopyMode = false; remoteAllowControl = false
         sessions = []
         target = nil
         address = nil
@@ -199,7 +214,7 @@ final class BoardConnection: ObservableObject {
         case "terminal-snapshot": if let reply = event.snapshot { snapshotRequest.receive(reply) }
         case "synced-settings": if let settings = event.settings { preferences.shared = settings }
         case "host-status": hosts = event.hosts ?? []
-        case "agent-sessions": sleeping = event.hibernating ?? []; history = event.history ?? []
+        case "agent-sessions": conversations.replace(sleeping: event.hibernating ?? [], history: event.history ?? [])
         case "library-changed": libraryVersion += 1
         case "clipboard-offer": if event.sessionId == target?.sessionID { clipboardOffer = event.clipboard }
         case "tmux-copy-mode-status": if event.sessionId == target?.sessionID { inCopyMode = event.inCopyMode ?? false }
