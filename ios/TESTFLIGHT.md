@@ -58,7 +58,9 @@ Do not commit archives, provisioning profiles, certificates, or private keys.
   implementation. The build is ready to test.
 - Internal group **Personal** has automatic distribution enabled, build 2
   assigned, and the account owner as its only tester. App Store Connect confirms
-  **Invited** for the personal account. Installation on the iPhone is pending.
+  **Invited** for the personal account. The user confirmed installation and a
+  successful connection in the app on 2026-11-09. Broader physical-device
+  acceptance remains open.
 - Computer use recovered after restarting the Codex session.
 - Lint, typechecking, and all pre-commit checks passed for `47cb217` with
   `LOG_LEVEL` removed from the command environment. Earlier attempts encountered
