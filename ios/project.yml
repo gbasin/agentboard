@@ -36,6 +36,8 @@ targets:
     info:
       path: AgentboardSpike/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         NSAppTransportSecurity:
@@ -48,6 +50,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.agentboard.ios-spike
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Agentboard
