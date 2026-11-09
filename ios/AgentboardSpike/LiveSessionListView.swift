@@ -193,8 +193,7 @@ struct LiveSessionListView: View {
                             .labelStyle(.titleAndIcon).font(.subheadline)
                     }
                     .accessibilityIdentifier("connection-status")
-                    .accessibilityLabel("Connection")
-                    .accessibilityValue(board.state.label)
+                    .accessibilityLabel("Connection, \(board.state.label)")
                     .accessibilityHint("Edit server address")
                 }
             }

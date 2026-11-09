@@ -14,7 +14,7 @@ extension XCUIApplication {
             attachConnectionState("connection-toolbar-missing")
             return false
         }
-        let connected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'Connected'"), object: status)
+        let connected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Connection, Connected"), object: status)
         let ready = XCTWaiter.wait(for: [connected], timeout: timeout) == .completed
         if !ready { attachConnectionState("connection-state-timeout") }
         return ready

@@ -52,7 +52,7 @@ final class SimulatorStateUITests: XCTestCase {
     func testUnavailableServerCanBeChanged() {
         let app = launch(server: "http://127.0.0.1:49999")
         // At maximum text size the explanatory section is below the viewport.
-        let reconnecting = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH %@", "Reconnecting"), object: app.buttons["connection-status"])
+        let reconnecting = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@", "Connection, Reconnecting"), object: app.buttons["connection-status"])
         XCTAssertEqual(XCTWaiter.wait(for: [reconnecting], timeout: 10), .completed)
         assertVisible(app.buttons["connection-status"], in: app)
         assertVisible(app.buttons["Retry"], in: app)
