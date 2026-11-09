@@ -48,13 +48,16 @@ struct NativeSessionRow: View {
             Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 5) {
                     rowLayout {
-                        Text(session.name).font(.headline).foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
+                        HStack(spacing: 8) {
+                            HarnessIcon(agent: session.agent)
+                            Text(session.name).font(.headline).foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
+                        }
                         if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
                         SessionStatus(status: session.status)
                     }
                     rowLayout {
-                        Text(metadata).font(.caption).foregroundStyle(.secondary)
+                        if !metadata.isEmpty { Text(metadata).font(.caption).foregroundStyle(.secondary) }
                         if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
                         TimelineView(.periodic(from: .now, by: 60)) { context in
                             Text(BoardSession.relativeActivity(session.lastActivity, now: context.date))
@@ -121,8 +124,7 @@ struct NativeSessionRow: View {
     }
 
     private var metadata: String {
-        [session.agent.capitalized,
-         preferences.bool("showProjectName", true) ? URL(fileURLWithPath: session.project).lastPathComponent : nil,
+        [preferences.bool("showProjectName", true) ? URL(fileURLWithPath: session.project).lastPathComponent : nil,
          session.remote ? session.host : nil].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 

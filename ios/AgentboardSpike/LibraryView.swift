@@ -47,9 +47,12 @@ struct LibraryView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Button { detail = saved } label: {
                             VStack(alignment: .leading, spacing: 5) {
-                                Label(saved.name, systemImage: saved.pinned ? "pin.fill" : "terminal")
-                                    .font(.headline).foregroundStyle(.primary)
-                                Text("\(saved.state.capitalized) · \(saved.agentType ?? "Shell")")
+                                HStack(spacing: 8) {
+                                    HarnessIcon(agent: saved.agentType)
+                                    Text(saved.name).font(.headline).foregroundStyle(.primary)
+                                    if saved.pinned { Image(systemName: "pin.fill").font(.caption).accessibilityLabel("Pinned") }
+                                }
+                                Text(saved.state.capitalized)
                                     .font(.caption).foregroundStyle(.secondary)
                                 Text(saved.projectPath).font(.caption).foregroundStyle(.secondary)
                                     .lineLimit(2).truncationMode(.middle)
@@ -273,7 +276,14 @@ struct AgentHistoryView: View {
             if let error { ErrorRow(message: error) }
             ForEach(filteredSessions.filter { !archived.contains($0.id) && (search.isEmpty || "\($0.displayName) \($0.projectPath)".localizedCaseInsensitiveContains(search)) }) { session in
                 Section {
-                    NavigationLink(renamed[session.id] ?? session.displayName) { TranscriptView(server: server, sessionID: session.id, title: session.displayName) }
+                    NavigationLink {
+                        TranscriptView(server: server, sessionID: session.id, title: session.displayName)
+                    } label: {
+                        HStack(spacing: 8) {
+                            HarnessIcon(agent: session.agentType)
+                            Text(renamed[session.id] ?? session.displayName)
+                        }
+                    }
                     Text(session.projectPath).font(.caption)
                     if let error = session.lastResumeError { Text(error).font(.caption) }
                     Button("Rename conversation") { newName = renamed[session.id] ?? session.displayName; renaming = session }.disabled(busy != nil)
