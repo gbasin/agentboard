@@ -49,17 +49,15 @@ Do not commit archives, provisioning profiles, certificates, or private keys.
 - Archive location: `/Users/gary/Code/agentboard-testflight/ios/.build-testflight/2/Agentboard.xcarchive`.
 - Strict code-signature verification passed. The archive contains the app icon
   and the expected version and build number.
-- Internal-only upload stopped because the App Store Connect app record did not
-  exist. No build has been uploaded or assigned to testers.
-- The personal team's explicit bundle registration was submitted in Safari.
-  Verify its completion, then create the Agentboard app record using that ID,
-  English (U.S.), and SKU `agentboard-ios`.
-- Computer use lost its native pipe during registration. The service was
-  running, but subsequent `sky.list_apps()` probes reported startup failure.
-  Restart or resume the full Codex session before continuing desktop work.
-- Lint and typechecking passed. The initial repository test run hit the logger
-  default-level assertion with inherited `LOG_LEVEL=debug`; its isolated rerun
-  passed with that variable removed. A full rerun with the variable removed
-  passed 2,115 tests and failed one wall-clock assertion in `syncIoTiming` (a
-  nominal 60 ms operation took 131 ms). This is not a green full-suite result.
-  The timing test file then passed all 14 tests in isolation.
+- App Store Connect record: **Agentboard: AI Terminal**. The plain name was
+  unavailable. The home-screen name remains Agentboard.
+- The personal team's explicit bundle registration is confirmed. The app uses
+  English (U.S.) and SKU `agentboard-ios`.
+- Internal-only upload of build 2 succeeded on 2026-11-09. Apple processing is
+  pending. Do not treat upload success as tester availability.
+- Internal group **Personal** has automatic distribution enabled and the account
+  owner added as its only tester. Verify build processing and group assignment.
+- Computer use recovered after restarting the Codex session.
+- Lint, typechecking, and all pre-commit checks passed for `47cb217` with
+  `LOG_LEVEL` removed from the command environment. Earlier attempts encountered
+  an inherited logger setting and a transient wall-clock timing failure.
