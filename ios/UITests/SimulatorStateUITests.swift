@@ -75,14 +75,15 @@ final class SimulatorStateUITests: XCTestCase {
         app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         for name in ["Enter", "Escape", "Tab", "Arrow keys", "Control", "Paste text", "Hide keyboard"] {
-            assertVisible(app.buttons[name], in: app)
-            XCTAssertLessThanOrEqual(app.buttons[name].frame.height, 60)
+            let key = app.revealTerminalKey(name)
+            assertVisible(key, in: app)
+            XCTAssertLessThanOrEqual(key.frame.height, 60)
         }
         capture("sim-terminal-portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
         sleep(1)
         for name in ["Enter", "Escape", "Tab", "Arrow keys", "Control", "Paste text", "Hide keyboard"] {
-            assertVisible(app.buttons[name], in: app)
+            assertVisible(app.revealTerminalKey(name), in: app)
         }
         XCTAssertGreaterThan(app.webViews.firstMatch.frame.height, 30)
         // A failed earlier workflow can leave an unfinished line in this shared
@@ -91,7 +92,7 @@ final class SimulatorStateUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Control"].waitForExistence(timeout: 5))
         let token = String(UUID().uuidString.prefix(8))
         app.typeText("printf 'ROTATE_%s_OK\\n' \(token)")
-        enter.tap()
+        app.tapTerminalKey("Enter")
         let output = app.webViews.firstMatch.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "ROTATE_\(token)_OK")).firstMatch
         XCTAssertTrue(output.waitForExistence(timeout: 5))
         capture("sim-terminal-landscape")

@@ -1,8 +1,10 @@
 # iPhone parity implementation
 
+Latest combined release evidence: [RELEASE-VALIDATION.md](RELEASE-VALIDATION.md).
+
 Latest audit and remote regression: [READINESS-AUDIT.md](READINESS-AUDIT.md). Current baseline is `35483b5`, with frozen native selection, terminal autocorrect, attachment preview/removal, and cross-session status overview added. Running product observations: [PARITY-NOTES.md](PARITY-NOTES.md). The results below describe earlier checkpoints.
 
-The native iPhone client targets the PWA behavior at repository reference `74ed561`. This document separates implemented behavior from exercised workflows; it is not a certification of complete functional parity. A subsequent source audit found five omissions in the earlier broad parity claim. The corrections and their evidence are recorded below. Presentation follows PRODUCT.md and DIRECTION.md. Validation uses the m5p iPhone 17 Pro Simulator, iOS 26.4, and an isolated real backend. Physical-device installation remains deferred by the user.
+The native iPhone client targets the PWA behavior at repository reference `74ed561`. This document separates implemented behavior from exercised workflows; it is not a certification of complete functional parity. A subsequent source audit found five omissions in the earlier broad parity claim. The corrections and their evidence are recorded below. Presentation follows PRODUCT.md and DIRECTION.md. Historical validation below used the m5p iPhone 17 Pro Simulator, iOS 26.4, and an isolated real backend. Physical-device signing, TestFlight installation and connection were confirmed for build 2 on 2026-11-09; see [TESTFLIGHT.md](TESTFLIGHT.md).
 
 
 Current local integration adds the media catalog and live activity contract from backend reference `0e204cf`. See [MEDIA-INTEGRATION.md](MEDIA-INTEGRATION.md) for current validation and remaining limits. Earlier results below are historical; they do not certify this newer backend as a whole.
@@ -79,4 +81,4 @@ Representative views: [terminal](evidence/parity-light/live-terminal-keyboard.pn
 
 Tests use disposable shells, a private tmux socket/data directory and a shell-only provider-resume template. Production sessions are not mutated. Ports 4151 and 4149 provide the real backend and raw-shell fixtures. Port 4192 is a deterministic loopback-only protocol fixture for filters, capability gating and recovery; it does not connect to tmux, SSH or GitHub. Port 4190 proxies the backend while supplying deterministic GitHub metadata; successful live GitHub CI retrieval is not claimed.
 
-Physical iPhone signing/installation, IME, VoiceOver, real-device performance, successful SSH-host attachment, actual share-sheet destinations, live GitHub retrieval and real-agent image attachment acceptance remain unverified. The app uses the user's existing Tailscale connection; it does not configure Tailscale. The live client uses the existing server contracts.
+Beyond the build-2 signing, installation and connection checkpoint, physical iPhone acceptance remains open. IME, VoiceOver, real-device performance, successful SSH-host attachment, actual share-sheet destinations, live GitHub retrieval and real-agent image attachment acceptance remain unverified. The app uses the user's existing Tailscale connection; it does not configure Tailscale. The live client uses the existing server contracts.

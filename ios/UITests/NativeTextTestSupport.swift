@@ -12,7 +12,7 @@ extension XCUIElement {
             tap()
             let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
                 let selectAll = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Select All")).firstMatch
-                let forward = app.buttons["Forward"].firstMatch
+                let forward = app.buttons.matching(NSPredicate(format: "label IN %@", ["Forward", "Next Page"])).firstMatch
                 return (selectAll.exists && selectAll.isHittable)
                     || (forward.exists && forward.isEnabled && forward.isHittable)
             }, object: nil)
@@ -21,11 +21,11 @@ extension XCUIElement {
             }
             var selection: XCUIElement?
             // Accessibility text sizes paginate the edit menu. Require each
-            // Forward action to reveal a different page before continuing.
+            // Forward / Next Page action to reveal a different page before continuing.
             for _ in 0..<8 {
                 let selectAll = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Select All")).firstMatch
                 if selectAll.exists && selectAll.isHittable { selection = selectAll; break }
-                let forward = app.buttons["Forward"].firstMatch
+                let forward = app.buttons.matching(NSPredicate(format: "label IN %@", ["Forward", "Next Page"])).firstMatch
                 guard forward.exists && forward.isEnabled && forward.isHittable else { break }
                 let previous = app.menuItems.allElementsBoundByIndex.map(\.label)
                 forward.tap()

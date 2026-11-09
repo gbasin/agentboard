@@ -93,3 +93,9 @@ This is a running record, not an approved feature plan. Implementation follows t
 - Improvement implemented: Select, Delete word, Number keys, separate Shift, Copy, Interrupt, Newline and Attach are reachable from the strip. Existing menu destinations remain. Status/media pills use smaller native glass surfaces while retaining at least 44-point targets.
 - Tradeoff to watch: keyboard dismissal and later shortcuts require horizontal scrolling on portrait iPhone. Keep order stable; do not add a permanent second row to solve discoverability.
 - Follow-up: physical touch/VoiceOver acceptance remains needed. This Simulator pass does not certify IME or every iPhone size. Xcode also emitted a UIKitToolbar hosting warning while opening existing sheet flows; those workflows passed, but retain it as a platform follow-up.
+
+## 2026-11-09 release follow-up
+
+- Validation gap: Files folder activation stalls in iOS 27.2 Simulator, including a standalone system-picker reproduction. Preserve the native picker; do not redesign it to satisfy automation. Confirm select → review → insert on the phone. See [RELEASE-VALIDATION.md](RELEASE-VALIDATION.md).
+- Improvement: keep test queries aligned with native semantics. External destinations are links, quick keys scroll horizontally, and maximum-text edit menus expose Next Page. These corrections preserve product behavior and assertions.
+- Infrastructure gap: standard hosted CI passes, but native fixture warm-up still fails under extreme hosted runner load. Startup probing alone does not establish sustained runner health. Retain diagnostics and resolve runner capacity/startup separately from product parity.
