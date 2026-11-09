@@ -43,8 +43,8 @@ selection through insertion as an explicit phone acceptance check.
 
 ## Repository and hosted checks
 
-Lint and typecheck pass. The required local repository test command still
-fails at the previously reproduced `pipePaneRelay.integration.test.ts` burst
+Lint and typecheck pass. The earlier required local repository test command
+failed at the previously reproduced `pipePaneRelay.integration.test.ts` burst
 timeout. Logs: `/tmp/ab-final-menu-checks.log` on the local development machine.
 Standard hosted CI passed in run `42676848699` at `8f21619`.
 
@@ -62,9 +62,15 @@ includes `ITSAppUsesNonExemptEncryption=false`, matching the existing system-onl
 networking declaration. Build 3 was archived but not uploaded; build 4 supersedes
 it. Distribution status belongs in [TESTFLIGHT.md](TESTFLIGHT.md).
 
-The app stack remains unmerged while the Files workflow and hosted validation
-remain unresolved. Physical VoiceOver, IME, real-agent image acceptance and the
-other external-service limits in [PARITY.md](PARITY.md) remain open.
+The app stack is being consolidated for landing through #548 at the user's request. Files phone acceptance and a clean hosted native run remain open follow-ups; landing source does not certify those checks or publish a public App Store release. Physical VoiceOver, IME, real-agent image acceptance and the other external-service limits in [PARITY.md](PARITY.md) remain open.
+
+## Harness-logo follow-up and landing
+
+PR #558 adds the web app's harness marks to native session lists. At `35fafbe`, lint, typecheck and the full repository test command passed (`/tmp/ab-harness-tests.log`), including the previously failing relay integration test. This newer pass supersedes the local test blocker above without changing the historical failed runs. Standard hosted checks also passed on the pre-logo integration revision (`42681916396`, systemd `42681916319`). The full standard CI run for the logo revision (`42706433844`) subsequently passed. The landing documentation check also passed lint, typecheck and the full repository test command (`/tmp/ab-ios-landing-tests.log`).
+
+The logo build succeeded on m5p-2. Both NativeGlassUITests workflows passed in light/large and dark/accessibility-XXXL (four executions). All six marks and the terminal fallback were visually inspected in both appearances. See `evidence/harness-logos/README.md` for captures and result bundles. These focused passes do not replace full-suite native acceptance.
+
+#548 contains the final app, flow, single-row controls, TestFlight and CI changes from #530, #539, #540, #541, #543, #545 and #547. The one TestFlight documentation commit not present by ancestry is already reflected in TESTFLIGHT.md. Close the earlier PRs as superseded only after #548 lands.
 
 The Simulator was restored to light/large and shut down. Fixture cleanup ran.
 The three disposable diagnostic Simulators were deleted. Diagnostic sources,
