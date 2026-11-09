@@ -367,7 +367,6 @@ export interface ExactMessageSearchOptions extends ExactMatchSearchOptions {
 
 const TOOL_NOTIFICATION_MARKERS = [
   '<task-notification>',
-  '<system-reminder>',
   '<send_user_message_question_reply>',
   '<task-id>',
   '<output-file>',
@@ -403,6 +402,8 @@ export function isToolNotificationText(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
   if (isContinuationSummary(trimmed) || hasUserImageMarkup(trimmed)) return true
+  // Claude reminders can carry IDs, including in cached, truncated previews.
+  if (/<system-reminder(?=[\s>]|$)/i.test(trimmed)) return true
   const normalized = trimmed.toLowerCase()
   if (normalized.startsWith('<task-notification>')) {
     return true
@@ -1844,7 +1845,7 @@ function processUserMessageText(text: string): string | null {
   // Strip ANSI first so marker checks see clean text — guards against future
   // log entries that wrap markers in ANSI (e.g., `\x1b[2m<task-notification>...`).
   const cleaned = cleanUserImageAttachments(stripAnsi(text)
-    .replace(/<system-reminder\b[^>]*>[\s\S]*?<\/system-reminder>/gi, ' ')
+    .replace(/<system-reminder\b[^>]*>[\s\S]*?<\/system-reminder\b[^>]*>/gi, ' ')
     .trim())
   if (!cleaned) return null
   // Codex question replies contain genuine user input inside a JSON envelope.

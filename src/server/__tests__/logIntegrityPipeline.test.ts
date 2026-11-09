@@ -59,6 +59,7 @@ test('worker pipeline replaces shrinking/equal-size prompts, clears removed prom
       'This session is being continued from a previous conversation that ran out of context. Summary',
       '<image name=[Image #1] path="/tmp/paste.png">',
       '[Image #2]',
+      '<system-reminder id="4506f64571faf1f5">cached coordinator message',
     ]) {
       db.updateSession('rewrite', { lastUserMessage: stale })
       expect((await ingest()).lastUserMessage).toBe('later')
