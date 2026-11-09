@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.0](https://github.com/gbasin/agentboard/compare/v0.43.4...v0.44.0) (2026-11-09)
+
+
+### Features
+
+* render inline images through tmux terminal passthrough ([#546](https://github.com/gbasin/agentboard/issues/546)) ([5e4ebfa](https://github.com/gbasin/agentboard/commit/5e4ebfab09609e11fc555021fc49b4c12387189f))
+
 ## [0.43.4](https://github.com/gbasin/agentboard/compare/v0.43.3...v0.43.4) (2026-11-08)
 
 
