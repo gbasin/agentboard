@@ -7,10 +7,24 @@ extension XCUIApplication {
         return XCTWaiter.wait(for: [ready], timeout: timeout) == .completed
     }
 
-    /// Connection status now lives in the native toolbar button's accessible value.
+    /// Allow each launch phase its own budget: toolbar registration, then connection.
     func waitForBoardConnection(timeout: TimeInterval) -> Bool {
         let status = buttons["connection-status"]
+        guard status.waitForExistence(timeout: timeout) else {
+            attachConnectionState("connection-toolbar-missing")
+            return false
+        }
         let connected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'Connected'"), object: status)
-        return XCTWaiter.wait(for: [connected], timeout: timeout) == .completed
+        let ready = XCTWaiter.wait(for: [connected], timeout: timeout) == .completed
+        if !ready { attachConnectionState("connection-state-timeout") }
+        return ready
+    }
+
+    private func attachConnectionState(_ name: String) {
+        XCTContext.runActivity(named: name) { activity in
+            let hierarchy = XCTAttachment(string: debugDescription)
+            hierarchy.name = name; hierarchy.lifetime = .keepAlways
+            activity.add(hierarchy)
+        }
     }
 }

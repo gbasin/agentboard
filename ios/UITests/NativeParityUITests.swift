@@ -248,7 +248,8 @@ final class NativeParityUITests: XCTestCase {
         app.buttons["Session actions"].tap(); tapMenu("Attach file", in: app)
         app.buttons["Choose file"].tap()
         // Files can reopen the last folder. Do not navigate away from an already visible fixture.
-        XCTAssertTrue(app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].waitForExistence(timeout: 30))
+        let picker = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 30))
         let file = app.cells["parity-upload, txt"]
         if !file.waitForExistence(timeout: 3) {
             let browse = app.buttons["Browse"].firstMatch
@@ -275,6 +276,10 @@ final class NativeParityUITests: XCTestCase {
             XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed)
             if !confirmation.exists { open.tap() }
         }
+        // Accepting Open starts system-provider work before our importer callback.
+        // Keep picker completion separate from the app's attachment-review budget.
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: picker)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 30), .completed, "Files picker did not dismiss after selection.\n" + app.debugDescription)
         XCTAssertTrue(app.buttons["confirm-attachments"].waitForExistence(timeout: 10))
         capture("attachment-review")
         app.buttons["confirm-attachments"].tap()
