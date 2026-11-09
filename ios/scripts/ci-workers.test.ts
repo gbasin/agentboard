@@ -23,6 +23,14 @@ test('reject invalid workflow filters', () => {
   expect(() => ciWorkers('all', 'unknown')).toThrow('Unknown appearance')
 })
 
+test('build and simulator workers share the pinned Xcode 27 toolchain', async () => {
+  const source = await Bun.file(new URL('../../.github/workflows/ios.yml', import.meta.url)).text()
+  const workflow = Bun.YAML.parse(source) as { env: { DEVELOPER_DIR: string }, jobs: Record<string, { 'runs-on': string }> }
+  expect(workflow.env.DEVELOPER_DIR).toBe('/Applications/Xcode_27.2.app/Contents/Developer')
+  expect(workflow.jobs.build?.['runs-on']).toBe('xcode-27')
+  expect(workflow.jobs.simulator?.['runs-on']).toBe('xcode-27')
+})
+
 test('workflow keeps batch failures and uploads diagnostics before continuing', async () => {
   const source = await Bun.file(new URL('../../.github/workflows/ios.yml', import.meta.url)).text()
   const workflow = Bun.YAML.parse(source) as {

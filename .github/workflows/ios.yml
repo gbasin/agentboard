@@ -20,12 +20,12 @@ concurrency:
   group: native-ios-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 env:
-  DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
+  DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
 jobs:
   build:
     outputs:
       workers: ${{ steps.workers.outputs.matrix }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -60,7 +60,7 @@ jobs:
       max-parallel: 5
       # Keep five warm simulators; balance measured appearance batches across them.
       matrix: ${{ fromJSON(needs.build.outputs.workers) }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 40
     env:
       IOS_TEST_PRODUCTS_DIR: ${{ github.workspace }}/ios/.build/Build/Products

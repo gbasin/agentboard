@@ -15,7 +15,7 @@ if [ -z "${IOS_TEST_PRODUCTS_DIR:-}" ]; then ci_phase build ./ios/scripts/build-
 export IOS_TEST_PRODUCTS_DIR=${IOS_TEST_PRODUCTS_DIR:-ios/.build/Build/Products}
 # Finish cold Simulator boot before fixture services compete for CPU and process slots.
 discover_simulator() {
-  xcrun simctl list devices available -j | bun -e 'const data=await Bun.stdin.json(); const phone=Object.entries(data.devices).filter(([runtime])=>runtime.includes("iOS-26-4")).flatMap(([,devices])=>devices).find(d=>d.name.includes("iPhone") && d.isAvailable); if(!phone) throw Error("No available iPhone Simulator"); console.log(phone.udid)'
+  xcrun simctl list devices available -j | bun ios/scripts/ci-simulator.ts
 }
 udid=${IOS_SIMULATOR_UDID:-}
 ci_phase simulator-cache xcrun simctl runtime dyld_shared_cache update --all

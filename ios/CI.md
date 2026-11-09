@@ -2,6 +2,8 @@
 
 The workflow builds the app and test bundles once. It archives `Build/Products`, including the `.xctestrun` file, in a tar file to preserve executable permissions and symlinks. Five macOS workers download that artifact and run `xcodebuild test-without-building`.
 
+Both jobs use the standard `xcode-27` runner, currently a free public preview. CI pins Xcode 27.2 at `/Applications/Xcode_27.2.app/Contents/Developer` and selects the available `iPhone 17` on the exact iOS 27.2 runtime. The [runner image manifest](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md) lists the installed toolchain and Simulators. The app's minimum deployment target remains iOS 18.
+
 | Shard | Workflows |
 |---|---|
 | terminal | Native unit/integration tests, terminal input, selection, rotation and connection states |
@@ -41,9 +43,11 @@ IOS_TEST_PRODUCTS_DIR="$PWD/ios/.build/Build/Products" \
 
 Use `all` as the final argument to select every workflow. Omit `IOS_TEST_PRODUCTS_DIR` to build once before testing. Use `ci-e2e.sh` only on a disposable fixture host; it refuses to reuse `/tmp/ab-ios-parity` and archives its owned fixture directory after cleanup.
 
+Set `IOS_SIMULATOR_UDID` to select a different local Simulator when using `ci-e2e.sh`. An explicit UDID bypasses CI's pinned discovery. Local build and test scripts use the selected Xcode and the supplied UDID.
+
 ## Results
 
-Each shard uploads `.xcresult` bundles, fixture logs and CI diagnostics immediately after each appearance, including failures. `/tmp/ab-ios-diagnostics/` contains per-run `phases.tsv` timings with UTC start times, elapsed seconds and exit status. `resources.log` records CPU, resident memory and process snapshots at phase boundaries and every 30 seconds during long phases. Simulator boot, app installation, media import, file setup, fixture seeding and readiness waits have separate timings. The cleanup trap stops the sampler and fixture processes while retaining the original failure status. A first-batch failure can be inspected while the second batch continues. A failed shard keeps its results. A new push cancels an obsolete run for the same PR. Keep a failed result as a failure when reporting follow-up verification.
+Each shard uploads `.xcresult` bundles, fixture logs and CI diagnostics immediately after each appearance, including failures. `/tmp/ab-ios-diagnostics/` contains per-run `phases.tsv` timings with UTC start times, elapsed seconds and exit status. `resources.log` records phase markers and samples CPU, resident memory and processes at diagnostics startup, shutdown and every 30 seconds. Phase boundaries do not run resource probes. Simulator cache preparation, boot, app installation, media import, file setup, fixture seeding and readiness waits have separate timings. `environment.txt` records the runner image, selected Xcode path and CoreSimulator version. The cleanup trap stops the sampler and fixture processes while retaining the original failure status. A first-batch failure can be inspected while the second batch continues. A failed shard keeps its results. A new push cancels an obsolete run for the same PR. Keep a failed result as a failure when reporting follow-up verification.
 
 The first shared-build run, [42521922736](https://github.com/gbasin/agentboard/actions/runs/42521922736), took 31m48s and failed four UI tests (76/76 native, 33/34 light UI, 23/26 dark UI passed). Shared compilation took 82 seconds. The terminal shard spent 7m22s between boot completion and test invocation. That run lacked command-level setup timings, so the cause of this gap remains unproven. This failed run is not a green performance baseline.
 
