@@ -3,6 +3,15 @@ import XCTest
 /// Runs every native destination against the private backend seeded by seed-parity.ts.
 final class NativeParityUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
+    override func tearDown() {
+        if (testRun?.failureCount ?? 0) > 0 {
+            let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            screenshot.name = "parity-failure"; screenshot.lifetime = .keepAlways; add(screenshot)
+            let hierarchy = XCTAttachment(string: XCUIApplication().debugDescription)
+            hierarchy.name = "parity-failure-hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+        }
+        super.tearDown()
+    }
     private func app(server: String = "http://127.0.0.1:4151") -> XCUIApplication {
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", server]; app.launch()
         XCTAssertTrue(app.waitForBoardConnection(timeout: 15)); return app
@@ -260,7 +269,16 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(file.waitForExistence(timeout: 10))
         file.images.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
         let open = app.buttons["Open"]
-        if open.waitForExistence(timeout: 3) { open.tap() }
+        if open.waitForExistence(timeout: 3) {
+            // Files exposes Open before the selected provider item is ready.
+            // Wait for its action to enable rather than tapping its disabled state.
+            let confirmation = app.buttons["confirm-attachments"]
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                confirmation.exists || (open.exists && open.isEnabled && open.isHittable)
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed)
+            if !confirmation.exists { open.tap() }
+        }
         XCTAssertTrue(app.buttons["confirm-attachments"].waitForExistence(timeout: 10))
         capture("attachment-review")
         app.buttons["confirm-attachments"].tap()
