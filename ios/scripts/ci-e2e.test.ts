@@ -47,7 +47,7 @@ for (const scenario of [
         ios/scripts/e2e-fixtures.ts) printf '%s\\n' "$FIXTURES" ;;
         ios/scripts/ci-simulator.ts) cat >/dev/null; echo mock-udid ;;
         ios/scripts/seed-parity.ts) touch "$TMUX_TMPDIR/photo.png" "$TMUX_TMPDIR/upload.txt" ;;
-        ios/scripts/seed-live.ts|ios/scripts/warm-parity.ts|ios/scripts/parity-media-ready.ts) ;;
+        ios/scripts/seed-live.ts|ios/scripts/warm-parity.ts|ios/scripts/parity-media-ready.ts|ios/scripts/tmux-ready.ts) ;;
         *) trap 'exit 0' TERM; while :; do /bin/sleep 0.05; done ;;
       esac\n`)
       stub('xcrun', (cacheFailure ? 'if [[ "$*" == *dyld_shared_cache* ]]; then exit 75; fi\n' : '') + 'if [[ "$*" == *get_app_container* ]]; then echo "$APP_DATA"; fi\n')
@@ -82,6 +82,7 @@ for (const scenario of [
       expect(cache).toBeLessThan(calls.indexOf('xcrun simctl boot '))
       if (plan.includes('backend')) {
         expect(cache).toBeLessThan(calls.indexOf('bun src/server/index.ts'))
+        expect(calls.indexOf('phase tmux-ready')).toBeLessThan(calls.indexOf('bun src/server/index.ts'))
         expect(calls.indexOf('phase backend-pre-tests')).toBeGreaterThan(calls.indexOf('xcrun simctl install '))
         expect(calls.indexOf('phase backend-pre-tests')).toBeLessThan(calls.indexOf('\ntests\n'))
       } else {

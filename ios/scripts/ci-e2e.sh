@@ -45,16 +45,10 @@ export TMUX_TMPDIR="$fixture_root" AGENTBOARD_DATA_DIR="$fixture_root/data" TMUX
 export CLAUDE_RESUME_CMD="/bin/zsh -f -c 'exec /bin/zsh -f' {sessionId}"
 unset TMUX
 if needs backend; then
+  ci_phase tmux-ready bun ios/scripts/tmux-ready.ts
   bun src/server/index.ts > "$fixture_root/backend.log" 2>&1 & backend_pid=$!
   pids+=("$backend_pid")
-  wait_backend() {
-    for attempt in {1..60}; do
-      if curl --max-time 10 -fsS http://127.0.0.1:4151/api/library/health >/dev/null; then return; fi
-      sleep 1
-    done
-    curl --max-time 10 -fsS http://127.0.0.1:4151/api/library/health >/dev/null
-  }
-  ci_phase backend-ready wait_backend
+  ci_phase backend-ready wait_backend_ready "$backend_pid" 60
   if needs live; then ci_phase seed-live bun ios/scripts/seed-live.ts; fi
   if needs parity; then ci_phase seed-parity bun ios/scripts/seed-parity.ts; fi
 fi
