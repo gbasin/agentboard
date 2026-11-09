@@ -573,6 +573,10 @@ describe('TerminalProxy', () => {
 
     expect(readyCalls).toBe(1)
     expect(harness.spawnSyncCalls).toContainEqual({
+      args: ['tmux', 'set-option', '-w', '-t', 'external:@2', 'allow-passthrough', 'on'],
+      options: expect.objectContaining({ timeout: 3000 }),
+    })
+    expect(harness.spawnSyncCalls).toContainEqual({
       args: ['tmux', 'switch-client', '-c', '/dev/pts/9', '-t', 'external:@2'],
       options: expect.objectContaining({ timeout: 3000 }),
     })
@@ -640,6 +644,7 @@ describe('TerminalProxy', () => {
     // blocked on spawnSync (no sync:* entries).
     expect(events).toEqual([
       'async:display-message',
+      'async:set-option',
       'async:switch-client',
       'async:list-clients',
       'onReady',
@@ -797,8 +802,10 @@ describe('TerminalProxy', () => {
     // verify, no refresh-client, no onReady. Only @3 was refreshed.
     expect(gated.calls.map((c) => c.split(' ')[0])).toEqual([
       'display-message',
+      'set-option',
       'switch-client',
       'display-message',
+      'set-option',
       'switch-client',
       'list-clients',
       'refresh-client',

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useLayoutEffect, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { ImageAddon } from '@xterm/addon-image'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { ClipboardAddon, type ClipboardSelectionType, type IClipboardProvider } from '@xterm/addon-clipboard'
@@ -692,6 +693,9 @@ export function useTerminal({
 
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
+    // Decode inline iTerm/SIXEL graphics forwarded by tmux passthrough.
+    // Bound decoded image storage per terminal; several panes can be mounted.
+    terminal.loadAddon(new ImageAddon({ storageLimit: 32 }))
     terminal.loadAddon(new ClipboardAddon(undefined, new SafeClipboardProvider({
       onWriteFailed: offerClipboardCopy,
     })))
