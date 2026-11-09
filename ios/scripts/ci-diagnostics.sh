@@ -52,8 +52,9 @@ ci_phase() (
   phase=$1 started=$SECONDS started_utc=
   shift
   started_utc=$(date -u +%FT%TZ)
-  trap 'status=$?; duration=$((SECONDS - started)); printf "%s\t%s\t%s\t%s\n" "$phase" "$started_utc" "$duration" "$status" >> "$CI_DIAGNOSTICS_PATH/phases.tsv"; printf "[ios-ci] %s: %ss (exit %s)\n" "$phase" "$duration" "$status" >&2; ci_snapshot "$phase:end"; exit "$status"' EXIT
+  trap 'status=$?; duration=$((SECONDS - started)); printf "%s\t%s\t%s\t%s\n" "$phase" "$started_utc" "$duration" "$status" >> "$CI_DIAGNOSTICS_PATH/phases.tsv"; printf "[ios-ci] %s: %ss (exit %s)\n" "$phase" "$duration" "$status" >&2; printf "\n=== %s phase=%s:end ===\n" "$(date -u +%FT%TZ)" "$phase" >> "$CI_DIAGNOSTICS_PATH/resources.log"; exit "$status"' EXIT
   printf '[ios-ci] %s: starting %s\n' "$phase" "$started_utc" >&2
-  ci_snapshot "$phase:start"
+  # Keep resource probes off phase boundaries; the sampler records periodic usage.
+  printf '\n=== %s phase=%s:start ===\n' "$started_utc" "$phase" >> "$CI_DIAGNOSTICS_PATH/resources.log"
   "$@"
 )

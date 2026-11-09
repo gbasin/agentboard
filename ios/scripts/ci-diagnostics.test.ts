@@ -42,3 +42,19 @@ test('captured phases retain strict failure handling', () => {
   expect(result.stdout.toString()).toBe('');
   expect(phases).toMatch(/captured\t[^\t]+\t\d+\t23/);
 });
+
+test('phase boundaries write markers without running resource probes', () => {
+  const { result, phases, resources } = run(`ci_snapshot() {
+  case "$1" in *:start|*:end) echo unexpected-phase-probe >&2; return 91 ;; esac
+}
+value=$(ci_phase output printf hello)
+printf '%s' "$value"
+ci_phase failure /bin/bash -c 'exit 37'`);
+  expect(result.exitCode, result.stderr.toString()).toBe(37);
+  expect(result.stdout.toString()).toBe('hello');
+  expect(result.stderr.toString()).not.toContain('unexpected-phase-probe');
+  expect(phases).toMatch(/failure\t[^\t]+\t\d+\t37/);
+  for (const marker of ['output:start', 'output:end', 'failure:start', 'failure:end']) {
+    expect(resources).toContain(`phase=${marker}`);
+  }
+});
