@@ -51,7 +51,7 @@ for (const agent of ['claude', 'codex'] as const) {
       await expect(card).toContainText(prompt)
 
       const previousActivity = (await pollSession()).lastActivity
-      append('<system-reminder>Result of calling the Read tool: internal instructions</system-reminder>')
+      append('<system-reminder id="4506f64571faf1f5">Result of calling the Read tool: internal instructions</system-reminder id="4506f64571faf1f5">')
       append('Tool loaded.', true)
       // Wait for log ingestion before asserting the notices left the preview intact.
       await expect.poll(async () => (await pollSession())?.lastActivity, { timeout: 20_000 }).not.toBe(previousActivity)
@@ -59,9 +59,26 @@ for (const agent of ['claude', 'codex'] as const) {
       await expect(card).toContainText(prompt)
       await expect(card).not.toContainText('system-reminder')
       const mixed = `Keep the real user text for ${agent}`
-      append(`<system-reminder>internal context</system-reminder>${mixed}`, true)
+      append(`<system-reminder id="preview-test">internal context</system-reminder id="preview-test">${mixed}`, true)
       await expect.poll(async () => (await pollSession())?.lastUserMessage, { timeout: 20_000 }).toBe(mixed)
       await expect(card).toContainText(mixed)
+      await expect(card).not.toContainText('system-reminder')
+      const reminderDesktop = testInfo.outputPath(`${agent}-reminder-desktop.png`)
+      await page.screenshot({ path: reminderDesktop, animations: 'disabled' })
+      await testInfo.attach(`${agent} reminder desktop`, { path: reminderDesktop, contentType: 'image/png' })
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.getByLabel('Open session menu').click()
+      const reminderCard = page.locator('.session-drawer.open').getByTestId('session-card').filter({ hasText: name })
+      await expect(reminderCard).toContainText(mixed)
+      await expect(reminderCard).not.toContainText('system-reminder')
+      await expect.poll(async () =>
+        Math.round((await page.locator('.session-drawer.open').boundingBox())!.x)
+      ).toBe(0)
+      const reminderMobile = testInfo.outputPath(`${agent}-reminder-mobile.png`)
+      await page.screenshot({ path: reminderMobile, animations: 'disabled' })
+      await testInfo.attach(`${agent} reminder mobile`, { path: reminderMobile, contentType: 'image/png' })
+      await page.setViewportSize({ width: 1280, height: 720 })
+      await page.reload()
 
       const answer = `Use option B for ${agent}`
       append(`<send_user_message_question_reply>\n[{"answer":"${answer}"}]\n</send_user_message_question_reply>`)
