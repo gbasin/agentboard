@@ -65,6 +65,11 @@ extension XCUIApplication {
 
     func tapVisibleConfirmation(_ identifier: String, file: StaticString = #filePath, line: UInt = #line) {
         let button = self.buttons[identifier]
+        guard button.waitForExistence(timeout: 15) else {
+            attachNavigationFailure("confirmation-" + identifier)
+            XCTFail("Confirmation did not appear: \(identifier)", file: file, line: line)
+            return
+        }
         let deadline = Date().addingTimeInterval(30)
         while Date() < deadline {
             let top = self.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? self.frame.minY
