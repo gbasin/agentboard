@@ -2,7 +2,7 @@ import XCTest
 
 /// Verifies the scrolling strip against an isolated protocol fixture, including drag cancellation.
 final class CompactTerminalUITests: XCTestCase {
-    private let base = "http://127.0.0.1:4192"
+    private let base = ProcessInfo.processInfo.environment["IOS_MENU_FIXTURE_URL"] ?? "http://127.0.0.1:4192"
     override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
     override func tearDown() { XCUIDevice.shared.orientation = .portrait; super.tearDown() }
     private func request(_ path: String, reset: Bool = false) -> [String: Any] {
@@ -104,19 +104,32 @@ final class CompactTerminalUITests: XCTestCase {
                 abs($0.minX - menuFrame.minX) < 1 && abs($0.width - menuFrame.width) < 1 && $0.height > 0
             }.min { $0.height < $1.height }
         let frame = (enclosing ?? menuFrame).intersection(app.frame).insetBy(dx: 8, dy: 8)
+        // At accessibility sizes the first swipe reaches management rows;
+        // standard text reaches terminal rows. Both exercise the same popup.
+        let candidates = ["Copy selection", "Copy server selection", "Exit copy mode", "Interrupt", "Delete word", "Insert newline", "Larger text", "Hibernate session", "Media and links", "Transcript"]
+        var initialPositions: [String: CGFloat] = [:]
+        for title in candidates where menu.buttons[title].exists {
+            initialPositions[title] = menu.buttons[title].frame.minY
+        }
         origin.withOffset(.init(dx: frame.midX, dy: frame.minY + frame.height * 0.75))
             .press(forDuration: 0, thenDragTo: origin.withOffset(.init(dx: frame.midX, dy: frame.minY + frame.height * 0.25)),
                    withVelocity: XCUIGestureVelocity(rawValue: 1000), thenHoldForDuration: 0.5)
         capture("menu-scrolled")
-        let candidates = ["Copy selection", "Copy server selection", "Exit copy mode", "Interrupt", "Delete word", "Insert newline", "Larger text"]
-        guard let reference = candidates.map({ menu.buttons[$0] }).first(where: { $0.exists && $0.isHittable }) else {
+        guard let reference = candidates.compactMap({ title -> XCUIElement? in
+            let item = menu.buttons[title]
+            guard item.exists && item.isHittable else { return nil }
+            if let initial = initialPositions[title], item.frame.minY >= initial - 10 { return nil }
+            return item
+        }).first else {
             add(XCTAttachment(string: app.debugDescription))
-            XCTFail("No terminal action visible after scrolling"); return
+            XCTFail("No menu action moved into view after scrolling"); return
         }
         let before = reference.frame
         capture("menu-before-output")
         for _ in 0..<4 { _ = request("menu-update", reset: true) }
-        // A fresh accessibility read waits for the received UI updates to settle.
+        // The fixture response only acknowledges transmission. Wait for a view
+        // driven by the received metadata before measuring the still-open menu.
+        XCTAssertTrue(app.buttons["Switch session, Alpha updated"].waitForExistence(timeout: 5))
         XCTAssertTrue(reference.exists)
         XCTAssertEqual(reference.frame.minY, before.minY, accuracy: 2, "Background output must not move an open menu")
         capture("menu-after-output")
