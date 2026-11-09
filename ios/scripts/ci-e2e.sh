@@ -72,7 +72,7 @@ if needs media-activity-fixture; then
   }
   ci_phase media-ready wait_media
 fi
-# Each CI job gets fresh app preferences and Documents.
+# Each batch gets fresh app preferences and Documents, even on a warm Simulator.
 ci_phase app-uninstall xcrun simctl uninstall "$udid" dev.agentboard.ios-spike 2>/dev/null || true
 ci_phase app-install xcrun simctl install "$udid" "$IOS_TEST_PRODUCTS_DIR/Debug-iphonesimulator/AgentboardSpike.app"
 if needs photos; then ci_phase photos-import xcrun simctl addmedia "$udid" "$fixture_root/photo.png"; fi
