@@ -68,7 +68,7 @@ final class ExternalAcceptanceUITests: XCTestCase {
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-image-acceptance")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
         XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
-        app.buttons["Paste text"].tap(); app.buttons["Paste from clipboard"].tap()
+        app.tapTerminalKey("Paste text"); app.buttons["Paste from clipboard"].tap()
         let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Paste"]
         if allow.waitForExistence(timeout: 2) { allow.tap() }
         XCTAssertTrue(app.buttons["confirm-attachments"].waitForExistence(timeout: 15)); app.buttons["confirm-attachments"].tap()

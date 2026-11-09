@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// A single, non-scrolling row. Tapping the terminal opens the keyboard;
+/// A single horizontally scrolling row in the PWA control order. Tapping the terminal opens the keyboard;
 /// only dismissal needs a button, and only while input has focus.
 struct TerminalKeyBar: View {
     @ObservedObject var terminal: TerminalBridge
     var showPasteStatus = true
+    var selectText: (() -> Void)? = nil
+    var numberKeys: (() -> Void)? = nil
+    var attachFile: (() -> Void)? = nil
     @State private var showArrows = false
     @State private var showPaste = false
     @State private var pastedText = ""
@@ -13,10 +16,10 @@ struct TerminalKeyBar: View {
     var body: some View {
         VStack(spacing: 0) {
         if showPasteStatus { NativePasteStatus(controller: terminal.clipboard, onReview: { terminal.hideKeyboard() }) }
-        HStack(spacing: 4) {
+        ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: 0) {
             key("Enter", symbol: "return", tint: true) { terminal.send("\r") }
             Button("esc") { terminal.send("\u{1b}") }.terminalKey().accessibilityLabel("Escape")
-            Button("tab") { terminal.send("\t") }.terminalKey().accessibilityLabel("Tab")
             key("Arrow keys and Shift", symbol: terminal.shift ? "shift.fill" : "arrow.up.and.down.and.arrow.left.and.right", tint: terminal.shift) { showArrows.toggle() }
                 .accessibilityIdentifier("Arrow keys")
                 .popover(isPresented: $showArrows) {
@@ -34,20 +37,34 @@ struct TerminalKeyBar: View {
                         }
                     }.padding().presentationCompactAdaptation(.popover)
                 }
-            key(terminal.control ? "Control on" : "Control", symbol: "control", tint: terminal.control) {
-                terminal.toggleControl()
-            }
             key("Paste text", symbol: "document.on.clipboard") {
                 restoreInput = terminal.inputFocused
                 terminal.hideKeyboard()
                 showPaste = true
             }
+            key("Select text", symbol: "character.cursor.ibeam") { selectText?() }
+                .disabled(selectText == nil)
+            key("Delete word", symbol: "delete.left") { terminal.send("\u{17}") }
+            Button("123") { numberKeys?() }.terminalKey().accessibilityLabel("Number keys")
+                .disabled(numberKeys == nil)
+            Button("tab") { terminal.send("\t") }.terminalKey().accessibilityLabel("Tab")
+            Button("shift") { terminal.toggleShift() }.terminalKey(active: terminal.shift)
+                .accessibilityLabel("Shift modifier").accessibilityValue(terminal.shift ? "On, next key" : "Off")
+            Button("ctrl") { terminal.toggleControl() }.terminalKey(active: terminal.control)
+                .accessibilityLabel(terminal.control ? "Control on" : "Control")
+            key("Copy selection", symbol: "doc.on.doc") { terminal.call("copySelection") }
+            Button("Ctrl C") { terminal.send("\u{3}") }.terminalKey().accessibilityLabel("Interrupt")
+            key("Insert newline", symbol: "arrow.turn.down.left") { terminal.send("\n") }
+            key("Attach file", symbol: "paperclip") { attachFile?() }.disabled(attachFile == nil)
             if terminal.inputFocused {
                 key("Hide keyboard", symbol: "keyboard.chevron.compact.down") { terminal.hideKeyboard() }
             }
         }
-        .padding(.horizontal, 8).padding(.vertical, 6)
-        .nativeGlassSurface(cornerRadius: 18)
+        .padding(.horizontal, 2)
+        }
+        .frame(height: 44)
+        .accessibilityIdentifier("terminal-quick-keys")
+        .nativeGlassSurface(cornerRadius: 16)
         .padding(.horizontal, 4).padding(.bottom, 4)
         }
         .sheet(isPresented: $showPaste, onDismiss: {
@@ -88,10 +105,13 @@ private extension View {
         // Match the keyboard's compact accessory geometry at accessibility
         // sizes; the surrounding catalog and sheets still scale without a cap.
         self.dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-            .font(.callout.weight(.medium)).lineLimit(1)
-            .frame(minWidth: 44, maxWidth: .infinity, minHeight: 44)
+            .font(.caption.weight(.medium)).lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(minWidth: 38, minHeight: 32, maxHeight: 32)
             .foregroundStyle(active ? Color.accentColor : Color.primary)
             .background(active ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
+            .frame(minWidth: 44, minHeight: 44, maxHeight: 44)
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
     }
 }

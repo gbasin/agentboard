@@ -87,7 +87,7 @@ final class SimulatorStateUITests: XCTestCase {
         XCTAssertGreaterThan(app.webViews.firstMatch.frame.height, 30)
         // A failed earlier workflow can leave an unfinished line in this shared
         // disposable shell. Cancel it through the native Control key before typing.
-        app.buttons["Control"].tap(); app.typeText("c")
+        app.tapTerminalKey("Control"); app.typeText("c")
         XCTAssertTrue(app.buttons["Control"].waitForExistence(timeout: 5))
         let token = String(UUID().uuidString.prefix(8))
         app.typeText("printf 'ROTATE_%s_OK\\n' \(token)")
@@ -95,7 +95,7 @@ final class SimulatorStateUITests: XCTestCase {
         let output = app.webViews.firstMatch.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "ROTATE_\(token)_OK")).firstMatch
         XCTAssertTrue(output.waitForExistence(timeout: 5))
         capture("sim-terminal-landscape")
-        app.buttons["Hide keyboard"].tap()
+        app.tapTerminalKey("Hide keyboard")
         sleep(3)
         assertVisible(app.buttons["Session actions"], in: app)
         assertVisible(app.navigationBars.buttons.element(boundBy: 0), in: app)

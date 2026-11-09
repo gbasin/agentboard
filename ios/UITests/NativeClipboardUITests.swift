@@ -42,8 +42,8 @@ final class NativeClipboardUITests: XCTestCase {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["Enter"])
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, app.debugDescription)
         app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap()
-        app.buttons["Control"].tap(); app.typeText("u")
-        app.buttons["Paste text"].tap()
+        app.tapTerminalKey("Control"); app.typeText("u")
+        app.tapTerminalKey("Paste text")
         app.buttons["Paste from clipboard"].tap()
         let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Paste"]
         if allow.waitForExistence(timeout: 2) { allow.tap() }
@@ -75,6 +75,6 @@ final class NativeClipboardUITests: XCTestCase {
         let output = app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().filter { !$0.isWhitespace }
         XCTAssertFalse(output.contains("commandnotfound:" + marker))
         app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap()
-        app.buttons["Control"].tap(); app.typeText("u")
+        app.tapTerminalKey("Control"); app.typeText("u")
     }
 }

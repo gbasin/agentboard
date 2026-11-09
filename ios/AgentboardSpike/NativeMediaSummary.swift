@@ -29,7 +29,7 @@ struct NativeMediaSummaryButton: View {
     var body: some View {
         Button(action: action) {
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
                     Text(summary.caption)
                     Label("\(summary.images)", systemImage: "photo")
                     Label("\(summary.links)", systemImage: "link")
@@ -38,10 +38,13 @@ struct NativeMediaSummaryButton: View {
                 Label("\(summary.total) \(summary.catalog == nil ? "available" : "items")", systemImage: "photo.on.rectangle")
             }
             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            .padding(.horizontal, 14).frame(minHeight: 44)
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .nativeGlassSurface(cornerRadius: 18, interactive: true)
+            .frame(minHeight: 44).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .nativeGlassSurface(cornerRadius: 22, interactive: true)
+        .accessibilityShowsLargeContentViewer { Label(summary.accessibilityDescription, systemImage: "photo.on.rectangle") }
         .accessibilityIdentifier("available-media")
         .accessibilityLabel(summary.accessibilityDescription)
         .accessibilityHint("Opens media and links available from the server")

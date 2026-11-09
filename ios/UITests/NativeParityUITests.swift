@@ -151,7 +151,7 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].waitForExistence(timeout: 30))
         XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
         app.buttons["Cancel"].tap(); app.buttons["Cancel"].tap()
-        app.buttons["Paste text"].tap()
+        app.tapTerminalKey("Paste text")
         let editor = app.textViews["Text to paste"]; XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap(); editor.typeText("printf 'NUM_%s_OK\\n' ")
         app.buttons["Insert"].tap()
@@ -221,7 +221,7 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Attach to session"].waitForNonExistence(timeout: 15)); capture("inserted-photo")
         XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("/tmp/paste-") }, object: nil)], timeout: 10) == .completed)
         // Clear the unexecuted path; insertion must not execute a command.
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap(); app.buttons["Control"].tap(); app.typeText("u")
+        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap(); app.tapTerminalKey("Control"); app.typeText("u")
     }
 
     private func chooseFirstPhoto(in app: XCUIApplication) {
@@ -272,7 +272,7 @@ final class NativeParityUITests: XCTestCase {
         app.buttons["confirm-attachments"].tap()
         XCTAssertTrue(app.navigationBars["Attach to session"].waitForNonExistence(timeout: 15)); capture("inserted-file")
         XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("parity-upload.txt") }, object: nil)], timeout: 10) == .completed)
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap(); app.buttons["Control"].tap(); app.typeText("u")
+        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap(); app.tapTerminalKey("Control"); app.typeText("u")
     }
 
     func testCatalogSearchAndPreferencePersistence() {

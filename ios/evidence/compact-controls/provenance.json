@@ -1,0 +1,112 @@
+[
+  {
+    "path": "light/compact-media.png",
+    "export": "/tmp/ab-compact-light-final-shots/6A6B78BF-8DE7-429C-BB7C-07FCE85A3B64.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "6A6B78BF-8DE7-429C-BB7C-07FCE85A3B64.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "compact-media_0_0748332E-BE6F-4321-B593-BAC66C9ADC03.png",
+    "timestamp": 1794184088.324
+  },
+  {
+    "path": "light/compact-landscape-keyboard.png",
+    "export": "/tmp/ab-compact-light-final-shots/B01738B7-D247-4AEA-B211-45113722850C.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "B01738B7-D247-4AEA-B211-45113722850C.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "compact-landscape-keyboard_0_DFD96123-350A-4EEF-9449-9D90343A1CA6.png",
+    "timestamp": 1794184079.938
+  },
+  {
+    "path": "light/compact-reading.png",
+    "export": "/tmp/ab-compact-light-final-shots/3CE94688-268E-444A-A16D-28324AEEB9DB.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "3CE94688-268E-444A-A16D-28324AEEB9DB.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "compact-reading_0_31DC84DA-9921-48BC-AD77-CE44BF07651B.png",
+    "timestamp": 1794184076.297
+  },
+  {
+    "path": "light/compact-scrolled-keyboard.png",
+    "export": "/tmp/ab-compact-light-final-shots/95F6AAC6-9509-4557-826F-990CD2D96610.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "95F6AAC6-9509-4557-826F-990CD2D96610.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "compact-scrolled-keyboard_0_627ECF91-C4FB-4D0D-9778-DC7123794A89.png",
+    "timestamp": 1794184072.043
+  },
+  {
+    "path": "light/compact-portrait-keyboard.png",
+    "export": "/tmp/ab-compact-light-final-shots/6FDBBDC3-DACF-4DE6-9B6C-CB00343936D1.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "6FDBBDC3-DACF-4DE6-9B6C-CB00343936D1.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "compact-portrait-keyboard_0_179C85E1-99A1-4A83-8471-095536BA84EF.png",
+    "timestamp": 1794184054.805
+  },
+  {
+    "path": "dark-large/compact-media.png",
+    "export": "/tmp/ab-compact-dark-final-shots/EEE485BE-CA45-4E5E-AB69-F481531BF88C.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "EEE485BE-CA45-4E5E-AB69-F481531BF88C.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "compact-media_0_9AE886BE-4DF7-4D22-A638-A6C4D70E24E4.png",
+    "timestamp": 1794183985.292
+  },
+  {
+    "path": "dark-large/compact-landscape-keyboard.png",
+    "export": "/tmp/ab-compact-dark-final-shots/D6BA4707-038A-418E-9B8E-5F2A1AAFE6A0.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "D6BA4707-038A-418E-9B8E-5F2A1AAFE6A0.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "compact-landscape-keyboard_0_625B880F-E8AF-4BE9-8457-A0FB6E09A895.png",
+    "timestamp": 1794183977.103
+  },
+  {
+    "path": "dark-large/compact-reading.png",
+    "export": "/tmp/ab-compact-dark-final-shots/95302E32-BE7A-4086-8128-7554F9EAE58C.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "95302E32-BE7A-4086-8128-7554F9EAE58C.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "compact-reading_0_94294C27-87DC-40A3-9A87-C7A5CFD29837.png",
+    "timestamp": 1794183972.537
+  },
+  {
+    "path": "dark-large/compact-scrolled-keyboard.png",
+    "export": "/tmp/ab-compact-dark-final-shots/7564558A-3641-4B8C-B79C-A379AE544483.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "7564558A-3641-4B8C-B79C-A379AE544483.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "compact-scrolled-keyboard_0_F5C78DD9-7B7E-4875-9437-7C2C66604DA7.png",
+    "timestamp": 1794183969.042
+  },
+  {
+    "path": "dark-large/compact-portrait-keyboard.png",
+    "export": "/tmp/ab-compact-dark-final-shots/883A3AE1-9D72-417A-8345-148FE391F2E8.png",
+    "configurationName": "Test Scheme Action",
+    "deviceId": "6E2778D3-CDAE-464A-9C64-AF2AF6D98703",
+    "deviceName": "Agentboard Flow Refinement",
+    "exportedFileName": "883A3AE1-9D72-417A-8345-148FE391F2E8.png",
+    "isAssociatedWithFailure": false,
+    "suggestedHumanReadableName": "compact-portrait-keyboard_0_E6A3584B-1C07-4A55-879C-66CB0F806B71.png",
+    "timestamp": 1794183952.996
+  }
+]

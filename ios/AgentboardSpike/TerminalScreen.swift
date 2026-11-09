@@ -53,7 +53,12 @@ struct TerminalScreen: View {
                         }.padding(.horizontal, 12).padding(.vertical, 8)
                             .nativeGlassSurface().padding(.horizontal, 4).accessibilityIdentifier("terminal-connection")
                     }
-                    TerminalKeyBar(terminal: terminal, showPasteStatus: !showUpload).disabled(live != nil && !terminal.ready)
+                    TerminalKeyBar(
+                        terminal: terminal, showPasteStatus: !showUpload,
+                        selectText: live == nil ? nil : { terminal.hideKeyboard(); terminal.readingSnapshot = true; showSelection = true },
+                        numberKeys: { terminal.hideKeyboard(); showNumbers = true },
+                        attachFile: live == nil || session.remote ? nil : { terminal.hideKeyboard(); showUpload = true }
+                    ).disabled(live != nil && !terminal.ready)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)

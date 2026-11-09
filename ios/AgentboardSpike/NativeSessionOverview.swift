@@ -24,9 +24,11 @@ struct NativeSessionOverview: View {
                     }
                 }
                 Label("\(board.sessions.count)", systemImage: "rectangle.stack")
-            }.font(.caption).padding(.horizontal, 10).frame(minHeight: 44)
-                .nativeGlassSurface()
+            }.font(.caption).dynamicTypeSize(...DynamicTypeSize.xxxLarge).padding(.horizontal, 8).padding(.vertical, 6)
+                .nativeGlassSurface(cornerRadius: 18, interactive: true)
+                .frame(minHeight: 44).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel("Session overview").accessibilityValue(summary)
+            .accessibilityShowsLargeContentViewer { Text("Session overview: " + summary) }
             .accessibilityIdentifier("session-overview")
     }
 }
