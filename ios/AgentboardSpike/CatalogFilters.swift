@@ -4,16 +4,17 @@ import SwiftUI
 struct CatalogFilters: View {
     @ObservedObject var preferences: NativePreferences
     let sessions: [BoardSession]
-    var conversations: [AgentLogSession] = []
+    @ObservedObject var conversations: AgentConversationCatalog
+    private var conversationSessions: [AgentLogSession] { conversations.snapshot.sleeping + conversations.snapshot.history }
     var hosts: [HostState] = []
     @Binding var status: String
     @State private var query = ""
     @Environment(\.dismiss) private var dismiss
     private var projects: [String] {
-        CatalogSelection.choices(sessions.map(\.project) + conversations.map(\.projectPath), selected: preferences.strings("projectFilters"), query: query)
+        CatalogSelection.choices(sessions.map(\.project) + conversationSessions.map(\.projectPath), selected: preferences.strings("projectFilters"), query: query)
     }
     private var hostNames: [String] {
-        CatalogSelection.choices(sessions.map { $0.host ?? "" } + conversations.map { $0.host ?? "" } + hosts.map(\.host), selected: preferences.strings("hostFilters"), query: query)
+        CatalogSelection.choices(sessions.map { $0.host ?? "" } + conversationSessions.map { $0.host ?? "" } + hosts.map(\.host), selected: preferences.strings("hostFilters"), query: query)
     }
     var body: some View {
         NavigationStack {

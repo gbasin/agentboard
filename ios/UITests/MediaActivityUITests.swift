@@ -81,7 +81,12 @@ final class MediaActivityUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
         next.tap(); XCTAssertTrue(app.buttons["Previous"].isEnabled)
         capture("image-neighbor")
-        app.navigationBars["Media"].buttons["Done"].tap()
+        let preview = app.navigationBars["Media"]
+        preview.buttons["Done"].tap()
+        // The preview retains a live accessibility tree during dismissal. Its
+        // underlying catalog can exist while the modal still blocks paging.
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: preview)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 15), .completed)
         let nextPage = app.buttons["Next page"]
         XCTAssertTrue(nextPage.isHittable); XCTAssertTrue(nextPage.isEnabled); nextPage.tap()
         XCTAssertTrue(app.buttons["Page 2"].waitForExistence(timeout: 10))

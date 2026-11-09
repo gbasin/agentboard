@@ -3,6 +3,15 @@ import XCTest
 /// Runs every native destination against the private backend seeded by seed-parity.ts.
 final class NativeParityUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
+    override func tearDown() {
+        if (testRun?.failureCount ?? 0) > 0 {
+            let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            screenshot.name = "parity-failure"; screenshot.lifetime = .keepAlways; add(screenshot)
+            let hierarchy = XCTAttachment(string: XCUIApplication().debugDescription)
+            hierarchy.name = "parity-failure-hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+        }
+        super.tearDown()
+    }
     private func app(server: String = "http://127.0.0.1:4151") -> XCUIApplication {
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", server]; app.launch()
         XCTAssertTrue(app.waitForBoardConnection(timeout: 15)); return app
@@ -12,20 +21,26 @@ final class NativeParityUITests: XCTestCase {
         attachment.name = "parity-" + name; attachment.lifetime = .keepAlways; add(attachment)
     }
     private func replace(_ field: XCUIElement, _ value: String) {
-        field.tap(); sleep(1)
         if field.elementType == .searchField {
+            field.tap(); sleep(1)
             if field.buttons["Clear text"].exists { field.buttons["Clear text"].tap() }
             XCTAssertTrue((field.value as? String ?? "") == "" || (field.value as? String) == field.placeholderValue)
             field.typeText(value); return
         }
-        for _ in 0..<4 {
-            field.typeKey("a", modifierFlags: .command); field.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
-            if (field.value as? String ?? "") == "" || (field.value as? String) == field.placeholderValue { break }
-        }
-        field.typeText(value)
+        field.replaceNativeText(with: value, in: XCUIApplication())
     }
-    private func reveal(_ element: XCUIElement, in app: XCUIApplication, preferUp: Bool = false) {
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication, preferUp: Bool = false, refreshMedia: Bool = false) {
         for _ in 0..<20 {
+            // Discovery retains the visible snapshot. Follow the explicit refresh
+            // action before looking for newly discovered documents in that page.
+            let refresh = app.buttons["refresh-changed-media"]
+            if refreshMedia && refresh.exists {
+                reveal(refresh, in: app, preferUp: true)
+                refresh.tap()
+                let refreshed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: refresh)
+                XCTAssertEqual(XCTWaiter.wait(for: [refreshed], timeout: 15), .completed)
+                continue
+            }
             let top = app.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? app.frame.minY
             var bottom = app.frame.maxY - 20
             if app.keyboards.firstMatch.exists { bottom = min(bottom, app.keyboards.firstMatch.frame.minY) }
@@ -101,7 +116,7 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue((app.textFields["session-project"].value as? String ?? "").hasSuffix("/tmp/ab-ios-parity/project"))
         app.buttons["Cancel"].tap()
         app.buttons["Session actions"].tap(); tapMenu("Hibernate session", in: app)
-        app.buttons["confirm-end-session"].tap()
+        app.tapVisibleConfirmation("confirm-end-session")
         XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 15))
         app.buttons["Library"].tap(); search(name, in: app)
         let row = app.buttons["saved-" + name]; XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
@@ -175,19 +190,19 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Media and links"].waitForExistence(timeout: 15))
         // List rows below the viewport may not enter the accessibility tree until scrolled.
         let image = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "image/png")).firstMatch
-        reveal(image, in: app); capture("media-loaded"); image.tap()
+        reveal(image, in: app, refreshMedia: true); capture("media-loaded"); image.tap()
         XCTAssertTrue(app.images["Session image"].waitForExistence(timeout: 10)); capture("media-image")
         app.images["Session image"].pinch(withScale: 2, velocity: 1)
         XCTAssertGreaterThan(app.images["Session image"].frame.width, app.windows.firstMatch.frame.width)
         dismissPreview("Media", in: app)
         let document = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "text/html")).firstMatch
-        reveal(document, in: app); document.tap()
+        reveal(document, in: app, refreshMedia: true); document.tap()
         XCTAssertTrue(app.buttons["Share document"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["HTML source"].waitForExistence(timeout: 10))
         capture("media-document")
         dismissPreview("Media", in: app)
         let pdf = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "application/pdf")).firstMatch
-        reveal(pdf, in: app); pdf.tap()
+        reveal(pdf, in: app, refreshMedia: true); pdf.tap()
         XCTAssertTrue(app.buttons["Share document"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.otherElements["document-preview"].waitForExistence(timeout: 10))
         capture("media-pdf")
@@ -249,7 +264,8 @@ final class NativeParityUITests: XCTestCase {
         app.buttons["Session actions"].tap(); tapMenu("Attach file", in: app)
         app.buttons["Choose file"].tap()
         // Files can reopen the last folder. Do not navigate away from an already visible fixture.
-        XCTAssertTrue(app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].waitForExistence(timeout: 30))
+        let picker = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 30))
         let file = app.cells["parity-upload, txt"]
         if !file.waitForExistence(timeout: 3) {
             let browse = app.buttons["Browse"].firstMatch
@@ -266,7 +282,20 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(file.waitForExistence(timeout: 10))
         file.images.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
         let open = app.buttons["Open"]
-        if open.waitForExistence(timeout: 3) { open.tap() }
+        if open.waitForExistence(timeout: 3) {
+            // Files exposes Open before the selected provider item is ready.
+            // Wait for its action to enable rather than tapping its disabled state.
+            let confirmation = app.buttons["confirm-attachments"]
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                confirmation.exists || (open.exists && open.isEnabled && open.isHittable)
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed)
+            if !confirmation.exists { open.tap() }
+        }
+        // Accepting Open starts system-provider work before our importer callback.
+        // Keep picker completion separate from the app's attachment-review budget.
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: picker)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 30), .completed, "Files picker did not dismiss after selection.\n" + app.debugDescription)
         XCTAssertTrue(app.buttons["confirm-attachments"].waitForExistence(timeout: 10))
         capture("attachment-review")
         app.buttons["confirm-attachments"].tap()

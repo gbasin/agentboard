@@ -3,6 +3,7 @@ import SwiftUI
 struct LibraryView: View {
     let server: String
     @ObservedObject var board: BoardConnection
+    @ObservedObject private var conversations: AgentConversationCatalog
     @ObservedObject var preferences: NativePreferences
     let open: (BoardSession) -> Void
     @State private var sessions: [SavedSession] = []
@@ -22,6 +23,7 @@ struct LibraryView: View {
     init(server: String, board: BoardConnection, preferences: NativePreferences, initialState: String = "all", open: @escaping (BoardSession) -> Void) {
         self.server = server
         self.board = board
+        self.conversations = board.conversations
         self.preferences = preferences
         self.open = open
         _state = State(initialValue: initialState)
@@ -145,8 +147,8 @@ struct LibraryView: View {
             } catch { failure = error.localizedDescription }
         }
     }
-    private var filteredSleeping: [AgentLogSession] { matchingConversations(board.sleeping) }
-    private var filteredHistory: [AgentLogSession] { matchingConversations(board.history) }
+    private var filteredSleeping: [AgentLogSession] { matchingConversations(conversations.snapshot.sleeping) }
+    private var filteredHistory: [AgentLogSession] { matchingConversations(conversations.snapshot.history) }
     private func matchingConversations(_ values: [AgentLogSession]) -> [AgentLogSession] {
         selection.conversations(values).filter { query.isEmpty || "\($0.displayName) \($0.projectPath)".localizedCaseInsensitiveContains(query) }
     }

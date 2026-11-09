@@ -9,15 +9,7 @@ final class SessionActionUITests: XCTestCase {
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
     private func replace(_ field: XCUIElement, with value: String, in app: XCUIApplication) {
-        field.tap()
-        sleep(1) // Wait for the native field to finish scrolling above the keyboard.
-        for _ in 0..<4 {
-            field.typeKey("a", modifierFlags: .command)
-            field.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
-            if (field.value as? String ?? "") == "" || (field.value as? String) == field.placeholderValue { break }
-        }
-        field.typeText(value)
-        XCTAssertEqual(field.value as? String, value)
+        field.replaceNativeText(with: value, in: app)
     }
     private func openAction(_ title: String, in app: XCUIApplication) {
         app.buttons["Session actions"].tap()
@@ -34,6 +26,7 @@ final class SessionActionUITests: XCTestCase {
         let name = "ios-actions-" + String(UUID().uuidString.prefix(6))
         let project = app.textFields["session-project"]
         replace(project, with: "/ab-missing", in: app)
+        XCTAssertEqual(app.textFields["session-command"].value as? String, "/bin/zsh -f")
         replace(app.textFields["session-command"], with: "/bin/zsh", in: app)
         app.textFields["session-name"].tap(); app.textFields["session-name"].typeText(name)
         capture("actions-create")
@@ -49,13 +42,17 @@ final class SessionActionUITests: XCTestCase {
         replace(app.textFields["session-name"], with: name + "-renamed", in: app)
         capture("actions-rename")
         app.buttons["Save"].tap()
+        let renameDismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.navigationBars["Rename session"])
+        XCTAssertEqual(XCTWaiter.wait(for: [renameDismissed], timeout: 15), .completed)
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", name + "-renamed")).firstMatch.waitForExistence(timeout: 10))
         openAction("End session", in: app)
         capture("actions-end")
         app.buttons["Cancel"].tap()
+        let endDismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.navigationBars["End session"])
+        XCTAssertEqual(XCTWaiter.wait(for: [endDismissed], timeout: 15), .completed)
         XCTAssertTrue(app.webViews.firstMatch.exists)
         openAction("End session", in: app)
-        app.buttons["confirm-end-session"].tap()
+        app.tapVisibleConfirmation("confirm-end-session")
         XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 15))
         XCTAssertFalse(app.buttons.containing(NSPredicate(format: "label CONTAINS %@", name)).firstMatch.exists)
         capture("actions-ended")

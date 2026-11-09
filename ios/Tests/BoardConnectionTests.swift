@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 @testable import AgentboardSpike
 
 @MainActor
@@ -25,6 +26,46 @@ final class BoardConnectionTests: XCTestCase {
     }
     let snapshot = #"{"type":"sessions","sessions":[{"id":"one","name":"One","projectPath":"/tmp/test","status":"working","source":"managed"}]}"#
     func settle() async { for _ in 0..<20 { await Task.yield() } }
+
+    func testConversationUpdatesNotifyOnlyCatalogAndResetWithServer() async {
+        var sockets: [Socket] = []
+        let board = BoardConnection { _ in let socket = Socket(); sockets.append(socket); return socket }
+        defer { board.suspend(); sockets.forEach { $0.finish() } }
+        board.configure("http://localhost:4040")
+        sockets[0].emit(snapshot)
+        await settle()
+        var boardChanges = 0
+        var catalogSnapshots: [AgentConversationCatalog.Snapshot] = []
+        let boardSubscription = board.objectWillChange.sink { boardChanges += 1 }
+        let catalogSubscription = board.conversations.$snapshot.dropFirst().sink { catalogSnapshots.append($0) }
+        defer { boardSubscription.cancel(); catalogSubscription.cancel() }
+        let dormant = #"{"type":"agent-sessions","hibernating":[{"sessionId":"log","displayName":"Sleeping","agentType":"claude","projectPath":"/tmp","createdAt":"","lastActivityAt":"","isHibernating":true}],"history":[]}"#
+        sockets[0].emit(dormant)
+        await settle()
+        XCTAssertEqual(catalogSnapshots.count, 1)
+        XCTAssertEqual(catalogSnapshots.last?.sleeping.first?.id, "log")
+        XCTAssertEqual(boardChanges, 0, "Dormant conversations must not rebuild the live board's native menus")
+        sockets[0].emit(dormant)
+        await settle()
+        XCTAssertEqual(catalogSnapshots.count, 1, "Repeated snapshots must not notify catalog views")
+        XCTAssertEqual(boardChanges, 0)
+        // Move the conversation into history with an explicit protocol event.
+        sockets[0].emit(#"{"type":"agent-sessions","hibernating":[],"history":[{"sessionId":"log","displayName":"Sleeping","agentType":"claude","projectPath":"/tmp","createdAt":"","lastActivityAt":"","isHibernating":true}]}"#)
+        await settle()
+        XCTAssertEqual(catalogSnapshots.count, 2)
+        XCTAssertTrue(board.conversations.snapshot.sleeping.isEmpty)
+        XCTAssertEqual(board.conversations.snapshot.history.first?.id, "log")
+        XCTAssertEqual(boardChanges, 0)
+        sockets[0].emit(#"{"type":"session-update","session":{"id":"one","name":"Updated","projectPath":"/tmp/test","status":"waiting","source":"managed"}}"#)
+        await settle()
+        XCTAssertGreaterThan(boardChanges, 0, "Live session changes must still notify the board")
+        XCTAssertEqual(board.sessions.first?.name, "Updated")
+        XCTAssertEqual(catalogSnapshots.count, 2)
+        board.configure("http://localhost:5050")
+        XCTAssertEqual(catalogSnapshots.count, 3)
+        XCTAssertTrue(board.conversations.snapshot.sleeping.isEmpty)
+        XCTAssertTrue(board.conversations.snapshot.history.isEmpty)
+    }
 
     func testTransportFailureReconnectsAutomatically() async throws {
         var sockets: [Socket] = []

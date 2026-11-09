@@ -128,8 +128,14 @@ final class ParityGapUITests: XCTestCase {
         XCTAssertTrue(destination.isHittable, "Both reorder handles must be reachable for this drag: " + app.debugDescription)
         // Cross the first row's midpoint and let UIKit settle the insertion before release.
         // A center-to-center drop can stop exactly on the unchanged-order threshold.
-        let target = destination.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5))
-            .withOffset(.init(dx: 0, dy: -first.frame.height * 0.25))
+        // At accessibility text sizes the first row is partly under the
+        // navigation bar after revealing the second handle. Keep the drop above
+        // its midpoint but inside the list's visible content.
+        let top = app.navigationBars["Sessions"].frame.maxY + 12
+        let targetY = max(top, destination.frame.midY - first.frame.height * 0.25)
+        XCTAssertLessThan(targetY, destination.frame.midY)
+        let target = app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(.init(dx: destination.frame.midX - app.frame.minX, dy: targetY - app.frame.minY))
         source.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5))
             .press(forDuration: 1, thenDragTo: target, withVelocity: .slow, thenHoldForDuration: 0.5)
         app.buttons["Done"].tap()

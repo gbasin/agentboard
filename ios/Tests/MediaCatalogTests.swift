@@ -114,6 +114,10 @@ import XCTest
         XCTAssertEqual(model.page?.items.first?.label, "original")
         XCTAssertEqual(model.summary?.discovery?.status, "ready")
         XCTAssertTrue(model.changed); XCTAssertFalse(model.canNext)
+        model.refresh(); await settle(model)
+        XCTAssertEqual(reads, 3)
+        XCTAssertEqual(model.page?.items.first?.label, "newer")
+        XCTAssertFalse(model.changed)
     }
     func testDiscoveryRenewalIsBoundedAndExplicitRetryResetsBudget() async throws {
         var reads = 0, ready = false
