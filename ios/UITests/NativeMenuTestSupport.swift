@@ -3,61 +3,32 @@ import XCTest
 /// Native context menus report a scrolling frame larger than their visible popup.
 extension XCUIApplication {
     func tapNativeMenuAction(_ title: String, file: StaticString = #filePath, line: UInt = #line) {
-        // Maximum text creates an eight-page menu. Hosted gestures take about
-        // six seconds each; 60 seconds reached only 71% of the menu in CI.
         let deadline = Date().addingTimeInterval(120)
         while Date() < deadline {
-            let button = self.buttons[title]
-            // UIKit can show the menu's loading placeholder before exposing its
-            // collection. Reading a missing element's frame fails XCTest early.
+            // UIKit changes menu actions between Button and PopUpButton while
+            // scrolling. Keep the query independent of that transient type.
+            let button = self.descendants(matching: .any).matching(NSPredicate(
+                format: "(label == %@ OR identifier == %@) AND (elementType == %d OR elementType == %d)",
+                title, title, XCUIElement.ElementType.button.rawValue, XCUIElement.ElementType.popUpButton.rawValue
+            )).firstMatch
+            if button.exists && button.isHittable { button.tap(); return }
             let remaining = deadline.timeIntervalSinceNow
             guard remaining > 0,
                   self.collectionViews.firstMatch.waitForExistence(timeout: remaining),
-                  let menu = self.collectionViews.allElementsBoundByIndex.last,
-                  menu.exists else { break }
-            let snapshot: XCUIElementSnapshot
-            do { snapshot = try menu.snapshot() } catch { break }
-            let menuFrame = snapshot.frame
-            // UIKit's collection frame exceeds the clipped popup; its enclosing
-            // accessibility views expose the actual visible rectangle.
+                  let menu = self.collectionViews.allElementsBoundByIndex.last else { break }
+            let menuFrame = menu.frame
+            guard menuFrame.minX.isFinite, menuFrame.minY.isFinite, menuFrame.width > 0, menuFrame.height > 0 else { break }
+            // The collection's accessibility frame extends below the popup.
+            // Swipe its visible enclosing view so XCTest places a native swipe
+            // inside the menu, rather than dragging a menu action.
             let enclosing = self.otherElements.containing(NSPredicate(format: "elementType == %d", XCUIElement.ElementType.collectionView.rawValue))
-                .allElementsBoundByIndex.map(\.frame).filter {
-                    abs($0.minX - menuFrame.minX) < 1 && abs($0.width - menuFrame.width) < 1 && $0.height > 0
-                }.min { $0.height < $1.height }
-            let viewport = (enclosing ?? menuFrame).intersection(self.frame).insetBy(dx: 8, dy: 8)
-            if button.exists && button.isHittable {
-                let center = CGPoint(x: button.frame.midX, y: button.frame.midY)
-                if viewport.contains(center) {
-                    // Native menu accessibility can change Button → PopUpButton while XCTest
-                    // auto-scrolls a tap. Tap its verified visible center without auto-scrolling.
-                    button.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap(); return
-                }
-            }
-            let above = button.exists && button.frame.midY < viewport.minY
-            guard viewport.width > 0, viewport.height > 0 else { break }
-            // Start on an enabled outer action. Fixed viewport fractions can
-            // land in the tall disabled connection row or the Appearance picker.
-            let pickerLabels: Set<String> = ["Appearance", "System", "Light", "Dark"]
-            // Read attributes from one public snapshot instead of requesting
-            // separate accessibility snapshots for every button attribute.
-            func actionCenters(_ element: XCUIElementSnapshot) -> [CGPoint] {
-                var centers: [CGPoint] = []
-                if element.elementType == .button && element.isEnabled && !pickerLabels.contains(element.label) {
-                    let center = CGPoint(x: element.frame.midX, y: element.frame.midY)
-                    if viewport.contains(center) { centers.append(center) }
-                }
-                for child in element.children { centers.append(contentsOf: actionCenters(child)) }
-                return centers
-            }
-            let centers = actionCenters(snapshot)
-            guard let start = centers.sorted(by: { above ? $0.y < $1.y : $0.y > $1.y }).first else { break }
-            let origin = self.coordinate(withNormalizedOffset: .zero)
-            let from = origin.withOffset(.init(dx: start.x - self.frame.minX, dy: start.y - self.frame.minY))
-            let to = origin.withOffset(.init(dx: start.x - self.frame.minX, dy: (above ? viewport.maxY : viewport.minY) - self.frame.minY))
-            // A single gesture can spend time waiting for UIKit to become idle.
-            // Check elapsed time between gestures instead of multiplying that wait.
-            guard Date() < deadline else { break }
-            from.press(forDuration: 0.05, thenDragTo: to)
+                .allElementsBoundByIndex.filter {
+                    let frame = $0.frame
+                    return abs(frame.minX - menuFrame.minX) < 1 && abs(frame.width - menuFrame.width) < 1 && frame.height > 0
+                }.min { $0.frame.height < $1.frame.height }
+            let scroller = enclosing ?? menu
+            if button.exists && button.frame.midY < scroller.frame.minY { scroller.swipeDown(velocity: .fast) }
+            else { scroller.swipeUp(velocity: .fast) }
         }
         attachNavigationFailure("menu-" + title)
         XCTFail("Menu action is unreachable: \(title)", file: file, line: line)

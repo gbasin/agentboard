@@ -112,14 +112,7 @@ final class LiveUITests: XCTestCase {
         type("printf '%s\\n' " + token, app: app)
         XCTAssertTrue(output(token, in: app).waitForExistence(timeout: 5))
         app.buttons["Session actions"].tap()
-        let select = app.buttons["terminal-select-text"]
-        for _ in 0..<8 {
-            if select.exists && select.isHittable { break }
-            let menu = app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch
-            menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.25))
-                .press(forDuration: 0.05, thenDragTo: menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.10)))
-        }
-        select.tap()
+        app.tapNativeMenuAction("Select text")
         let snapshot = app.textViews["terminal-snapshot-text"]
         XCTAssertTrue(snapshot.waitForExistence(timeout: 10))
         XCTAssertTrue((snapshot.value as? String ?? "").contains(token))
