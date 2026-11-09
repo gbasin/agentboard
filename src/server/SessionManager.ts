@@ -748,21 +748,24 @@ export class SessionManager {
         '-n', escapeTmuxFormatArg(launchName),
         '-c', resolvedPath,
         finalCommand,
-        ...identityCommands(`${this.sessionName}:`),
+        ...identityCommands(`${this.sessionName}:=${launchName}`),
       ])
       this.configureSessionAndRecordServer()
     } else {
-      const nextIndex = this.findNextAvailableWindowIndex()
+      // Let tmux allocate the first free index atomically. A separate index
+      // probe races other clients and cannot safely treat a timeout as empty.
       this.runTmux([
         'new-window',
         ...noFlickerEnv,
         ...terminalColorEnv,
         ...identityEnv,
-        '-t', `${this.sessionName}:${nextIndex}`,
+        '-t', `${this.sessionName}:`,
         '-n', escapeTmuxFormatArg(launchName),
         '-c', resolvedPath,
         finalCommand,
-        ...identityCommands(`${this.sessionName}:${nextIndex}`),
+        // Match the unique launch name exactly; another client may change
+        // the current window before the queued identity commands execute.
+        ...identityCommands(`${this.sessionName}:=${launchName}`),
       ])
     }
 
@@ -1091,51 +1094,6 @@ export class SessionManager {
     // (e.g. a dev server with a different TMUX_SESSION) would otherwise leak
     // into the external list as an unkillable-looking ghost entry.
     return window.name === BOOTSTRAP_WINDOW_NAME
-  }
-
-  private findNextAvailableWindowIndex(): number {
-    const baseIndex = this.getTmuxBaseIndex()
-    const usedIndices = this.getWindowIndices()
-
-    if (usedIndices.length === 0) {
-      return baseIndex
-    }
-
-    // Find the first gap, or use max + 1
-    const maxIndex = Math.max(...usedIndices)
-    for (let i = baseIndex; i <= maxIndex; i++) {
-      if (!usedIndices.includes(i)) {
-        return i
-      }
-    }
-
-    return maxIndex + 1
-  }
-
-  private getTmuxBaseIndex(): number {
-    try {
-      const output = this.runParsedTmux(['show-options', '-gv', 'base-index'])
-      return Number.parseInt(output.trim(), 10) || 0
-    } catch {
-      return 0
-    }
-  }
-
-  private getWindowIndices(): number[] {
-    try {
-      const output = this.runParsedTmux([
-        'list-windows',
-        '-t',
-        this.sessionName,
-        '-F',
-        '#{window_index}',
-      ])
-      return splitTmuxLines(output)
-        .map((line) => Number.parseInt(line, 10))
-        .filter((n) => !Number.isNaN(n))
-    } catch {
-      return []
-    }
   }
 
   private resolveSessionName(tmuxWindow: string): string {

@@ -201,8 +201,9 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
       const cwd = normalizedArgs[6]
       const startCommand = normalizedArgs[7]
       const [sessionName, indexText] = target.split(':')
-      const index = Number.parseInt(indexText ?? '', 10)
       const windows = groupWindows(sessionName)
+      let index = indexText ? Number.parseInt(indexText, 10) : baseIndex
+      while (!indexText && windows.some(window => window.index === index)) index++
       windows.push({
         id: String(index),
         index,
@@ -1033,7 +1034,7 @@ describe('SessionManager', () => {
     expect(createCall?.slice(renameIndex)).toEqual([
       'rename-window',
       '-t',
-      `${sessionName}:1`,
+      `${sessionName}:=__ab_launch__3e7b8c3a-9c1f-4a2e-8f1d-2c4b6a8e0f1a__9f0e1d2c-3b4a-4c5d-8e7f-1a2b3c4d5e6f`,
       '--',
       '-draft',
     ])
@@ -1741,6 +1742,31 @@ describe('SessionManager', () => {
     expect(created.command).toBe('claude')
 
     fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  test('createWindow delegates gap allocation without probing indices or base-index', () => {
+    const sessionName = 'agentboard-allocation'
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    try {
+      const runner = createTmuxRunner([{ name: sessionName, windows: [3, 5].map(index => ({
+        id: String(index), index, name: `existing-${index}`, path: tempDir,
+        activity: 0, command: 'sh',
+      })) }], 3)
+      const manager = new SessionManager(sessionName, {
+        runTmux: args => {
+          if (args.includes('#{window_index}') || args.includes('base-index')) {
+            throw new TmuxTimeoutError('list-windows', 3000)
+          }
+          return runner.runTmux(args)
+        },
+        capturePaneContent: () => makePaneCapture(''),
+      })
+      const created = manager.createWindow(tempDir, 'fills-gap', 'sh')
+      expect(created.tmuxWindow).toBe(`${sessionName}:4`)
+      const create = runner.calls.find(call => getTmuxCommand(call) === 'new-window')!
+      expect(create[create.indexOf('-t') + 1]).toBe(`${sessionName}:`)
+      expect(runner.calls.some(call => call.includes('#{window_index}') || call.includes('base-index'))).toBe(false)
+    } finally { fs.rmSync(tempDir, { recursive: true, force: true }) }
   })
 
   test('createWindow uses new-window when session already exists', () => {
