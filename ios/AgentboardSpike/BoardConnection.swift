@@ -151,12 +151,19 @@ final class BoardConnection: ObservableObject {
             enqueue(["type": "terminal-resize", "sessionId": current.sessionID, "cols": size.cols, "rows": size.rows])
         }
     }
-    func input(_ value: String, owner: UUID, paste: Bool = false) {
+    func input(_ value: String, owner: UUID, paste: Bool = false, scroll: Bool = false) {
         guard state == .connected, terminalState == .ready, let current = target, current.owner == owner else { return }
+        // Typing with the keyboard already open must leave history first.
+        // Wheel input must stay in copy mode so successive swipes keep scrolling.
+        if scroll { inCopyMode = true }
+        else if inCopyMode { exitCopyMode() }
         enqueue(["type": paste ? "terminal-paste" : "terminal-input", "sessionId": current.sessionID, "data": value])
     }
     func exitCopyMode() {
-        if let target, state == .connected { enqueue(["type": "tmux-cancel-copy-mode", "sessionId": target.sessionID]) }
+        if let target, state == .connected {
+            enqueue(["type": "tmux-cancel-copy-mode", "sessionId": target.sessionID])
+            inCopyMode = false
+        }
     }
     private func setTerminalState(_ value: TerminalState) {
         terminalState = value

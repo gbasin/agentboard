@@ -16,6 +16,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: transparent;
 <script src="vendor/xterm.js"></script>
 <script src="vendor/addon-fit.js"></script>
 <script src="vendor/addon-webgl.js"></script>
+<script src="terminal-scroll.js"></script>
 <script>
 const terminal = new Terminal({ fontFamily: 'Menlo, monospace', fontSize: 13, lineHeight: 1.3,
     cursorBlink: true, scrollback: 5000, allowProposedApi: true, screenReaderMode: true });
@@ -24,8 +25,7 @@ terminal.loadAddon(fit);
 terminal.open(document.getElementById('terminal'));
 let socket, endpoint = '', control = false, configured = false, disposed = false, native = false;
 const notify = value => window.webkit?.messageHandlers?.terminal?.postMessage(value);
-// Native UIKit owns text input. Leave xterm's touch scrolling and selection
-// intact, but never let its hidden textarea activate WebKit's form keyboard.
+// Native UIKit owns text input; never activate WebKit's form keyboard.
 if (window.webkit) {
     terminal.options.disableStdin = true;
     terminal.textarea.readOnly = true;
@@ -58,6 +58,11 @@ terminal.registerLinkProvider({provideLinks(y, callback) {
         activate: () => notify({type: 'link', url: match[0]})
     })));
 }});
+const scroll = installTerminalScroll(terminal, document.getElementById('terminal'), {
+    live: () => native && !disposed,
+    // Bypass keyboard modifiers and disableStdin: these are mouse events.
+    input: data => notify({type:'scroll', data})
+});
 let webgl;
 terminal.onData(send);
 terminal.onResize(({cols, rows}) => {
@@ -108,6 +113,7 @@ window.agentboard = {
         if (configured) return;
         configured = true; theme(options.dark); fit.fit();
         native = options.native === true; endpoint = options.endpoint;
+        terminal.options.scrollback = native ? 0 : 5000;
         if (native) notify({type:'viewport', cols:terminal.cols, rows:terminal.rows});
         else endpoint ? connect() : sample(options.name);
     },
@@ -125,14 +131,14 @@ window.agentboard = {
     write: ({data}) => terminal.write(data),
     // Queue the reset behind pending writes, so buffered old output cannot
     // reappear after the next attachment's history.
-    reset: () => terminal.write('\x1bc'),
+    reset: () => { scroll.reset(); terminal.write('\x1bc'); },
     send: ({data}) => send(data),
     paste: ({data}) => { if (native) notify({type:'paste', data}); else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'paste', data})); },
     prepareInput: () => { if (terminal.hasSelection()) return false; document.activeElement?.blur(); return true; },
     focus: () => terminal.focus(), blur: () => terminal.blur(),
     control: ({active}) => { control = active; },
     theme: ({dark}) => theme(dark), font: ({size}) => { terminal.options.fontSize = size; fit.fit(); },
-    bottom: () => terminal.scrollToBottom(), reconnect: connect,
+    bottom: () => { if (native) notify({type:'bottom'}); terminal.scrollToBottom(); }, reconnect: connect,
     resume: () => { resize(); if (endpoint && socket?.readyState === WebSocket.CLOSED) connect(); },
     dispose: () => { disposed = true; if(socket) {socket.onclose = null; socket.close();} terminal.dispose(); }
 };

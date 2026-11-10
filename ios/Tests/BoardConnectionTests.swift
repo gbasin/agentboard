@@ -155,10 +155,14 @@ final class BoardConnectionTests: XCTestCase {
         await settle()
         XCTAssertEqual(output, "history")
         XCTAssertEqual(board.terminalState, .ready)
+        board.input("\u{1b}[<64;22;10M", owner: owner, scroll: true)
+        board.input("\u{1b}[<64;22;10M", owner: owner, scroll: true)
         board.input("hello", owner: owner)
+        board.input("\u{1b}[<64;22;10M", owner: owner, scroll: true)
         board.input("line1\nline2", owner: owner, paste: true)
         await settle()
-        XCTAssertEqual(sockets[1].types, ["terminal-attach", "terminal-resize", "terminal-input", "terminal-paste"])
+        XCTAssertEqual(sockets[1].types, ["terminal-attach", "terminal-resize", "terminal-input", "terminal-input",
+                                            "tmux-cancel-copy-mode", "terminal-input", "terminal-input", "tmux-cancel-copy-mode", "terminal-paste"])
         XCTAssertEqual(sockets[1].sent.last?["data"] as? String, "line1\nline2")
     }
 
