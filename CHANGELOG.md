@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.45.0](https://github.com/gbasin/agentboard/compare/v0.44.0...v0.45.0) (2026-11-10)
+
+
+### Features
+
+* **ios:** add native Agentboard iPhone client ([#548](https://github.com/gbasin/agentboard/issues/548)) ([b70ff9a](https://github.com/gbasin/agentboard/commit/b70ff9ac86216c6fa9cf522a2b36ae3e0517f645))
+* **ios:** automate signed TestFlight releases ([#560](https://github.com/gbasin/agentboard/issues/560)) ([b0889ab](https://github.com/gbasin/agentboard/commit/b0889aba45f42f34d8e54cf110ab0cafb064462d))
+
+
+### Bug Fixes
+
+* **ios:** route terminal scrolling through tmux history ([f24f09e](https://github.com/gbasin/agentboard/commit/f24f09e782a7f8b120d1adf293b9ba679121ed14))
+* keep attributed system reminders out of user previews ([#551](https://github.com/gbasin/agentboard/issues/551)) ([d168f50](https://github.com/gbasin/agentboard/commit/d168f506fed10bf0ab3a03f5331271404772d0d9))
+* recover preview files from session path evidence ([#564](https://github.com/gbasin/agentboard/issues/564)) ([1c055e1](https://github.com/gbasin/agentboard/commit/1c055e1f0657e8c444d732e0e9eb6fa35088924f))
+
 ## [0.44.0](https://github.com/gbasin/agentboard/compare/v0.43.4...v0.44.0) (2026-11-09)
 
 
