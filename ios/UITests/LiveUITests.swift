@@ -75,6 +75,33 @@ final class LiveUITests: XCTestCase {
         XCTAssertTrue(output("SECOND_\(token)_OK", in: app).waitForExistence(timeout: 5))
         capture("live-second-session")
     }
+    /// Real touch -> WKWebView -> native WebSocket -> tmux, with history far
+    /// beyond any keyboard-resize overflow. No JS gesture or transport mocks.
+    func testTerminalScrollbackReachesHistoryAndTypingReturnsToLive() {
+        let app = launch(); open("native-live-one", app: app)
+        let token = String(UUID().uuidString.prefix(8))
+        type("for i in {1..240}; do printf 'ROW_%s_%03d\\n' \(token) $i; done", app: app)
+        XCTAssertTrue(output("ROW_\(token)_240", in: app).waitForExistence(timeout: 10))
+        let oldRows = app.webViews.firstMatch.staticTexts.containing(NSPredicate(
+            format: "label MATCHES %@", ".*ROW_\(token)_(0[2-9][0-9]|1[0-2][0-9]).*"))
+        XCTAssertFalse(oldRows.firstMatch.exists, "Old history must start offscreen")
+        let terminal = app.webViews.firstMatch
+        for _ in 0..<18 {
+            terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.2))
+                .press(forDuration: 0.05, thenDragTo: terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.8)))
+            if oldRows.firstMatch.waitForExistence(timeout: 1) { break }
+        }
+        XCTAssertTrue(oldRows.firstMatch.exists, "Swipes must reach tmux history over 100 lines back")
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        capture("tmux-history-keyboard-open")
+        // Do not tap the terminal: that separately cancels copy mode and would
+        // hide a bug when typing into a keyboard that was open while scrolling.
+        app.typeText("printf 'RETURN_%s_OK\\n' \(token)")
+        app.tapTerminalKey("Enter")
+        XCTAssertTrue(output("RETURN_\(token)_OK", in: app).waitForExistence(timeout: 10))
+        capture("tmux-history-returned-to-live")
+    }
+
     func testConnectionAddressValidation() {
         let app = launch()
         app.buttons["connection-status"].tap()

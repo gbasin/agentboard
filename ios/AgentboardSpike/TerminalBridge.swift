@@ -162,8 +162,10 @@ struct TerminalWebView: UIViewRepresentable {
                                         if state != .ready { bridge?.hideKeyboard() }
                                     })
                     } else { live.resize(size, owner: owner) }
-                } else if let value = data["data"] as? String, type == "input" || type == "paste" {
-                    if !bridge.readingSnapshot { live.input(value, owner: owner, paste: type == "paste") }
+                } else if type == "bottom" {
+                    if !bridge.readingSnapshot { live.exitCopyMode() }
+                } else if let value = data["data"] as? String, type == "input" || type == "paste" || type == "scroll" {
+                    if !bridge.readingSnapshot { live.input(value, owner: owner, paste: type == "paste", scroll: type == "scroll") }
                 }
             }
             if let status = data["status"] as? String { bridge.connection = status }
