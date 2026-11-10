@@ -1,6 +1,7 @@
 /** Resolve only transcript-discovered references; never accept an arbitrary target. */
 import path from 'node:path'
-import os from 'node:os'
+import { OutputFileResolver } from './fileResolver'
+import { absoluteOutputPath } from './fileEvidence'
 import { visualizationFile, VisualizationError } from './visualization'
 import { Hono } from 'hono'
 import type { AgentSessionRecord } from '../db'
@@ -21,6 +22,7 @@ export function outputRoutes(options: {
   ready: () => Promise<unknown>
 }) {
   const app = new Hono()
+  const files = new OutputFileResolver()
   const thumbnails = new OutputThumbnails(path.join(options.cacheRoot, 'output-thumbnails'))
   app.get('/:sessionId/open', async c => {
     const record = options.getSession(c.req.param('sessionId'))
@@ -48,7 +50,7 @@ export function outputRoutes(options: {
     if (descriptor.kind === 'localhost' && (!upstream || options.blockedPorts().includes(Number(upstream.port)) || options.previews.isPreviewOrigin(upstream.origin))) {
       return c.json({ error: 'This local address cannot be previewed' }, 400)
     }
-    const file = ref.startsWith('~/') ? path.join(os.homedir(), ref.slice(2)) : path.resolve(record.projectPath, ref)
+    let file = absoluteOutputPath(ref, record.projectPath)
     const thumbnailKey = JSON.stringify([record.sessionId, descriptor.kind, upstream?.href ?? file])
     if (c.req.query('format') === 'thumbnail') {
       const body = await thumbnails.read(thumbnailKey)
@@ -56,6 +58,18 @@ export function outputRoutes(options: {
       return body ? new Response(new Uint8Array(body), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' } }) : c.body(null, 204)
     }
     try {
+      if (descriptor.kind === 'html') {
+        const resolution = await files.resolve(ref, record, c.req.query('candidate')).catch(error => ({ kind: 'failed' as const, error: error instanceof Error ? error.message : 'Unable to resolve this file' }))
+        if (resolution.kind === 'failed') return c.json({ error: resolution.error }, 503)
+        const latest = options.getSession(record.sessionId)
+        const latestLine = await readMediaLine(source, offset).catch(() => null)
+        if (!latest || metadataIdentity(latest) !== metadataIdentity(record) || latest.projectPath !== record.projectPath || latestLine !== line) {
+          return c.json({ error: 'Session output changed; refresh previews' }, 409)
+        }
+        if (resolution.kind === 'missing') return c.json({ error: 'Couldn’t resolve this file. Ask the agent to share its full path.', attemptedPath: resolution.attemptedPath }, 404)
+        if (resolution.kind === 'ambiguous') return c.json({ error: 'Several files in this session have this name. Choose the one to open.', candidates: resolution.candidates }, 409)
+        file = resolution.file
+      }
       await options.ready()
       const resolvedFile = descriptor.kind === 'visualization' ? await visualizationFile(file, options.cacheRoot) : file
       const url = await options.previews.open(upstream ? { kind: 'localhost', url: upstream.href } : { kind: 'html', file: resolvedFile }, new URL(c.req.url))
@@ -67,7 +81,7 @@ export function outputRoutes(options: {
     } catch (error) {
       if (error instanceof VisualizationError) return c.json({ error: error.message }, 422)
       const missing = (error as NodeJS.ErrnoException).code === 'ENOENT'
-      return c.json({ error: missing ? 'Output file not found. It may have been moved or deleted.' : 'Unable to start preview. Check available ports and try again.' }, missing ? 404 : 503)
+      return c.json({ error: missing ? `Output file not found at ${file}. Ask the agent to share its current path.` : 'Unable to start preview. Check available ports and try again.' }, missing ? 404 : 503)
     }
   })
   return app

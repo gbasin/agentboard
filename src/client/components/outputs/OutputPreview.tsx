@@ -20,9 +20,11 @@ export function OutputPreview({ item, mobile, open, onClose, onChoose, status }:
   onChoose: () => void
   status?: string
 }) {
-  const [load, setLoad] = useState<{ url: string } | { error: string } | null>(null)
+  const [load, setLoad] = useState<{ url: string } | { error: string; candidates?: string[]; attemptedPath?: string } | null>(null)
   const [width, setWidth] = useState(48)
   const [revision, setRevision] = useState(0)
+  const [selection, setSelection] = useState<{ itemUrl: string; path: string } | null>(null)
+  const selected = selection?.itemUrl === item.url ? selection.path : undefined
   const [waiting, setWaiting] = useState(true)
   const [slow, setSlow] = useState(false)
   const panel = useRef<HTMLElement>(null)
@@ -46,17 +48,24 @@ export function OutputPreview({ item, mobile, open, onClose, onChoose, status }:
       }
       return () => controller.abort()
     }
-    fetch(item.url + '&format=json', { signal: controller.signal })
+    fetch(item.url + '&format=json' + (selected ? '&candidate=' + encodeURIComponent(selected) : ''), { signal: controller.signal })
       .then(async response => {
         const body = await response.json()
-        if (!response.ok) throw new Error(body.error || 'Preview unavailable')
+        if (!response.ok) {
+          if (!controller.signal.aborted) setLoad({
+            error: body.error || 'Preview unavailable',
+            attemptedPath: typeof body.attemptedPath === 'string' ? body.attemptedPath : undefined,
+            candidates: Array.isArray(body.candidates) ? body.candidates.filter((value: unknown): value is string => typeof value === 'string') : undefined,
+          })
+          return
+        }
         if (typeof body.url !== 'string' || !/^https?:\/\//.test(body.url)) throw new Error('Invalid preview address')
         if (!controller.signal.aborted) setLoad({ url: body.url })
       }).catch(error => {
         if (!controller.signal.aborted) setLoad({ error: error.message || 'Preview unavailable' })
       })
     return () => controller.abort()
-  }, [item.url, item.externalUrl, item.kind, revision])
+  }, [item.url, item.externalUrl, item.kind, revision, selected])
   useEffect(() => {
     if (!waiting) return
     const timer = setTimeout(() => setSlow(true), 12_000)
@@ -118,7 +127,16 @@ export function OutputPreview({ item, mobile, open, onClose, onChoose, status }:
       </div>
       {item.kind === 'link' && <p className="shrink-0 border-b border-border px-3 py-2 text-[12px] text-muted">If this page stays blank or refuses to connect, use Open original.</p>}
       {load && 'error' in load ? (
-        <div role="alert" className="p-5 text-[13px] text-secondary"><p>{load.error}</p><button type="button" onClick={() => setRevision(v => v + 1)} className="mt-3 rounded border border-border px-3 py-2">Try again</button></div>
+        <div role="alert" className="min-h-0 overflow-y-auto p-5 text-[13px] text-secondary">
+          <p>{load.error}</p>
+          {load.attemptedPath && <p className="mt-3 break-all">Looked for: <code>{load.attemptedPath}</code></p>}
+          {load.candidates && <ul aria-label="Matching session files" className="mt-3 space-y-2">
+            {load.candidates.map(candidate => <li key={candidate}><button type="button"
+              className="min-h-[44px] w-full break-all rounded border border-border px-3 py-2 text-left hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              onClick={() => setSelection({ itemUrl: item.url, path: candidate })}>{candidate}</button></li>)}
+          </ul>}
+          <button type="button" onClick={() => { setSelection(null); setRevision(v => v + 1) }} className="mt-3 rounded border border-border px-3 py-2">Try again</button>
+        </div>
       ) : (
         <>
           {waiting && <div role="status" className="px-4 py-3 text-[12px] text-muted">{slow ? 'Still connecting. Preview ports must be reachable from this device. Try opening in a new tab or check your network.' : 'Opening preview…'}</div>}
