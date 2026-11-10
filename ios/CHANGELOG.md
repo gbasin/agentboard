@@ -2,6 +2,13 @@
 
 Release Please maintains this file for the native iPhone client.
 
+## [0.2.1](https://github.com/gbasin/agentboard/compare/ios-v0.2.0...ios-v0.2.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ios:** route terminal scrolling through tmux history ([f24f09e](https://github.com/gbasin/agentboard/commit/f24f09e782a7f8b120d1adf293b9ba679121ed14))
+
 ## [0.2.0](https://github.com/gbasin/agentboard/compare/ios-v0.1.0...ios-v0.2.0) (2026-11-09)
 
 
