@@ -46,7 +46,7 @@ export class SessionActivityTracker {
   private summaries = new Map<string, Summary>()
   private metadata = new Map<string, ClaudeMetadata>()
 
-  constructor(private readonly progress?: () => void) {}
+  constructor(private readonly progress?: () => void, private readonly cursorLimit = CACHE_LIMIT) {}
 
   private async read(logPath: string, kind: 'claude' | 'codex'): Promise<AgentActivity> {
     let file
@@ -92,7 +92,7 @@ export class SessionActivityTracker {
       cursor.mtime = stat.mtimeMs
       this.cursors.delete(logPath)
       this.cursors.set(logPath, cursor)
-      while (this.cursors.size > CACHE_LIMIT) this.cursors.delete(this.cursors.keys().next().value!)
+      while (this.cursors.size > this.cursorLimit) this.cursors.delete(this.cursors.keys().next().value!)
       const activity = activitySnapshot(cursor.state)
       this.summaries.delete(logPath)
       this.summaries.set(logPath, { ino: stat.ino, size: stat.size, mtime: stat.mtimeMs, name: cursor.state.name, activity })

@@ -1,4 +1,5 @@
 /** A separately scheduled dashboard for real relay contention tests. */
+import { existsSync, writeFileSync } from 'node:fs'
 import { TerminalRelayClient } from '../../relay/client'
 import type { Session } from '../../../shared/types'
 import { CATALOG_VERSION } from '../../../shared/catalogProtocol'
@@ -9,7 +10,13 @@ const sessions: Session[] = JSON.parse(process.env.RELAY_TEST_SESSIONS!)
 const upstream = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(req) {
   const path = new URL(req.url).pathname
   if (path === '/block') {
-    setTimeout(() => { const end = performance.now() + 600; while (performance.now() < end) {} }, 30)
+    setTimeout(() => {
+      const gate = process.env.RELAY_TEST_BLOCK!
+      writeFileSync(`${gate}.entered`, '')
+      while (existsSync(gate)) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
+      }
+    }, 0)
   }
   return Response.json({ dashboard: true })
 } })
