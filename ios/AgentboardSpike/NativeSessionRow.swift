@@ -57,7 +57,12 @@ struct NativeSessionRow: View {
                         SessionStatus(status: session.status)
                     }
                     rowLayout {
-                        if !metadata.isEmpty { Text(metadata).font(.caption).foregroundStyle(.secondary) }
+                        if preferences.bool("showProjectName", true), !session.project.isEmpty {
+                            ProjectChip(name: URL(fileURLWithPath: session.project).lastPathComponent)
+                        }
+                        if session.remote, let host = session.host, !host.isEmpty {
+                            Text(host).font(.caption).foregroundStyle(.secondary)
+                        }
                         if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
                         TimelineView(.periodic(from: .now, by: 60)) { context in
                             Text(BoardSession.relativeActivity(session.lastActivity, now: context.date))
@@ -121,11 +126,6 @@ struct NativeSessionRow: View {
             }.buttonStyle(.plain).accessibilityHint("Show pull requests and checks")
                 .accessibilityIdentifier("pull-requests-\(session.id)")
         }
-    }
-
-    private var metadata: String {
-        [preferences.bool("showProjectName", true) ? URL(fileURLWithPath: session.project).lastPathComponent : nil,
-         session.remote ? session.host : nil].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private func refreshPRs() async {
