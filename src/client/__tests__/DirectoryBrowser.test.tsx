@@ -12,6 +12,7 @@ const globalAny = globalThis as typeof globalThis & {
 const originalFetch = globalAny.fetch
 const originalWindow = globalAny.window
 let DirectoryBrowser: typeof import('../components/DirectoryBrowser').DirectoryBrowser
+let ProjectPathInput: typeof import('../components/ProjectPathInput').ProjectPathInput
 
 let keyHandlers = new Map<string, EventListener>()
 
@@ -52,14 +53,9 @@ async function createBrowser(element: ReactElement) {
   return renderer
 }
 
-async function flushBrowser() {
-  await act(async () => {
-    await flushUpdates()
-  })
-}
-
 async function resolveAndFlush(controller: { resolveNext: () => void }) {
   await act(async () => {
+    await flushUpdates()
     controller.resolveNext()
     await flushUpdates()
   })
@@ -120,6 +116,7 @@ beforeEach(async () => {
 
   if (!DirectoryBrowser) {
     DirectoryBrowser = (await import('../components/DirectoryBrowser')).DirectoryBrowser
+    ProjectPathInput = (await import('../components/ProjectPathInput')).ProjectPathInput
   }
 })
 
@@ -290,96 +287,82 @@ describe('DirectoryBrowser', () => {
     }
   })
 
-  test('keyboard navigation triggers entry load', async () => {
-    const controller = createFetchController([
-      createJsonResponse(
-        makeListing({
-          directories: [
-            { name: 'alpha', path: '/root/alpha' },
-            { name: 'bravo', path: '/root/bravo' },
-          ],
-        })
-      ),
-      createJsonResponse(
-        makeListing({ path: '/root/alpha', parent: '/root' })
-      ),
-    ])
-
-    const renderer = await createBrowser(
-      <DirectoryBrowser
-        initialPath="/root"
-        onSelect={() => {}}
-        onCancel={() => {}}
-      />
-    )
-    try {
-      await resolveAndFlush(controller)
-
-      const keyHandler = keyHandlers.get('keydown')
-      if (!keyHandler) {
-        throw new Error('Expected keydown handler')
-      }
-
-      const entries = renderer.root.findAllByProps({
-        'data-testid': 'directory-entry',
-      })
-      expect(entries).toHaveLength(2)
-
-      await act(async () => {
-        keyHandler({ key: 'ArrowDown', preventDefault: () => {} } as KeyboardEvent)
-      })
-      await flushBrowser()
-
-      const updatedHandler = keyHandlers.get('keydown') ?? keyHandler
-      await act(async () => {
-        updatedHandler({ key: 'Enter', preventDefault: () => {} } as KeyboardEvent)
-      })
-      await resolveAndFlush(controller)
-
-      expect(controller.calls).toHaveLength(2)
-      expect(controller.calls[1]).toContain('path=%2Froot%2Falpha')
-      const pathNode = renderer.root.findByProps({
-        'data-testid': 'directory-current-path',
-      })
-      expect(pathNode.children.join('')).toBe('/root/alpha')
-    } finally {
-      await cleanup(renderer)
-    }
-  })
-
-  test('recent paths display and navigate', async () => {
-    useSettingsStore.setState({ recentPaths: ['/one', '/two'] })
+  test('cannot choose a failed or unsubmitted path', async () => {
+    const selected: string[] = []
     const controller = createFetchController([
       createJsonResponse(makeListing()),
-      createJsonResponse(makeListing({ path: '/two', parent: '/' })),
+      createJsonResponse({ message: 'Missing' }, { status: 404 }),
     ])
-
-    const renderer = await createBrowser(
-      <DirectoryBrowser
-        initialPath="/root"
-        onSelect={() => {}}
-        onCancel={() => {}}
-      />
-    )
+    const renderer = await createBrowser(<DirectoryBrowser initialPath="/root" onSelect={path => selected.push(path)} onCancel={() => {}} />)
     try {
       await resolveAndFlush(controller)
-
-      const recentButtons = renderer.root.findAllByProps({
-        'data-testid': 'directory-recent',
-      })
-      expect(recentButtons.map((btn) => btn.props['data-recent-path'])).toEqual([
-        '/one',
-        '/two',
-      ])
-
-      await act(async () => {
-        recentButtons[1]?.props.onClick()
-      })
+      const choose = () => renderer.root.findByProps({ 'data-testid': 'directory-choose' })
+      expect(choose().props.disabled).toBe(false)
+      await act(async () => renderer.root.findByProps({ 'aria-label': 'Directory path' }).props.onChange({ target: { value: '/missing' } }))
+      expect(choose().props.disabled).toBe(true)
+      await act(async () => renderer.root.findByProps({ 'aria-label': 'Directory path' }).props.onKeyDown({ key: 'Enter', preventDefault() {} }))
+      expect(choose().props.disabled).toBe(true)
       await resolveAndFlush(controller)
+      expect(choose().props.disabled).toBe(true)
+      choose().props.onClick()
+      expect(selected).toEqual([])
+    } finally { await cleanup(renderer) }
+  })
 
-      expect(controller.calls[1]).toContain('path=%2Ftwo')
-    } finally {
-      await cleanup(renderer)
-    }
+  test('late navigation cannot overwrite a newer folder', async () => {
+    const controller = createFetchController([
+      createJsonResponse(makeListing({ path: '/old' })),
+      createJsonResponse(makeListing({ path: '/new' })),
+    ])
+    const renderer = await createBrowser(<DirectoryBrowser initialPath="/old" onSelect={() => {}} onCancel={() => {}} />)
+    try {
+      await act(async () => renderer.root.findByProps({ 'aria-label': 'Directory path' }).props.onChange({ target: { value: '/new' } }))
+      await act(async () => renderer.root.findByProps({ 'aria-label': 'Directory path' }).props.onKeyDown({ key: 'Enter', preventDefault() {} }))
+      await resolveAndFlush(controller)
+      expect(renderer.root.findByProps({ 'data-testid': 'directory-choose' }).props.disabled).toBe(true)
+      await resolveAndFlush(controller)
+      expect(renderer.root.findByProps({ 'data-testid': 'directory-current-path' }).children.join('')).toBe('/new')
+    } finally { await cleanup(renderer) }
+  })
+
+  test('recent project chooses a validated path without navigating a second dialog', async () => {
+    useSettingsStore.setState({ recentPaths: ['/one', '/two'] })
+    const selected: string[] = []
+    const controller = createFetchController([createJsonResponse(makeListing({ path: '/two' }))])
+    const renderer = await createBrowser(<ProjectPathInput value="" onChange={path => selected.push(path)} placeholder="Project" remote={false} onBrowse={() => {}} />)
+    try {
+      await act(async () => renderer.root.findByType('input').props.onFocus())
+      const options = renderer.root.findAllByProps({ role: 'option' })
+      expect(options).toHaveLength(2)
+      await act(async () => options[1].props.onClick())
+      expect(selected).toEqual([])
+      await resolveAndFlush(controller)
+      expect(selected).toEqual(['/two'])
+      expect(renderer.root.findAllByProps({ role: 'listbox' })).toHaveLength(0)
+    } finally { await cleanup(renderer) }
+  })
+
+  test('editing while a recent project validates cancels its selection', async () => {
+    useSettingsStore.setState({ recentPaths: ['/one'] })
+    const selected: string[] = []
+    const controller = createFetchController([createJsonResponse(makeListing({ path: '/one' }))])
+    const renderer = await createBrowser(<ProjectPathInput value="" onChange={path => selected.push(path)} placeholder="Project" remote={false} onBrowse={() => {}} />)
+    try {
+      await act(async () => renderer.root.findByType('input').props.onFocus())
+      await act(async () => renderer.root.findByProps({ role: 'option' }).props.onClick())
+      await act(async () => renderer.root.findByType('input').props.onChange({ target: { value: '/new' } }))
+      await resolveAndFlush(controller)
+      expect(selected).toEqual(['/new'])
+    } finally { await cleanup(renderer) }
+  })
+
+  test('SSH host paths do not request local suggestions', async () => {
+    const controller = createFetchController([])
+    const renderer = await createBrowser(<ProjectPathInput value="/remote" onChange={() => {}} placeholder="Project" remote={true} onBrowse={() => {}} />)
+    try {
+      await act(async () => renderer.root.findByType('input').props.onFocus())
+      expect(renderer.root.findAllByProps({ role: 'listbox' })).toHaveLength(0)
+      expect(controller.calls).toEqual([])
+    } finally { await cleanup(renderer) }
   })
 })

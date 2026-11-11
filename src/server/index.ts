@@ -1643,6 +1643,8 @@ app.route('/api/session-media', createMediaRoutes({
 }))
 app.get('/api/directories', async (c) => {
   const requestedPath = c.req.query('path') ?? '~'
+  const query = (c.req.query('query') ?? '').toLowerCase()
+  const showHidden = c.req.query('hidden') !== 'false'
 
   if (requestedPath.length > MAX_FIELD_LENGTH) {
     const payload: DirectoryErrorResponse = {
@@ -1705,7 +1707,9 @@ app.get('/api/directories', async (c) => {
       encoding: 'utf8',
     })
     directories = entries
-      .filter((entry) => entry.isDirectory())
+      .filter((entry) => entry.isDirectory()
+        && (showHidden || !entry.name.startsWith('.'))
+        && entry.name.toLowerCase().includes(query))
       .map((entry) => {
         const name = entry.name.toString()
         return {

@@ -428,6 +428,8 @@ There is no authentication. An origin check (`src/server/requestOrigin.ts`) cove
 | Recovery catalog (`persistence/routes.ts`) | `GET /api/library`, `GET /api/library/health`, `PUT /api/library/settings`, `GET /api/library/:id`, `POST /api/library/:id/resume`, `PATCH /api/library/:id` |
 | Static UI | everything else, from `AGENTBOARD_STATIC_DIR` (default `./dist/client`) |
 
+`GET /api/directories` accepts `path`, optional case-insensitive `query` (folder-name substring), and `hidden=false` to exclude dotfolders. Filtering precedes the 200-entry limit. Omitting `hidden` preserves the native client’s listing behavior. The web project field shows recent projects and completes server paths; Browse hides dotfolders by default and confirms only a successfully loaded, unedited path.
+
 WebSocket messages (`ClientMessage` and `ServerMessage` in `src/shared/types.ts`):
 
 | Direction | Group | Types |
