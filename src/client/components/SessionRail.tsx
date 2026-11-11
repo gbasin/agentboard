@@ -6,7 +6,7 @@
  * session list offers.
  * Right: transient segments (copy mode, jump-to-bottom, selection ready),
  * then a hairline before connection status and session actions
- * (wake / hibernate / kill).
+ * (wake / hibernate / an explicit actions menu).
  * Always rendered on md+ — with no selection it degrades to session count
  * plus connection status, like tmux's always-on status line.
  */
@@ -25,6 +25,7 @@ import { PrChips } from './PrChips'
 import ContextMenu, { type ContextMenuEntry } from './ContextMenu'
 import {
   ArrowDownIcon,
+  DotsHorizontalIcon,
   Copy01Icon,
   Edit05Icon,
   File06Icon,
@@ -138,6 +139,7 @@ export default function SessionRail({
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
+  const actionsRef = useRef<HTMLButtonElement>(null)
   const [idCopied, markIdCopied] = useCopiedFlag()
   const [pathCopied, markPathCopied] = useCopiedFlag()
 
@@ -330,7 +332,7 @@ export default function SessionRail({
     )
 
   return (
-    <footer className="hidden h-10 shrink-0 select-none items-center justify-between gap-3 border-t border-border bg-elevated px-4 md:flex">
+    <footer className="hidden h-[40px] shrink-0 select-none items-center justify-between gap-3 border-t border-border bg-elevated px-4 md:flex">
       {/* Left: hairline-separated segments — name | status | context meta
           (id / host / project) | PR chips. The menu wrapper covers the
           segments so right-clicking a PR chip keeps the link's native menu.
@@ -506,15 +508,21 @@ export default function SessionRail({
             <Moon01Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
           </button>
         )}
-        {session && canControl && (
+        {menuItems.length > 0 && (
           <button
+            ref={actionsRef}
             disabled={isSwitching}
-            onClick={onKill}
-            className={iconButtonClass('danger')}
-            title={`Kill session (${modDisplay}X)`}
-            aria-label="Kill session"
+            onClick={(event) => {
+              const bounds = event.currentTarget.getBoundingClientRect()
+              setMenu(menu ? null : { x: bounds.left, y: bounds.top })
+            }}
+            className={iconButtonClass('neutral')}
+            title={`Session actions (Kill: ${modDisplay}X)`}
+            aria-label="Session actions"
+            aria-haspopup="menu"
+            aria-expanded={menu !== null}
           >
-            <XCloseIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
+            <DotsHorizontalIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
           </button>
         )}
       </div>
@@ -524,6 +532,8 @@ export default function SessionRail({
           anchor={menu}
           items={menuItems}
           anchorFromBottom
+          keyboardNavigation
+          returnFocusRef={actionsRef}
           onClose={() => setMenu(null)}
         />
       )}

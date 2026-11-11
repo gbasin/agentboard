@@ -36,7 +36,7 @@ export const PR_STATE_MARK_SIZE = 6
 export const TOUCH_TARGET_PX = 44
 
 const ICON_BUTTON_BASE =
-  'relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40'
+  'icon-button relative flex size-[28px] shrink-0 items-center justify-center rounded-md border transition-colors active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40'
 
 /** Color treatments for square icon buttons (desktop and mobile). */
 export const BUTTON_TONE = {
@@ -53,9 +53,9 @@ export const BUTTON_TONE = {
 export type ButtonTone = keyof typeof BUTTON_TONE
 
 /**
- * Desktop square icon button: h-7 (nominally 28px), bordered, holding an
+ * Desktop square icon button: 28 CSS px, bordered, holding an
  * ICON_SIZE.default icon (primary for the accent "+"). Used in the sidebar
- * filter bar and the status rail, both 40px (h-10) bars.
+ * filter bar and the status rail, both 40 CSS px bars.
  */
 export function iconButtonClass(tone: ButtonTone = 'neutral'): string {
   return `${ICON_BUTTON_BASE} ${BUTTON_TONE[tone]}`
@@ -71,7 +71,7 @@ export const ICON_BUTTON_CLASS = iconButtonClass('neutral')
  */
 export function mobileButtonClass(tone: ButtonTone = 'neutral', display = 'flex'): string {
   const fill = tone === 'neutral' ? 'bg-surface ' : ''
-  return `mobile-header-button ${display} size-[44px] shrink-0 items-center justify-center rounded-md border transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${fill}${BUTTON_TONE[tone]}`
+  return `mobile-header-button ${display} size-[44px] shrink-0 items-center justify-center rounded-md border transition-colors active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${fill}${BUTTON_TONE[tone]}`
 }
 
 /**

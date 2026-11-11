@@ -138,7 +138,7 @@ describe('SidebarControls', () => {
     if (!dotButton || !settingsButton) throw new Error('Expected dot and settings buttons')
     // Same 28px bordered square, hover and focus-ring treatment as the gear
     expect(dotButton.props.className).toBe(settingsButton.props.className)
-    for (const token of ['h-7', 'w-7', 'border', 'border-border', 'hover:bg-hover', 'focus-visible:ring-2']) {
+    for (const token of ['size-[28px]', 'border', 'border-border', 'hover:bg-hover', 'focus-visible:ring-2']) {
       expect(dotButton.props.className.split(' ')).toContain(token)
     }
     // Status color stays on the dot inside the button, not on the button
