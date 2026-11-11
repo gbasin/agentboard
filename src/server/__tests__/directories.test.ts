@@ -51,7 +51,7 @@ async function loadIndex() {
   return serveOptions
 }
 
-async function fetchDirectories(requestedPath: string) {
+async function fetchDirectories(requestedPath: string, params: Record<string, string> = {}) {
   const { fetch } = await loadIndex()
   if (!fetch) {
     throw new Error('Fetch handler not configured')
@@ -59,6 +59,7 @@ async function fetchDirectories(requestedPath: string) {
   const server = {} as Bun.Server<unknown>
   const url = new URL('http://localhost/api/directories')
   url.searchParams.set('path', requestedPath)
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value)
   const response = await fetch.call(
     server,
     new Request(url.toString()),
@@ -223,6 +224,20 @@ describe('GET /api/directories', () => {
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true })
     }
+  })
+
+  test('filters hidden folders and names before the 200-entry limit', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-dir-'))
+    try {
+      await Promise.all(Array.from({ length: 205 }, (_, i) => fs.mkdir(path.join(tempRoot, `.hidden-${i}`))))
+      await fs.mkdir(path.join(tempRoot, 'Zebra'))
+      const visible = await fetchDirectories(tempRoot, { hidden: 'false' })
+      expect((await visible.json() as DirectoryListing).directories.map(entry => entry.name)).toEqual(['Zebra'])
+      const filtered = await fetchDirectories(tempRoot, { query: 'zEB' })
+      const result = await filtered.json() as DirectoryListing
+      expect(result.directories.map(entry => entry.name)).toEqual(['Zebra'])
+      expect(result.truncated).toBe(false)
+    } finally { await fs.rm(tempRoot, { recursive: true, force: true }) }
   })
 
   test('rejects paths longer than 4096 characters', async () => {

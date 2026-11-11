@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { type CommandPreset, getFullCommand, useSettingsStore } from '../stores/settingsStore'
 import { DirectoryBrowser } from './DirectoryBrowser'
+import { ProjectPathInput } from './ProjectPathInput'
 import AgentIcon from './AgentIcon'
 import type { HostStatus } from '@shared/types'
 import { inferAgentType } from '@shared/agentDetection'
@@ -175,7 +176,7 @@ export default function NewSessionModal({
     }
 
       const handleKeyDown = (e: KeyboardEvent) => {
-      if (showBrowser) return
+      if (showBrowser || e.defaultPrevented) return
 
       if (e.key === 'Escape') {
         if (typeof e.stopPropagation === 'function') e.stopPropagation()
@@ -342,7 +343,7 @@ export default function NewSessionModal({
       <form
         ref={formRef}
         onSubmit={handleSubmit}
-        className="w-full max-w-md border border-border bg-elevated p-6"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto border border-border bg-elevated p-6"
       >
         <h2 id="new-session-title" className="text-sm font-semibold uppercase tracking-wider text-primary text-balance">
           New Session
@@ -487,36 +488,14 @@ export default function NewSessionModal({
               yolo mode — skip permission prompts
             </label>
           </div>
-          <div>
-            <label className="mb-1.5 block text-xs text-secondary">
-              Project Path
-            </label>
-            <div className="flex gap-2">
-              <input
-                ref={projectPathRef}
-                value={projectPath}
-                onChange={(event) => setProjectPath(event.target.value)}
-                placeholder={
-                  isRemoteHost
-                    ? '/home/user/project'
-                    : activeProjectPath ||
-                      lastProjectPath ||
-                      defaultProjectDir ||
-                      '/Users/you/code/my-project'
-                }
-                className="input flex-1 text-sm"
-              />
-              {!isRemoteHost && (
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setShowBrowser(true)}
-                >
-                  Browse
-                </button>
-              )}
-            </div>
-          </div>
+          <ProjectPathInput
+            ref={projectPathRef}
+            value={projectPath}
+            onChange={setProjectPath}
+            remote={isRemoteHost}
+            onBrowse={() => setShowBrowser(true)}
+            placeholder={isRemoteHost ? '/home/user/project' : activeProjectPath || lastProjectPath || defaultProjectDir || 'Find a recent project or enter a path…'}
+          />
           <div>
             <label className="mb-1.5 block text-xs text-secondary">
               Display Name

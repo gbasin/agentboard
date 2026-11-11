@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { DirectoryListing } from '@shared/types'
-import { FolderIcon } from './icons'
+/** Browse server folders; navigation and choosing the loaded folder are separate actions. */
 import { ICON_SIZE } from './controlStyles'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useEffect, useRef, useState } from 'react'
+import { FolderIcon, ChevronRightIcon } from './icons'
+import { useDirectoryListing } from '../hooks/useDirectoryListing'
+import { useFocusTrap } from './settings/useDialogFocus'
 
 interface DirectoryBrowserProps {
   onSelect: (path: string) => void
@@ -10,269 +11,113 @@ interface DirectoryBrowserProps {
   initialPath?: string
 }
 
-export function DirectoryBrowser({
-  onSelect,
-  onCancel,
-  initialPath,
-}: DirectoryBrowserProps) {
-  const [currentPath, setCurrentPath] = useState(initialPath || '~')
-  const [listing, setListing] = useState<DirectoryListing | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [highlightIndex, setHighlightIndex] = useState(-1)
-  const abortRef = useRef<AbortController | null>(null)
-  const recentPaths = useSettingsStore((state) => state.recentPaths)
+export function DirectoryBrowser({ onSelect, onCancel, initialPath }: DirectoryBrowserProps) {
+  const [path, setPath] = useState(initialPath || '~')
+  const [draft, setDraft] = useState(initialPath || '~')
+  const [query, setQuery] = useState('')
+  const [showHidden, setShowHidden] = useState(false)
+  const [retry, setRetry] = useState(0)
+  const { listing, error, loading } = useDirectoryListing(path, query, showHidden, retry)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(panelRef, onCancel)
 
-  const fetchListing = useCallback(async (path: string) => {
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-    const { signal } = controller
-
-    setLoading(true)
-    setError(null)
-    setListing(null)
-    setHighlightIndex(-1)
-    setCurrentPath(path)
-
-    try {
-      const response = await fetch(
-        `/api/directories?path=${encodeURIComponent(path)}`,
-        { signal }
-      )
-      if (!response.ok) {
-        const payload = (await response.json()) as { message?: string }
-        throw new Error(payload.message || 'Failed to load directory')
-      }
-      const data = (await response.json()) as DirectoryListing
-      if (abortRef.current !== controller) {
-        return
-      }
-      setListing(data)
-      setCurrentPath(data.path)
-    } catch (fetchError) {
-      if (abortRef.current !== controller) {
-        return
-      }
-      const errorObj = fetchError as { name?: string; message?: string }
-      if (errorObj?.name !== 'AbortError') {
-        setError(errorObj?.message || 'Failed to load directory')
-      }
-    } finally {
-      if (abortRef.current === controller) {
-        setLoading(false)
-      }
-    }
+  useEffect(() => {
+    const opener = typeof document !== 'undefined' ? document.activeElement as HTMLElement | null : null
+    panelRef.current?.focus()
+    return () => { opener?.focus?.() }
   }, [])
 
-  useEffect(() => {
-    fetchListing(initialPath || '~')
-    return () => {
-      abortRef.current?.abort()
-    }
-  }, [fetchListing, initialPath])
-
-  const directories = listing?.directories ?? []
-  const displayPath = listing?.path || currentPath
-  const parentPath = listing?.parent
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onCancel()
-        return
-      }
-
-      if (loading) return
-
-      if (event.key === 'ArrowDown') {
-        event.preventDefault()
-        setHighlightIndex((prev) => {
-          if (directories.length === 0) return -1
-          if (prev < 0) return 0
-          return Math.min(prev + 1, directories.length - 1)
-        })
-        return
-      }
-
-      if (event.key === 'ArrowUp') {
-        event.preventDefault()
-        setHighlightIndex((prev) => {
-          if (directories.length === 0) return -1
-          if (prev < 0) return directories.length - 1
-          return Math.max(prev - 1, 0)
-        })
-        return
-      }
-
-      if (event.key === 'Enter') {
-        event.preventDefault()
-        const entry = directories[highlightIndex]
-        if (entry) {
-          fetchListing(entry.path)
-        } else if (displayPath) {
-          onSelect(displayPath)
-        }
-        return
-      }
-
-      if (event.key === 'Backspace') {
-        if (parentPath) {
-          event.preventDefault()
-          fetchListing(parentPath)
-        }
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [
-    directories,
-    displayPath,
-    fetchListing,
-    highlightIndex,
-    loading,
-    onCancel,
-    onSelect,
-    parentPath,
-  ])
+  const navigate = (next: string) => {
+    setPath(next)
+    setDraft(next)
+    setQuery('')
+    setRetry(n => n + 1)
+    listRef.current?.scrollTo?.(0, 0)
+    listRef.current?.focus()
+  }
+  const displayPath = listing?.path || path
+  const parts = displayPath.split('/').filter(Boolean)
+  const name = parts.at(-1) || '/'
+  const canChoose = !!listing && !loading && draft === path
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Directory browser"
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onCancel()
-      }}
-      data-testid="directory-browser"
-    >
-      <div className="w-full max-w-lg border border-border bg-elevated p-4">
-        <div className="flex items-center gap-3 border-b border-border pb-2">
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              if (parentPath) {
-                fetchListing(parentPath)
-              }
-            }}
-            disabled={!parentPath || loading}
-          >
-            Up
-          </button>
-          <div
-            className="min-w-0 flex-1 truncate text-xs font-mono text-secondary"
-            title={displayPath}
-            data-testid="directory-current-path"
-          >
-            {displayPath}
+    <div role="dialog" aria-modal="true" aria-labelledby="directory-title"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 sm:p-4"
+      onClick={event => { if (event.target === event.currentTarget) onCancel() }}
+      data-testid="directory-browser">
+      <div ref={panelRef} tabIndex={-1}
+        className="flex h-[100dvh] w-full flex-col border border-border bg-elevated text-primary outline-none sm:h-[min(680px,90dvh)] sm:max-w-xl">
+        <div className="shrink-0 space-y-3 border-b border-border p-4">
+          <div>
+            <h2 id="directory-title" className="text-[16px] font-semibold text-primary">Choose folder</h2>
+            <p className="mt-1 text-xs text-secondary">Folders on the Agentboard server</p>
+          </div>
+          <div className="flex gap-2">
+            <input aria-label="Directory path" value={draft} spellCheck={false} autoCapitalize="none" autoCorrect="off"
+              onChange={event => setDraft(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter') { event.preventDefault(); navigate(draft.trim() || '~') }
+              }} className="input min-w-0 flex-1 font-mono text-[16px] sm:text-sm" />
+            <button type="button" className="btn min-h-[44px] sm:min-h-0" onClick={() => navigate(draft.trim() || '~')}>Go</button>
+          </div>
+          <nav aria-label="Folder ancestors" className="flex items-center gap-1 overflow-x-auto text-xs text-secondary">
+            <button type="button" className="btn min-h-[44px] shrink-0 sm:min-h-0" onClick={() => navigate('~')}>Home</button>
+            <button type="button" className="btn min-h-[44px] shrink-0 sm:min-h-0" disabled={!listing?.parent} onClick={() => listing?.parent && navigate(listing.parent)}>Up</button>
+            {displayPath.startsWith('/') && <button type="button" className="shrink-0 p-2 hover:bg-hover" onClick={() => navigate('/')}>/</button>}
+            {parts.map((part, index) => (
+              <span key={index} className="flex shrink-0 items-center">
+                {index > 0 && <ChevronRightIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} aria-hidden="true" />}
+                <button type="button" className="max-w-48 truncate p-2 hover:bg-hover" title={part}
+                  aria-current={index === parts.length - 1 ? 'location' : undefined}
+                  onClick={() => navigate('/' + parts.slice(0, index + 1).join('/'))}>{part}</button>
+              </span>
+            ))}
+          </nav>
+          <div className="flex items-center gap-3">
+            <input aria-label="Filter folders" placeholder="Filter folders…" value={query}
+              onChange={event => setQuery(event.target.value)} className="input min-w-0 flex-1 text-[16px] sm:text-sm" />
+            <label className="flex shrink-0 items-center gap-2 text-xs text-secondary">
+              <input type="checkbox" checked={showHidden} onChange={event => setShowHidden(event.target.checked)} />Show hidden
+            </label>
           </div>
         </div>
-
-        <div className="mt-3 max-h-60 overflow-y-auto border border-border bg-surface">
-          {loading ? (
-            <div
-              className="px-3 py-4 text-xs text-muted"
-              data-testid="directory-loading"
-            >
-              Loading directories...
-            </div>
-          ) : error ? (
-            <div className="px-3 py-4 text-xs" data-testid="directory-error">
+        <div ref={listRef} tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto p-2 outline-none" aria-busy={loading}
+          onKeyDown={event => {
+            if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+            const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-testid="directory-entry"]'))
+            const index = buttons.indexOf(event.target as HTMLButtonElement)
+            event.preventDefault()
+            buttons[Math.max(0, Math.min(buttons.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))]?.focus()
+          }}>
+          {loading ? <p role="status" className="p-3 text-sm text-secondary" data-testid="directory-loading">Loading folders…</p>
+            : error ? <div role="alert" className="p-3 text-sm" data-testid="directory-error">
               <p className="text-danger">{error}</p>
-              <button
-                type="button"
-                className="btn mt-3"
-                onClick={() => fetchListing(currentPath)}
-              >
-                Retry
+              <button type="button" className="btn mt-3" onClick={() => setRetry(n => n + 1)}>Retry</button>
+            </div>
+            : !listing?.directories.length ? <p className="p-3 text-sm text-secondary" data-testid="directory-empty">
+              {query ? 'No matching folders.' : 'No visible subfolders.'}
+            </p>
+            : listing.directories.map(entry => (
+              <button key={entry.path} type="button" onClick={() => navigate(entry.path)}
+                className="flex min-h-[44px] w-full items-center gap-3 px-3 py-2 text-left text-[14px] sm:text-sm hover:bg-hover focus-visible:bg-hover"
+                data-testid="directory-entry" data-entry-name={entry.name} data-entry-path={entry.path}>
+                <FolderIcon width={ICON_SIZE.key} height={ICON_SIZE.key} className="shrink-0 text-secondary" aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                <ChevronRightIcon width={ICON_SIZE.primary} height={ICON_SIZE.primary} className="shrink-0 text-secondary" aria-hidden="true" />
               </button>
-            </div>
-          ) : directories.length === 0 ? (
-            <div
-              className="px-3 py-4 text-xs text-muted"
-              data-testid="directory-empty"
-            >
-              No subdirectories
-            </div>
-          ) : (
-            <div className="py-1">
-              {directories.map((entry, index) => (
-                <button
-                  key={entry.path}
-                  type="button"
-                  onClick={() => fetchListing(entry.path)}
-                  onMouseEnter={() => setHighlightIndex(index)}
-                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
-                    index === highlightIndex ? 'bg-hover text-primary' : 'text-secondary'
-                  }`}
-                  data-testid="directory-entry"
-                  data-entry-name={entry.name}
-                  data-entry-path={entry.path}
-                >
-                  <FolderIcon
-                    width={ICON_SIZE.default}
-                    height={ICON_SIZE.default}
-                    className="shrink-0 text-muted"
-                    aria-hidden="true"
-                  />
-                  <span className="truncate">{entry.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
+            ))}
+          {listing?.truncated && <p className="p-3 text-xs text-secondary">Showing first 200 matches. Filter folders or enter a full path.</p>}
         </div>
-
-        {listing?.truncated ? (
-          <p className="mt-2 text-[10px] text-muted">
-            Showing first 200 directories.
-          </p>
-        ) : null}
-
-        <div className="mt-4 border-t border-border pt-3">
-          <div className="text-[10px] uppercase tracking-wider text-secondary">
-            Recent
+        <div className="shrink-0 border-t border-border p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <p className="mb-3 break-all text-xs text-secondary" data-testid="directory-current-path">{displayPath}</p>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onCancel} className="btn min-h-[44px] sm:min-h-0">Cancel</button>
+            <button type="button" disabled={!canChoose} onClick={() => { if (canChoose) onSelect(listing.path) }}
+              className="btn btn-primary min-h-[44px] sm:min-h-0 max-w-[75%] truncate" title={`Use ${displayPath}`} data-testid="directory-choose">
+              {listing ? `Use “${name}”` : 'Use folder'}
+            </button>
           </div>
-          {recentPaths.length === 0 ? (
-            <p className="mt-2 text-xs text-muted">No recent paths yet.</p>
-          ) : (
-            <div className="mt-2 space-y-1">
-              {recentPaths.map((pathEntry) => (
-                <button
-                  key={pathEntry}
-                  type="button"
-                  className="block w-full truncate text-left text-xs text-secondary hover:text-primary"
-                  onClick={() => fetchListing(pathEntry)}
-                  title={pathEntry}
-                  data-testid="directory-recent"
-                  data-recent-path={pathEntry}
-                >
-                  {pathEntry}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="mt-4 flex justify-end gap-2">
-          <button type="button" onClick={onCancel} className="btn">
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (displayPath) {
-                onSelect(displayPath)
-              }
-            }}
-            className="btn btn-primary"
-            disabled={loading || !displayPath}
-          >
-            Select
-          </button>
         </div>
       </div>
     </div>

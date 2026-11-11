@@ -134,6 +134,8 @@ async function main() {
       // module stub leaks into every later importer in the same process
       // (prChips.test.tsx once saw XCloseIcon lose forwarded props).
       'agentIcon.test.tsx',
+      // Folder picker fixtures replace fetch/window and schedule focus restoration.
+      'DirectoryBrowser.test.tsx',
       'app.test.tsx',
       // These fixtures replace document and schedule delayed focus returns.
       // A preceding dialog's callback can focus the next file's fake textarea
