@@ -21,8 +21,8 @@ test('relay lease workers share pane output across close, switch and reconnect',
     LOG_FILE: path.join(root, 'relay.log'), LOG_LEVEL: 'error', NODE_ENV: 'production', AGENTBOARD_TMUX_SET_CLIPBOARD: '0',
     AGENTBOARD_RELAY_GRACE_MS: '100', AGENTBOARD_RELAY_PROGRESS_MS: '90000' }
   const tmux = (args: string[]) => {
-    const result = Bun.spawnSync(['tmux', '-f', '/dev/null', '-S', socket, ...args], { env, stdout: 'pipe', stderr: 'pipe' })
-    if (result.exitCode) throw new Error(result.stderr.toString())
+    const result = Bun.spawnSync(['tmux', '-f', '/dev/null', '-S', socket, ...args], { env, stdout: 'pipe', stderr: 'pipe', timeout: 5000 })
+    if (result.exitCode || result.signalCode) throw new Error(`tmux ${JSON.stringify(args)} failed (${result.exitCode}/${result.signalCode}): ${result.stderr.toString()}`)
     return result.stdout.toString().trim()
   }
   const clients: WebSocket[] = []
