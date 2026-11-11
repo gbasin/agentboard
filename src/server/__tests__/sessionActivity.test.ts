@@ -221,17 +221,21 @@ test('cursor eviction retains compact summaries and avoids replaying unchanged h
   await fs.writeFile(log, line(event('task_complete')))
   const p = session('codex', log)
   const sessions: Session[] = []
-  // Real independent associations exercise the global cursor LRU above 2048.
-  for (let i = 0; i < 2050; i++) {
+  // Real independent associations exceed a small cursor LRU.
+  for (let i = 0; i < 4; i++) {
     const file = path.join(dir, `${i}.jsonl`)
     await fs.writeFile(file, line(event('task_complete')))
     sessions.push({ ...p, id: String(i), agentSessionId: String(i), logFilePath: file })
   }
   let progress = 0
-  const observer = new SessionActivityTracker(() => { progress++ })
+  const observer = new SessionActivityTracker(() => { progress++ }, 3)
   const initial = await observer.enrich(sessions)
   expect(initial.every(s => s.activity?.main.phase === 'idle')).toBe(true)
-  expect(progress).toBe(2050)
+  expect(progress).toBe(4)
+  // Prove eviction happened; disabling the bound must fail this regression.
+  const cursors = (observer as unknown as { cursors: Map<string, unknown> }).cursors
+  expect(cursors.size).toBe(3)
+  expect(cursors.has(sessions[0].logFilePath!)).toBe(false)
   const handle = await fs.open(log)
   const fileHandlePrototype = Object.getPrototypeOf(handle)
   await handle.close()

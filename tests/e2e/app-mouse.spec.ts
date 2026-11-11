@@ -1,3 +1,4 @@
+import { observeTerminalReadiness } from './helpers/terminalReadiness'
 // E2E: mouse input must keep reaching the pane after switching between two
 // mouse-reporting apps. Regression test for the stale-appMouse bug: a
 // session switch runs terminal.reset(), which wipes xterm's DECSET mouse
@@ -59,16 +60,14 @@ async function waitForPaneText(
 // window killed <2s earlier (server refresh interval), so a same-named row of
 // a previous test can be first in the list, then collapse under its exit
 // animation while the click retries against it.
-async function selectSession(page: Page, sessionId: string) {
+async function selectSession(page: Page, sessionId: string, ready: ReturnType<typeof observeTerminalReadiness>) {
   const card = page.locator(
     `[data-testid="session-card"][data-session-id="${sessionId}"]`
   )
   await expect(card).toBeVisible({ timeout: 20000 })
   await card.click()
   await expect(page.locator('.xterm')).toBeVisible()
-  // The copy-mode poll runs every 750ms; wait past one interval plus the
-  // attach round-trip so ENABLE_MOUSE_TRACKING has been applied.
-  await page.waitForTimeout(2500)
+  await ready(sessionId, 'MOUSE-REPL READY', true)
 }
 
 async function dragInTerminal(page: Page) {
@@ -82,6 +81,7 @@ async function dragInTerminal(page: Page) {
 }
 
 test('mouse input is forwarded to both panes across a session switch', async ({ page }) => {
+  const ready = observeTerminalReadiness(page)
   const session = process.env.E2E_TMUX_SESSION
   test.skip(!session, 'E2E_TMUX_SESSION not set')
   // terminal-input frames the browser actually sent — if xterm's mouse
@@ -109,7 +109,7 @@ test('mouse input is forwarded to both panes across a session switch', async ({ 
     await page.goto('/')
 
     // Attach to A and drag — SGR mouse reports must reach the pane.
-    await selectSession(page, targetA)
+    await selectSession(page, targetA, ready)
     await dragInTerminal(page)
     await waitForPaneText(targetA, 'MOUSESEQ')
     expect(sgrSent()).toBe(true)
@@ -119,7 +119,7 @@ test('mouse input is forwarded to both panes across a session switch', async ({ 
     // re-asserting ENABLE_MOUSE_TRACKING. The drag must still produce SGR
     // input frames and reach the pane — this is the regression assertion.
     inputFrames.length = 0
-    await selectSession(page, targetB)
+    await selectSession(page, targetB, ready)
     await dragInTerminal(page)
     await waitForPaneText(targetB, 'MOUSESEQ')
     expect(sgrSent()).toBe(true)
@@ -130,6 +130,7 @@ test('mouse input is forwarded to both panes across a session switch', async ({ 
 })
 
 test('forced local selection survives the appMouse status poll', async ({ page }) => {
+  const ready = observeTerminalReadiness(page)
   const session = process.env.E2E_TMUX_SESSION
   test.skip(!session, 'E2E_TMUX_SESSION not set')
   // Selection children only exist under the DOM renderer — force it off WebGL
@@ -168,7 +169,7 @@ test('forced local selection survives the appMouse status poll', async ({ page }
   try {
     await waitForPaneText(targetA, 'MOUSE-REPL READY')
     await page.goto('/')
-    await selectSession(page, targetA)
+    await selectSession(page, targetA, ready)
     await expect(page.locator('.xterm.enable-mouse-events')).toBeVisible()
 
     const selKids = () => page.locator('.xterm-selection > *').count()

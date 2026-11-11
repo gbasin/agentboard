@@ -1,3 +1,4 @@
+import { observeTerminalReadiness } from './helpers/terminalReadiness'
 // E2E: software-keyboard Shift modifies quick keys sent to the attached pane.
 // Shift is tracked from keyboard events because iOS touch events omit it.
 //
@@ -43,6 +44,7 @@ test(`touch quick keys send correct bytes (${compact ? 'compact' : 'comfortable'
   const session = process.env.E2E_TMUX_SESSION
   test.skip(!session, 'E2E_TMUX_SESSION not set')
   const target = `${session}:${WINDOW_NAME}`
+  const ready = observeTerminalReadiness(page)
 
   const created = tmux(['new-window', '-t', session!, '-n', WINDOW_NAME, `python3 ${REPL_PATH} --submit-cr-only`])
   expect(created.status).toBe(0)
@@ -60,7 +62,7 @@ test(`touch quick keys send correct bytes (${compact ? 'compact' : 'comfortable'
     await card.waitFor({ state: 'attached', timeout: 20000 })
     await card.evaluate((el) => (el as HTMLElement).click())
     await expect(page.locator('.xterm')).toBeVisible()
-    await page.waitForTimeout(2000) // let the terminal attach settle
+    await ready((await card.getAttribute('data-session-id'))!, 'PASTE-REPL READY')
 
     const tab = page.getByRole('button', { name: 'tab', exact: true })
     await expect(tab).toBeVisible()
