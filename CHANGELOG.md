@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.46.0](https://github.com/gbasin/agentboard/compare/v0.45.0...v0.46.0) (2026-11-11)
+
+
+### Features
+
+* polish session hierarchy and interface controls ([#572](https://github.com/gbasin/agentboard/issues/572)) ([d0cbe81](https://github.com/gbasin/agentboard/commit/d0cbe8130f4c88b1eb0856d38a0d110d6331b626))
+* streamline project and server folder selection ([#571](https://github.com/gbasin/agentboard/issues/571)) ([cc5e76b](https://github.com/gbasin/agentboard/commit/cc5e76b92b7c3fdee93890e1335497c2a29a2fbd))
+
+
+### Bug Fixes
+
+* **ios:** wait for automatic TestFlight group assignment ([#567](https://github.com/gbasin/agentboard/issues/567)) ([fa47e75](https://github.com/gbasin/agentboard/commit/fa47e75319fc2498debc53469e7a099c67448160))
+* isolate every test process from the live tmux server ([#570](https://github.com/gbasin/agentboard/issues/570)) ([68c83ce](https://github.com/gbasin/agentboard/commit/68c83cecf3d3826306a886b9eab8e215d352e8b0))
+* keep output previews HTTPS behind Tailscale Serve ([#573](https://github.com/gbasin/agentboard/issues/573)) ([d9a6fb8](https://github.com/gbasin/agentboard/commit/d9a6fb81f4562dfadc96b2324091b1c956006144))
+
 ## [0.45.0](https://github.com/gbasin/agentboard/compare/v0.44.0...v0.45.0) (2026-11-10)
 
 
