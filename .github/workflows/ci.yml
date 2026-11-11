@@ -147,6 +147,12 @@ jobs:
               PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-preview-network-report
               bunx playwright test --config playwright.preview-network.config.ts --reporter=line,html
 
+          - name: HTTPS preview regression
+            id: preview-https
+            run: |
+              bunx playwright test --config playwright.preview-https.config.ts --output=test-results/https-configured
+              E2E_PREVIEW_AUTO_TLS=1 bunx playwright test --config playwright.preview-https.config.ts --output=test-results/https-tailscale
+
           - name: terminal resume
             id: resume
             run: >-
