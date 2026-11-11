@@ -112,7 +112,7 @@ export default function HibernatingSessionItem({
 
   return (
     <div
-      className={`group relative cursor-pointer px-3 py-2 hover:bg-hover ${MOBILE_ROW_TARGET_CLASS} ${isSelected ? 'bg-hover' : ''}`}
+      className={`session-row group relative cursor-pointer px-3 py-2 ${MOBILE_ROW_TARGET_CLASS} ${isSelected ? 'selected' : ''}`}
       role="button"
       tabIndex={0}
       data-testid="hibernating-session-card"
@@ -126,7 +126,7 @@ export default function HibernatingSessionItem({
         }
       }}
     >
-      <div className="flex flex-col gap-0.5 pl-2.5">
+      <div className="flex flex-col gap-0.5 pl-0.5">
         <div className="flex items-center gap-2">
           <AgentIcon
             agentType={session.agentType}
@@ -144,7 +144,7 @@ export default function HibernatingSessionItem({
               className="min-w-0 flex-1 rounded border border-border bg-surface px-1.5 py-0.5 text-sm font-medium text-primary outline-none focus:border-accent"
             />
           ) : (
-            <span className="min-w-0 flex-1 truncate text-sm font-medium text-primary">
+            <span className="session-name min-w-0 flex-1 truncate text-primary">
               {displayName}
             </span>
           )}
@@ -174,19 +174,17 @@ export default function HibernatingSessionItem({
             {lastActivity}
           </span>
         </div>
-        {(showDirectory || showMessage) && (
-          <div className="flex flex-wrap items-center gap-1 pl-[1.375rem]">
-            {showDirectory && (
-              <ProjectBadge name={directoryLeaf!} fullPath={session.projectPath} />
-            )}
-            {showMessage && (
-              <span className="line-clamp-2 text-xs italic text-muted">
-                "{session.lastUserMessage!.length > 200
-                  ? session.lastUserMessage!.slice(0, 200) + '...'
-                  : session.lastUserMessage}"
-              </span>
-            )}
+        {showDirectory && (
+          <div className="session-metadata">
+            <ProjectBadge name={directoryLeaf!} fullPath={session.projectPath} />
           </div>
+        )}
+        {showMessage && (
+          <span className="session-preview">
+            {session.lastUserMessage!.length > 200
+              ? session.lastUserMessage!.slice(0, 200) + '...'
+              : session.lastUserMessage}
+          </span>
         )}
       </div>
       {contextMenu && (

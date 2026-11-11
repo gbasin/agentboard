@@ -113,7 +113,7 @@ export function resolveDefaultPresetId(
 // Sidebar width constraints
 const SIDEBAR_MIN_WIDTH = 180
 const SIDEBAR_MAX_WIDTH = 400
-const SIDEBAR_DEFAULT_WIDTH = 240
+const SIDEBAR_DEFAULT_WIDTH = 270
 
 interface SettingsState {
   defaultProjectDir: string

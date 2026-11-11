@@ -69,3 +69,5 @@ export { default as Users01Icon } from '@untitledui-icons/react/line/esm/Users01
 
 export { default as Link01Icon } from '@untitledui-icons/react/line/esm/Link01Icon'
 export { default as BrowserIcon } from '@untitledui-icons/react/line/esm/BrowserIcon'
+
+export { default as DotsHorizontalIcon } from '@untitledui-icons/react/line/esm/DotsHorizontalIcon'

@@ -76,7 +76,7 @@ export default memo(function HistorySessionItem({
 
   return (
     <div
-      className={`group relative cursor-pointer px-3 py-2 hover:bg-hover ${MOBILE_ROW_TARGET_CLASS}`}
+      className={`session-row group relative cursor-pointer px-3 py-2 hover:bg-hover ${MOBILE_ROW_TARGET_CLASS}`}
       role="button"
       tabIndex={0}
       title="Click to preview"
@@ -106,15 +106,15 @@ export default memo(function HistorySessionItem({
       >
         <PlayIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
       </button>
-      {/* pl-2.5 matches active session content padding (clears status bar space) */}
-      <div className="flex flex-col gap-0.5 pl-2.5 group-hover:pr-4">
+      {/* Match the active session content alignment. */}
+      <div className="flex flex-col gap-0.5 pl-0.5 group-hover:pr-4">
         {/* Line 1: Icon + Name + Session ID + Time */}
         <div className="flex items-center gap-2">
           <AgentIcon
             agentType={session.agentType}
             className="h-3.5 w-3.5 shrink-0 text-muted"
           />
-          <span className="min-w-0 flex-1 truncate text-sm font-medium text-primary">
+          <span className="session-name min-w-0 flex-1 truncate text-primary">
             {displayName}
           </span>
           {session.lastResumeError && (
@@ -137,24 +137,22 @@ export default memo(function HistorySessionItem({
             {lastActivity}
           </span>
         </div>
-        {/* Line 2: Project badge + last user message */}
-        {(showDirectory || showMessage) && (
-          <div className="flex flex-wrap items-center gap-1 pl-[1.375rem]">
-            {showDirectory && (
-              <ProjectBadge name={directoryLeaf!} fullPath={session.projectPath} />
-            )}
-            {showMessage && (
-              <span className="truncate text-xs italic text-muted">
-                "{session.lastUserMessage!.length > 200
-                  ? session.lastUserMessage!.slice(0, 200) + '…'
-                  : session.lastUserMessage}"
-              </span>
-            )}
+        {/* Project metadata and preview occupy their own stable lines. */}
+        {showDirectory && (
+          <div className="session-metadata">
+            <ProjectBadge name={directoryLeaf!} fullPath={session.projectPath} />
           </div>
+        )}
+        {showMessage && (
+          <span className="session-preview">
+            {session.lastUserMessage!.length > 200
+              ? session.lastUserMessage!.slice(0, 200) + '…'
+              : session.lastUserMessage}
+          </span>
         )}
         {/* Line 3: PR chips */}
         {session.prs && session.prs.length > 0 && (
-          <PrChips prs={session.prs} />
+          <PrChips prs={session.prs} className="ml-[20px] font-mono" />
         )}
       </div>
 

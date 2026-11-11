@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef } from 'react'
-import type { ReactNode } from 'react'
+import type { ReactNode, RefObject } from 'react'
 
 export interface ContextMenuItem {
   key: string
@@ -25,6 +25,9 @@ interface ContextMenuProps {
   items: ContextMenuEntry[]
   /** Menu renders above the anchor instead of below it */
   anchorFromBottom?: boolean
+  /** Focus and keyboard navigation for an explicit menu button. */
+  keyboardNavigation?: boolean
+  returnFocusRef?: RefObject<HTMLElement>
   onClose: () => void
 }
 
@@ -33,12 +36,27 @@ export default function ContextMenu({
   items,
   anchorFromBottom = false,
   onClose,
+  keyboardNavigation = false,
+  returnFocusRef,
 }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (!keyboardNavigation) return
+    const trigger = returnFocusRef?.current ?? document.activeElement as HTMLElement | null
+    const menu = ref.current
+    menu?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    return () => {
+      // Do not steal focus from a dialog opened by a menu action.
+      if (trigger?.isConnected && (document.activeElement === document.body || menu?.contains(document.activeElement))) trigger.focus()
+    }
+  }, [keyboardNavigation, returnFocusRef])
+
+  useEffect(() => {
     const handleClickOutside = (e: MouseEvent | TouchEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      const target = e.target as Node
+      if (keyboardNavigation && returnFocusRef?.current?.contains(target)) return
+      if (ref.current && !ref.current.contains(target)) onClose()
     }
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -51,7 +69,7 @@ export default function ContextMenu({
       document.removeEventListener('touchstart', handleClickOutside)
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [onClose])
+  }, [onClose, keyboardNavigation, returnFocusRef])
 
   // Clamp horizontally so a right-click near the viewport edge keeps the
   // menu on-screen (min-w + padding ≈ 190px).
@@ -70,6 +88,16 @@ export default function ContextMenu({
         transform: anchorFromBottom ? 'translateY(calc(-100% - 6px))' : undefined,
       }}
       role="menu"
+      onKeyDown={(event) => {
+        if (!keyboardNavigation) return
+        const items = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
+        const index = items.indexOf(document.activeElement as HTMLButtonElement)
+        const next = event.key === 'ArrowDown' ? (index + 1) % items.length
+          : event.key === 'ArrowUp' ? (index - 1 + items.length) % items.length
+          : event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : null
+        if (next !== null) { event.preventDefault(); items[next]?.focus() }
+        if (event.key === 'Tab') onClose()
+      }}
     >
       {items.map((item, i) =>
         item === 'divider' ? (
