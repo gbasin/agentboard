@@ -16,7 +16,7 @@ export default function ProjectBadge({ name, fullPath, className = '' }: Project
   return (
     <span
       className={cn(
-        'project-badge inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none',
+        'project-badge inline-flex max-w-full items-center truncate rounded font-mono px-1.5 py-0.5 text-[10px] font-medium leading-none',
         className
       )}
       style={colorStyle}

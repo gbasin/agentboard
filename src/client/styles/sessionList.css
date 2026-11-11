@@ -1,0 +1,59 @@
+/* Session rows: stable geometry across hover, selection, and keyboard focus. */
+.session-row {
+  position: relative;
+  margin: 0 5px;
+  border-radius: 5px;
+  transition: background-color 0.1s ease;
+}
+
+.session-row:hover {
+  background: var(--bg-hover);
+}
+
+.session-row.selected {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, var(--bg-elevated));
+}
+
+.session-row.selected:hover {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+}
+
+.session-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.session-sidebar { container-type: inline-size; }
+.session-toolbar { gap: 4px; padding-inline: 8px; }
+.session-toolbar > div { gap: 4px; }
+.session-toolbar .icon-button {
+  width: clamp(20px, 12cqw, 28px);
+  height: clamp(20px, 12cqw, 28px);
+}
+
+/* One baseline for names, metadata, previews and PRs in every session state. */
+.session-name { font-size: 12px; line-height: 17px; font-weight: 600; }
+.session-metadata { margin-left: 20px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.session-preview {
+  margin-left: 20px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+}
+@media (max-width: 767px) {
+  .session-preview { -webkit-line-clamp: 2; font-size: 12px; }
+  .session-name { font-size: 13px; }
+}
+
+/* The phone toolbar has only Filter/Sort: give each its own 44px area so
+   expanded touch targets cannot overlap neighboring controls. */
+@media (max-width: 767px) and (pointer: coarse) {
+  .session-toolbar { height: 52px; }
+  .session-toolbar > div { gap: 8px; }
+  .session-toolbar .icon-button { width: 44px; height: 44px; }
+}

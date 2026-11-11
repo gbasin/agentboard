@@ -431,10 +431,9 @@ test.describe('mobile drawer', () => {
     await expect.poll(async () => (await box(drawer)).left).toBeGreaterThanOrEqual(-0.5)
 
     const button = funnel(drawer)
-    // The visible control stays small (h-7: 22.75px at the app's 13px root);
-    // its touch target is 44x44 CSS px.
+    // Phone filter/sort controls each own a 44px box, with no overlapping hit areas.
     const visible = await box(button)
-    expect(visible.height).toBeLessThan(30)
+    expect(visible.height).toBe(44)
     const hit = await button.evaluate((el) => {
       const r = el.getBoundingClientRect()
       const cx = r.left + r.width / 2
