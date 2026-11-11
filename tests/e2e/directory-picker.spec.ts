@@ -6,7 +6,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 let root: string
-let originalTheme: string
+let originalSettings: { theme: string; recentPaths: string[]; lastProjectPath: string | null }
 let createdName: string | null = null
 
 test.beforeAll(async () => {
@@ -15,11 +15,14 @@ test.beforeAll(async () => {
   await Promise.all([1, 2, 3, 4].map(i => fs.mkdir(path.join(root, 'recents', `project-${i}`))))
 })
 test.beforeEach(async ({ request }) => {
-  originalTheme = (await (await request.get('/api/settings/synced')).json()).settings.theme ?? 'dark'
+  const { theme = 'dark', recentPaths = [], lastProjectPath = null } = (await (await request.get('/api/settings/synced')).json()).settings
+  originalSettings = { theme, recentPaths, lastProjectPath }
   createdName = null
 })
-test.afterEach(async ({ request }) => {
-  await request.put('/api/settings/synced', { data: { settings: { theme: originalTheme } } })
+test.afterEach(async ({ page, request }) => {
+  // Close first so a pending client settings write cannot overwrite the restoration.
+  await page.close()
+  await request.put('/api/settings/synced', { data: { settings: originalSettings } })
   const sessions: Array<{ id: string; name: string }> = await (await request.get('/api/sessions')).json()
   const socketRoot = process.env.E2E_TMUX_TMPDIR
   if (!socketRoot) throw new Error('Private E2E tmux socket required')
@@ -34,11 +37,11 @@ test.afterAll(async () => { await fs.rm(root, { recursive: true, force: true }) 
 for (const phone of [false, true]) {
   test(`choose server folders on ${phone ? 'phone' : 'desktop'}`, async ({ page, request }) => {
     await page.setViewportSize(phone ? { width: 390, height: 844 } : { width: 1280, height: 900 })
-    await page.addInitScript(({ root }) => {
-      localStorage.setItem('agentboard-settings', JSON.stringify({ state: { recentPaths: [...[1, 2, 3, 4].map(i => `${root}/recents/project-${i}`), root + '/beta'] }, version: 9 }))
-      localStorage.setItem('agentboard-theme', JSON.stringify({ state: { theme: 'light' }, version: 0 }))
-    }, { root })
-    await request.put('/api/settings/synced', { data: { settings: { theme: 'light' } } })
+    // The server is canonical; localStorage alone loses to settings from earlier specs.
+    await request.put('/api/settings/synced', { data: { settings: {
+      theme: 'light',
+      recentPaths: [...[1, 2, 3, 4].map(i => `${root}/recents/project-${i}`), root + '/beta'],
+    } } })
     await page.goto('/')
     await page.getByRole('button', { name: 'New session', exact: true }).first().click()
     const project = page.getByRole('combobox', { name: 'Project path' })
