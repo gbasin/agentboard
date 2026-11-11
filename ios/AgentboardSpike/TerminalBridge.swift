@@ -9,8 +9,29 @@ final class TerminalBridge: ObservableObject {
     @Published var shift = false
     @Published var fontSize = 13
     @Published var inputFocused = false
-    @Published var readingSnapshot = false { didSet { if readingSnapshot { inputView?.resetContext() } } }
-    @Published var ready = false { didSet { if oldValue && !ready { clipboard.cancel(); inputView?.resetContext() } } }
+    @Published var readingSnapshot = false {
+        didSet { if readingSnapshot { inputView?.resetContext() }; updateScrollPermission() }
+    }
+    @Published var ready = false {
+        didSet { if oldValue && !ready { clipboard.cancel(); inputView?.resetContext() }; updateScrollPermission() }
+    }
+    private var sceneActive = true
+    func setSceneActive(_ active: Bool) {
+        sceneActive = active
+        if !active { shift = false }
+        updateScrollPermission()
+    }
+    private func updateScrollPermission() {
+        call("scrollEnabled", ["enabled": ready && !readingSnapshot && sceneActive])
+    }
+    func exitCopyMode() { call("bottom") }
+    func insert(_ message: NativePasteDelivery) {
+        guard !readingSnapshot else { return }
+        inputView?.resetContext()
+        // Cancel momentum and emit the insertion in the same WebKit queue as
+        // scroll input. A separate native send can overtake queued wheel events.
+        call("insert", ["data": message.value, "paste": message.bracketed])
+    }
     let clipboard = NativePasteController()
     @Published var liveSession: BoardSession?
     weak var inputView: TerminalInputView?
@@ -114,11 +135,7 @@ struct TerminalWebView: UIViewRepresentable {
                 }, deliver: { [weak self] message in
                     guard let self, self.active else { return }
                     guard !self.bridge.readingSnapshot else { return }
-                    self.bridge.inputView?.resetContext()
-                    self.bridge.call("stopScroll")
-                    if let live = self.live { live.input(message.value, owner: self.owner, paste: message.bracketed) }
-                    else if message.bracketed { self.bridge.paste(message.value) }
-                    else { self.bridge.send(message.value) }
+                    self.bridge.insert(message)
                 })
             subscription = live?.$sessions.sink { [weak bridge] sessions in
                 bridge?.liveSession = sessions.first { $0.id == session.id }

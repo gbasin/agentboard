@@ -112,9 +112,9 @@ struct TerminalScreen: View {
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .enableInjection()
-            .onChange(of: scenePhase) { _, phase in
+            .onChange(of: scenePhase, initial: true) { _, phase in
                 if phase == .active && live == nil { terminal.call("resume") }
-                if phase != .active { terminal.shift = false }
+                terminal.setSceneActive(phase == .active)
             }
     }
     /// Metadata may change while this snapshot is open. Resolve the current
@@ -172,7 +172,7 @@ struct TerminalScreen: View {
             controls.append(action("Copy server selection", "clipboard", enabled: live.clipboardOffer != nil) {
                 if let text = live.clipboardOffer { UIPasteboard.general.string = text }
             })
-            controls.append(action("Exit copy mode", "escape") { live.exitCopyMode() })
+            controls.append(action("Exit copy mode", "escape") { terminal.exitCopyMode() })
         }
         controls += [
             action("Interrupt", "stop") { terminal.send("\u{3}") },

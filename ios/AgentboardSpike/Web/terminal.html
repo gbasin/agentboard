@@ -23,7 +23,7 @@ const terminal = new Terminal({ fontFamily: 'Menlo, monospace', fontSize: 13, li
 const fit = new FitAddon.FitAddon();
 terminal.loadAddon(fit);
 terminal.open(document.getElementById('terminal'));
-let socket, endpoint = '', control = false, configured = false, disposed = false, native = false;
+let socket, endpoint = '', control = false, configured = false, disposed = false, native = false, scrollEnabled = false;
 const notify = value => window.webkit?.messageHandlers?.terminal?.postMessage(value);
 // Native UIKit owns text input; never activate WebKit's form keyboard.
 if (window.webkit) {
@@ -60,7 +60,7 @@ terminal.registerLinkProvider({provideLinks(y, callback) {
     })));
 }});
 const scroll = installTerminalScroll(terminal, document.getElementById('terminal'), {
-    live: () => native && !disposed,
+    live: () => native && scrollEnabled && !disposed,
     // Bypass keyboard modifiers and disableStdin: these are mouse events.
     input: data => notify({type:'scroll', data})
 });
@@ -128,7 +128,14 @@ window.agentboard = {
         } else if (!options.webGL && webgl) { webgl.dispose(); webgl = null; }
         fit.fit();
     },
-    stopScroll: () => scroll.reset(),
+    scrollEnabled: ({enabled}) => { scrollEnabled = enabled; if (!enabled) scroll.reset(); },
+    insert: ({data, paste}) => {
+        scroll.reset();
+        // Clipboard bytes bypass one-shot keyboard modifiers.
+        if (native) notify({type: paste ? 'paste' : 'input', data});
+        else if (paste) window.agentboard.paste({data});
+        else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'input', data}));
+    },
     copySelection: () => { const text = terminal.getSelection(); if (text) notify({type: 'copy', text}); },
     write: ({data}) => terminal.write(data),
     // Queue the reset behind pending writes, so buffered old output cannot
