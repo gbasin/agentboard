@@ -8,7 +8,18 @@ function setup() {
   const messages: string[] = []
   let wheel: (event: any) => boolean = () => true
   const state = { live: true, selection: false }
-  const context = { window: {} as any }
+  let now = 0
+  let nextFrame = 0
+  const frames = new Map<number, (time: number) => void>()
+  const advance = (ms = 16) => {
+    now += ms
+    const pending = [...frames.values()]
+    frames.clear()
+    for (const callback of pending) callback(now)
+  }
+  const context = { window: {} as any, performance: { now: () => now },
+    requestAnimationFrame: (callback: (time: number) => void) => { frames.set(++nextFrame, callback); return nextFrame },
+    cancelAnimationFrame: (id: number) => frames.delete(id) }
   runInNewContext(source, context)
   const scroll = context.window.installTerminalScroll({ cols: 80, rows: 24,
     hasSelection: () => state.selection,
@@ -22,7 +33,7 @@ function setup() {
       preventDefault: () => { prevented = true }, stopImmediatePropagation() {} })
     return prevented
   }
-  return { state, messages, touch, scroll, wheel: (deltaY: number, deltaMode = 0) => wheel({ deltaY, deltaMode }) }
+  return { state, messages, touch, scroll, advance, frames, wheel: (deltaY: number, deltaMode = 0) => wheel({ deltaY, deltaMode }) }
 }
 
 test('live finger drag reaches tmux history in both directions without local scrolling', () => {
@@ -65,4 +76,40 @@ test('wheel handles pixel and line units; sample terminal keeps native xterm scr
   expect(h.wheel(-30)).toBe(true)
   h.touch('touchstart', 100); h.touch('touchmove', 200)
   expect(h.messages.length).toBe(2)
+})
+
+
+test('flick coasts through history and decays to a stop', () => {
+  const h = setup()
+  h.touch('touchstart', 100)
+  h.advance(100)
+  h.touch('touchmove', 250)
+  const dragCount = h.messages.join('').split('M').length - 1
+  h.touch('touchend', 250)
+  for (let i = 0; i < 100; i++) h.advance()
+  expect(h.messages.join('').split('M').length - 1).toBeGreaterThan(dragCount * 2)
+  expect(h.frames.size).toBe(0)
+})
+
+test('new touch, input reset, selection and disconnect stop momentum', () => {
+  for (const stop of [(h: any) => h.touch('touchstart', 250), (h: any) => h.scroll.reset(),
+    (h: any) => { h.state.selection = true }, (h: any) => { h.state.live = false }]) {
+    const h = setup()
+    h.touch('touchstart', 100); h.advance(100); h.touch('touchmove', 250); h.touch('touchend', 250)
+    stop(h)
+    const count = h.messages.length
+    h.advance(32); h.advance(32)
+    expect(h.messages.length).toBe(count)
+    expect(h.frames.size).toBe(0)
+  }
+})
+
+test('holding still before release and canceled gestures never coast', () => {
+  for (const cancel of [false, true]) {
+    const h = setup()
+    h.touch('touchstart', 100); h.advance(100); h.touch('touchmove', 250)
+    h.advance(100)
+    h.touch(cancel ? 'touchcancel' : 'touchend', 250)
+    expect(h.frames.size).toBe(0)
+  }
 })

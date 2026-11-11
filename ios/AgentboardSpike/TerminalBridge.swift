@@ -115,6 +115,7 @@ struct TerminalWebView: UIViewRepresentable {
                     guard let self, self.active else { return }
                     guard !self.bridge.readingSnapshot else { return }
                     self.bridge.inputView?.resetContext()
+                    self.bridge.call("stopScroll")
                     if let live = self.live { live.input(message.value, owner: self.owner, paste: message.bracketed) }
                     else if message.bracketed { self.bridge.paste(message.value) }
                     else { self.bridge.send(message.value) }

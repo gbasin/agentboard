@@ -42,6 +42,7 @@ const theme = dark => {
         yellow: dark ? '#ffce64' : '#865800', brightBlack: dark ? '#a0a0a7' : '#68686f' };
 };
 function send(data) {
+    scroll.reset();
     if (control && data.length === 1) {
         const code = data.toUpperCase().charCodeAt(0);
         if (code >= 65 && code <= 90) data = String.fromCharCode(code - 64);
@@ -127,20 +128,21 @@ window.agentboard = {
         } else if (!options.webGL && webgl) { webgl.dispose(); webgl = null; }
         fit.fit();
     },
+    stopScroll: () => scroll.reset(),
     copySelection: () => { const text = terminal.getSelection(); if (text) notify({type: 'copy', text}); },
     write: ({data}) => terminal.write(data),
     // Queue the reset behind pending writes, so buffered old output cannot
     // reappear after the next attachment's history.
     reset: () => { scroll.reset(); terminal.write('\x1bc'); },
     send: ({data}) => send(data),
-    paste: ({data}) => { if (native) notify({type:'paste', data}); else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'paste', data})); },
-    prepareInput: () => { if (terminal.hasSelection()) return false; document.activeElement?.blur(); return true; },
+    paste: ({data}) => { scroll.reset(); if (native) notify({type:'paste', data}); else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'paste', data})); },
+    prepareInput: () => { scroll.reset(); if (terminal.hasSelection()) return false; document.activeElement?.blur(); return true; },
     focus: () => terminal.focus(), blur: () => terminal.blur(),
     control: ({active}) => { control = active; },
     theme: ({dark}) => theme(dark), font: ({size}) => { terminal.options.fontSize = size; fit.fit(); },
-    bottom: () => { if (native) notify({type:'bottom'}); terminal.scrollToBottom(); }, reconnect: connect,
+    bottom: () => { scroll.reset(); if (native) notify({type:'bottom'}); terminal.scrollToBottom(); }, reconnect: connect,
     resume: () => { resize(); if (endpoint && socket?.readyState === WebSocket.CLOSED) connect(); },
-    dispose: () => { disposed = true; if(socket) {socket.onclose = null; socket.close();} terminal.dispose(); }
+    dispose: () => { scroll.reset(); disposed = true; if(socket) {socket.onclose = null; socket.close();} terminal.dispose(); }
 };
 // Browser-only preview; WKWebView is configured by the native coordinator.
 if (!window.webkit) window.agentboard.start({name:'pure-pod-2', endpoint:new URLSearchParams(location.search).get('endpoint') || '', dark: false});
