@@ -22,6 +22,7 @@ class Peer {
     while (performance.now() < end) {
       const index = this.frames.findIndex(frame => frame.type === type)
       if (index >= 0) return this.frames.splice(index, 1)[0] as Extract<Frame, { type: T }>
+      if (this.closed) break
       await wait(5)
     }
     throw new Error(`Timed out waiting for ${type}; closed=${this.closed}; frames=${JSON.stringify(this.frames)}`)

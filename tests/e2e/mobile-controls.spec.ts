@@ -43,11 +43,11 @@ for (const compact of [false, true]) {
 test(`touch quick keys send correct bytes (${compact ? 'compact' : 'comfortable'})`, async ({ page }, testInfo) => {
   const session = process.env.E2E_TMUX_SESSION
   test.skip(!session, 'E2E_TMUX_SESSION not set')
-  const target = `${session}:${WINDOW_NAME}`
   const ready = observeTerminalReadiness(page)
 
-  const created = tmux(['new-window', '-t', session!, '-n', WINDOW_NAME, `python3 ${REPL_PATH} --submit-cr-only`])
+  const created = tmux(['new-window', '-t', session!, '-n', WINDOW_NAME, '-P', '-F', '#{window_id}', `python3 ${REPL_PATH} --submit-cr-only`])
   expect(created.status).toBe(0)
+  const target = `${session}:${created.stdout.trim()}`
 
   try {
     await waitForPaneText(target, 'PASTE-REPL READY')
@@ -58,11 +58,11 @@ test(`touch quick keys send correct bytes (${compact ? 'compact' : 'comfortable'
     await page.goto('/')
     // On mobile the session list lives in a drawer: the card is in the DOM
     // but not visible, so select it with a DOM click.
-    const card = page.getByTestId('session-card').filter({ hasText: WINDOW_NAME }).first()
+    const card = page.locator(`[data-testid="session-card"][data-session-id="${target}"]`).first()
     await card.waitFor({ state: 'attached', timeout: 20000 })
     await card.evaluate((el) => (el as HTMLElement).click())
     await expect(page.locator('.xterm')).toBeVisible()
-    await ready((await card.getAttribute('data-session-id'))!, 'PASTE-REPL READY')
+    await ready(target, 'PASTE-REPL READY')
 
     const tab = page.getByRole('button', { name: 'tab', exact: true })
     await expect(tab).toBeVisible()
@@ -184,18 +184,20 @@ for (const [browserName, device] of [['chromium', 'iPhone 13'], ['webkit', 'iPho
       const context = await browser.newContext({ ...devices[device], baseURL: testInfo.project.use.baseURL })
       const page = await context.newPage()
       const session = process.env.E2E_TMUX_SESSION!
-      const target = `${session}:keyboard-${browserName}`
+      const ready = observeTerminalReadiness(page)
+      const created = tmux(['new-window', '-t', session, '-n', `keyboard-${browserName}`, '-P', '-F', '#{window_id}', `python3 ${REPL_PATH}`])
+      expect(created.status).toBe(0)
+      const target = `${session}:${created.stdout.trim()}`
       try {
-        expect(tmux(['new-window', '-t', session, '-n', `keyboard-${browserName}`, `python3 ${REPL_PATH}`]).status).toBe(0)
         await waitForPaneText(target, 'PASTE-REPL READY')
         await page.addInitScript(() => localStorage.setItem('agentboard-settings', JSON.stringify({ version: 8, state: { compactMobileControls: false } })))
         await page.goto('/')
-        const card = page.getByTestId('session-card').filter({ hasText: `keyboard-${browserName}` }).first()
+        const card = page.locator(`[data-testid="session-card"][data-session-id="${target}"]`).first()
         await card.waitFor({ state: 'attached', timeout: 20000 })
         await card.evaluate(el => (el as HTMLElement).click())
         const input = page.locator('.xterm-helper-textarea')
         await expect(page.locator('.xterm-screen')).toBeVisible()
-        await page.waitForTimeout(1500)
+        await ready(target, 'PASTE-REPL READY')
         await expect(page.getByRole('button', { name: 'Dismiss keyboard', exact: true })).toHaveCount(0)
         await expect(page.getByRole('button', { name: 'Show keyboard' })).toHaveCount(0)
         await expect(input).not.toBeFocused()
