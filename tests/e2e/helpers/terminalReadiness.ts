@@ -18,7 +18,8 @@ export function observeTerminalReadiness(page: Page) {
       message: `Terminal ${sessionId} must attach and deliver ${marker}`,
       timeout: 10000,
     }).toMatchObject({ ready: true, output: expect.stringContaining(marker) })
-    await expect(page.locator('.xterm-helper-textarea')).toBeEnabled()
+    // Mobile intentionally disables text input until the user taps the terminal.
+    await expect(page.locator('.xterm')).toBeVisible()
     if (mouse) await expect(page.locator('.xterm.enable-mouse-events')).toBeVisible()
   }
 }
