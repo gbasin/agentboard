@@ -2,6 +2,13 @@
 
 Release Please maintains this file for the native iPhone client.
 
+## [0.2.2](https://github.com/gbasin/agentboard/compare/ios-v0.2.1...ios-v0.2.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **ios:** restore flick scrolling and add consistent project chips ([#565](https://github.com/gbasin/agentboard/issues/565)) ([0304cb4](https://github.com/gbasin/agentboard/commit/0304cb4e22ac6acbfa228e270995e21fd9c12a34))
+
 ## [0.2.1](https://github.com/gbasin/agentboard/compare/ios-v0.2.0...ios-v0.2.1) (2026-11-10)
 
 
