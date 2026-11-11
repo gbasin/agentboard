@@ -30,6 +30,14 @@ export type NestedTmuxDecision =
 
 type EnvLike = Record<string, string | undefined>
 
+/** Tests must isolate at process start; mocked tmux probes cannot establish safety. */
+export function assertTestTmuxIsolation(env: EnvLike): void {
+  if (env.NODE_ENV !== 'test') return
+  if (env.TMUX?.trim() || !env.TMUX_TMPDIR?.trim()) {
+    throw new Error('Refusing unisolated test server startup. Use bun run test, or launch with TMUX unset and a private TMUX_TMPDIR.')
+  }
+}
+
 /**
  * Reports whether `pane` belongs to an agentboard-managed session (one holding
  * the bootstrap window) and that session's name. A missing pane or a failed

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   ALLOW_NESTED_TMUX_ENV,
+  assertTestTmuxIsolation,
   applyNestedTmuxDecision,
   decideNestedTmux,
 } from '../tmuxIsolation'
@@ -102,5 +103,19 @@ describe('applyNestedTmuxDecision', () => {
     const env: Record<string, string | undefined> = { TMUX: LIVE_TMUX, TMUX_PANE: '%1' }
     expect(applyNestedTmuxDecision(env, inManaged).action).toBe('refuse')
     expect(env).toEqual({ TMUX: LIVE_TMUX, TMUX_PANE: '%1' })
+  })
+})
+
+
+describe('test server startup boundary', () => {
+  test('rejects inherited tmux even when a private directory or nested opt-in is set', () => {
+    expect(() => assertTestTmuxIsolation({ NODE_ENV: 'test', TMUX: LIVE_TMUX, TMUX_TMPDIR: '/private-test', [ALLOW_NESTED_TMUX_ENV]: 'true' })).toThrow('Refusing unisolated test')
+  })
+  test('rejects the default tmux server even outside a pane', () => {
+    expect(() => assertTestTmuxIsolation({ NODE_ENV: 'test' })).toThrow('Use bun run test')
+  })
+  test('allows isolated tests and preserves production startup decisions', () => {
+    expect(() => assertTestTmuxIsolation({ NODE_ENV: 'test', TMUX_TMPDIR: '/private-test' })).not.toThrow()
+    expect(() => assertTestTmuxIsolation({ NODE_ENV: 'production', TMUX: LIVE_TMUX })).not.toThrow()
   })
 })

@@ -23,7 +23,7 @@ import { OwnershipMatcher } from './ownership/matcher'
 import { createLocalOwnershipIO } from './ownership/localIO'
 import { probeOwnership } from './ownership/probe'
 import { ensureTmux } from './prerequisites'
-import { applyNestedTmuxDecision } from './tmuxIsolation'
+import { applyNestedTmuxDecision, assertTestTmuxIsolation } from './tmuxIsolation'
 import { sanitizedTmuxEnv } from './tmuxEnv'
 import { KillRateLimiter } from './killRateLimit'
 import { SessionManager } from './SessionManager'
@@ -432,6 +432,7 @@ function createConnectionId(): string {
 // Must run before any tmux spawn: a server started from inside an agentboard
 // window inherits $TMUX and would otherwise operate on the live socket.
 {
+  assertTestTmuxIsolation(process.env)
   const nested = applyNestedTmuxDecision(process.env)
   if (nested.action === 'refuse') {
     logger.error('tmux_nested_refused', {

@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { testProcessEnv } from './test-process-env'
 
 const args = process.argv.slice(2)
 const skipIsolated = args.includes('--skip-isolated')
@@ -35,8 +36,11 @@ async function main() {
   const { tempRoot, claudeDir, codexDir } = createTempLogDirs()
   const tempLogFile = path.join(tempRoot, 'agentboard.log')
   const tempDbPath = path.join(tempRoot, 'agentboard.db')
+  // A mocked spawn can be restored while async server startup is still running.
+  // Isolate at process creation, before imports/Workers can retain the parent env.
+  const socketRoot = fs.mkdtempSync(path.join(fs.existsSync('/tmp') ? '/tmp' : os.tmpdir(), 'ab-tests-tmux-'))
   const env = {
-    ...process.env,
+    ...testProcessEnv(process.env, socketRoot),
     // React's act() requires the development build; force NODE_ENV=test
     // so tests pass even when the shell has NODE_ENV=production.
     NODE_ENV: process.env.NODE_ENV === 'production' ? 'test' : (process.env.NODE_ENV || 'test'),
@@ -61,7 +65,7 @@ async function main() {
 
   try {
     await runCommand(['node', '--test', 'launchd/release.test.mjs', 'launchd/scripts.test.mjs', 'systemd/install.test.mjs'], env)
-    await runCommand(['bun', 'test', './scripts/verify-platform-lock.test.ts'], env)
+    await runCommand(['bun', 'test', './scripts/verify-platform-lock.test.ts', './scripts/test-process-env.test.ts'], env)
 
     // Tests that either mutate globals or are sensitive to global mutations
     // must run in a separate process so they don't race with other test files.
@@ -225,6 +229,18 @@ async function main() {
       }
     }
   } finally {
+    // Close only windows on the socket created by this invocation. Never target
+    // a default server or rely on the caller's TMUX environment during cleanup.
+    const socket = path.join(socketRoot, `tmux-${os.userInfo().uid}`, 'default')
+    if (Bun.which('tmux')) {
+      const windows = Bun.spawnSync(['tmux', '-S', socket, 'list-windows', '-a', '-F', '#{window_id}'], { env, stdout: 'pipe', stderr: 'ignore' })
+      if (windows.exitCode === 0) {
+        for (const window of new Set(windows.stdout.toString().trim().split('\n').filter(Boolean))) {
+          Bun.spawnSync(['tmux', '-S', socket, 'kill-window', '-t', window], { env, stdout: 'ignore', stderr: 'ignore' })
+        }
+      }
+    }
+    fs.rmSync(socketRoot, { recursive: true, force: true })
     fs.rmSync(tempRoot, { recursive: true, force: true })
   }
 }
