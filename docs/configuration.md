@@ -26,6 +26,7 @@ Settings that you change in the **Settings** dialog are separate. Agentboard sto
 | `AGENTBOARD_REMOTE_HOSTS` | unset | SSH hosts to show on the board. See [Remote hosts](remote-hosts.md). |
 | `AGENTBOARD_DATA_DIR` | `~/.agentboard` | Directory for the database, logs, and lock files. |
 | `TLS_CERT`, `TLS_KEY` | unset | Certificate and key files. Set both to serve HTTPS. |
+| `PREVIEW_TLS_CERT`, `PREVIEW_TLS_KEY` | unset | Certificate and key files for separate preview origins behind an HTTPS proxy; falls back to `TLS_CERT`/`TLS_KEY`. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. |
 
 ## Network and security
@@ -45,6 +46,12 @@ When `HOSTNAME` is `127.0.0.1` and Tailscale is detected, the server also binds 
 A `HOSTNAME` that equals the machine hostname is treated as auto-exported by the environment (containers and some CI images do this). The server ignores it, logs a warning, and keeps the `127.0.0.1` default.
 
 Set both `TLS_CERT` and `TLS_KEY` to serve HTTPS. Use absolute paths. To install the board as a PWA, the browser needs HTTPS or `localhost`; see [pwa-install.md](pwa-install.md).
+
+**HTTPS previews behind a reverse proxy.** The browser requests previews with its dashboard protocol. `X-Forwarded-Proto: https` also selects HTTPS for direct output links. HTML, visualization, and local-app previews use a separate port and origin; that port must be reachable from the viewing device. They are not served beneath the dashboard origin.
+
+For a dashboard opened using this machine's `*.ts.net` name, Agentboard obtains a preview certificate automatically through the local `tailscale` CLI. Tailscale HTTPS must be enabled and the service user must be allowed to run `tailscale cert`. The hostname must match `Self.DNSName` from local Tailscale status. Agentboard requests at least 24 hours of certificate validity, caches certificates for at most one hour, and refreshes active preview listeners without changing their URLs. Temporary certificate exports are private and removed after reading; Tailscale owns its persistent certificate cache. This does not change Tailscale Serve configuration.
+
+For other HTTPS proxies, set both `PREVIEW_TLS_CERT` and `PREVIEW_TLS_KEY` to absolute paths containing a certificate for the dashboard hostname. The dashboard can remain HTTP behind the proxy. Your certificate manager renews these files; Agentboard rereads them hourly and rebinds preview listeners while existing connections drain. Without a usable certificate, the preview displays a setup error instead of loading an HTTP iframe. Plain HTTP dashboards continue to use HTTP previews.
 
 **Allowed origins.** The server rejects a WebSocket handshake or a write request (any method except `GET`, `HEAD`, and `OPTIONS`) with 403 when the browser's `Origin` does not match the request's `Host` header. When Agentboard serves TLS itself (`TLS_CERT` and `TLS_KEY` are set), the `Origin` must also use `https`. Requests without an `Origin` header, such as curl and scripts, are not affected. If a reverse proxy rewrites `Host`, for example to `127.0.0.1:4040`, list the public origin in `AGENTBOARD_ALLOWED_ORIGINS`. A proxy that forwards the original `Host`, such as Tailscale Serve, needs no entry.
 

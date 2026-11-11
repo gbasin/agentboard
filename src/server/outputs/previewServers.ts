@@ -5,6 +5,7 @@
  * Preview binding is independent of who owns the dashboard port.
  */
 import fs from 'node:fs/promises'
+import { PreviewTlsError, type PreviewCertificate } from './certificates'
 import { crossOriginRejection } from '../requestOrigin'
 import path from 'node:path'
 import { timingSafeEqual } from 'node:crypto'
@@ -18,11 +19,17 @@ interface Preview {
   port: number
   lastUsed: number
   servers: Server<ProxySocket>[]
+  draining: Server<ProxySocket>[]
   entry: string
+  hostname: string
+  tls?: PreviewCertificate
+  bind: (tls?: PreviewCertificate) => void
 }
 interface Options {
   hostname: string
-  tls?: { cert: ReturnType<typeof Bun.file>; key: ReturnType<typeof Bun.file> }
+  getCertificate?: (hostname: string) => Promise<PreviewCertificate>
+  forceTls?: boolean
+  onTlsError?: () => void
   idleMs?: number
   limit?: number
 }
@@ -58,10 +65,12 @@ export class PreviewServers {
   private hosts: string[]
   private timer: ReturnType<typeof setInterval>
   private blockedPorts = new Set<number>()
+  private disposed = false
+  private refreshing = false
 
   constructor(private options: Options) {
     this.hosts = [options.hostname]
-    this.timer = setInterval(() => this.reap(), 60_000)
+    this.timer = setInterval(() => { this.reap(); void this.refreshCertificates() }, 60_000)
     this.timer.unref?.()
   }
 
@@ -73,12 +82,42 @@ export class PreviewServers {
 
   private reap() {
     for (const [key, preview] of this.previews) {
-      if (preview.servers.some(server => server.pendingWebSockets > 0 || server.pendingRequests > 0)) continue
+      preview.draining = preview.draining.filter(server => {
+        if (server.pendingRequests || server.pendingWebSockets) return true
+        server.stop(true)
+        return false
+      })
+      if ([...preview.servers, ...preview.draining].some(server => server.pendingWebSockets > 0 || server.pendingRequests > 0)) continue
       if (Date.now() - preview.lastUsed < (this.options.idleMs ?? 30 * 60_000)) continue
       for (const server of preview.servers) server.stop(true)
       this.previews.delete(key)
       // Keep the port blocked until shutdown: an expired page may still run.
     }
+  }
+
+  /** Bun reload does not replace TLS contexts. Rebind the same port while
+   * old connections drain; the capability and browser origin stay unchanged. */
+  private rotate(preview: Preview, tls: PreviewCertificate) {
+    if (preview.tls?.fingerprint === tls.fingerprint && preview.servers.length) return
+    const previous = preview.tls
+    for (const server of preview.servers) { server.stop(false); preview.draining.push(server) }
+    preview.servers = []
+    try { preview.bind(tls); preview.tls = tls }
+    catch (error) { preview.bind(previous); throw error }
+  }
+
+  async refreshCertificates() {
+    if (this.refreshing || this.disposed || !this.options.getCertificate) return
+    this.refreshing = true
+    try {
+      for (const preview of this.previews.values()) {
+        if (!preview.tls) continue
+        try {
+          const tls = await this.options.getCertificate(preview.hostname)
+          if (!this.disposed && this.previews.get(preview.key) === preview) this.rotate(preview, tls)
+        } catch { this.options.onTlsError?.() }
+      }
+    } finally { this.refreshing = false }
   }
 
   addHost(hostname: string) {
@@ -90,17 +129,22 @@ export class PreviewServers {
 
   async open(target: PreviewTarget, boardUrl: URL): Promise<string> {
     this.reap()
+    const secure = this.options.forceTls || boardUrl.protocol === 'https:'
+    const tls = secure ? await this.options.getCertificate?.(boardUrl.hostname) : undefined
+    if (secure && !tls) throw new PreviewTlsError('HTTPS previews need PREVIEW_TLS_CERT and PREVIEW_TLS_KEY or Tailscale HTTPS.')
+    if (this.disposed) throw new Error('Preview server stopped')
     if (target.kind === 'html') {
       target = { kind: 'html', file: await fs.realpath(target.file) }
       if (!/\.html?$/i.test(target.file) || !(await fs.stat(target.file)).isFile()) throw new Error('HTML output not found')
     }
-    const key = JSON.stringify([target, boardUrl.hostname, this.hosts])
+    if (this.disposed) throw new Error('Preview server stopped')
+    const key = JSON.stringify([target, boardUrl.hostname, secure, this.hosts])
     let preview = this.previews.get(key)
     if (!preview) {
       if (this.previews.size >= (this.options.limit ?? 24)) throw new Error('Too many open previews. Try again after unused previews expire.')
       const upstream = target.kind === 'localhost' ? new URL(target.url) : null
       const entry = upstream ? upstream.pathname + upstream.search + upstream.hash : '/' + encodeURIComponent(path.basename((target as { file: string }).file))
-      preview = { key, secret: crypto.randomUUID(), port: 0, lastUsed: Date.now(), servers: [], entry }
+      preview = { key, secret: crypto.randomUUID(), port: 0, lastUsed: Date.now(), servers: [], draining: [], entry, hostname: boardUrl.hostname, tls, bind: () => {} }
       const current = preview
       const fetchPreview = async (request: Request, server: Server<ProxySocket>) => {
         const url = new URL(request.url)
@@ -109,13 +153,13 @@ export class PreviewServers {
           if (!equalSecret(url.searchParams.get('token') ?? '', current.secret)) return new Response('Preview link expired', { status: 403 })
           return new Response(null, { status: 302, headers: {
             'Location': current.entry,
-            'Set-Cookie': `${cookieName}=${current.secret}; HttpOnly; SameSite=Strict; Path=/${this.options.tls ? '; Secure' : ''}`,
+            'Set-Cookie': `${cookieName}=${current.secret}; HttpOnly; SameSite=Strict; Path=/${current.tls ? '; Secure' : ''}`,
             'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
           } })
         }
         const cookie = (request.headers.get('cookie') ?? '').split(';').map(p => p.trim()).find(p => p.startsWith(cookieName + '='))?.slice(cookieName.length + 1) ?? ''
         if (!equalSecret(cookie, current.secret)) return new Response('Open this output from Agentboard to access the preview.', { status: 403 })
-        const rejected = crossOriginRejection(request, url.pathname, { allowedOrigins: [], servesTls: Boolean(this.options.tls) }, () => {})
+        const rejected = crossOriginRejection(request, url.pathname, { allowedOrigins: [], servesTls: Boolean(current.tls) }, () => {})
         if (rejected) return await rejected
         current.lastUsed = Date.now()
         if (upstream && request.headers.get('upgrade')?.toLowerCase() === 'websocket') {
@@ -134,31 +178,38 @@ export class PreviewServers {
         }
         return upstream ? proxyHttp(request, upstream) : servePreviewFile(request, (target as { file: string }).file)
       }
-      try {
-        for (const hostname of this.hosts) {
-          const server = Bun.serve<ProxySocket>({ port: current.port, hostname, ...(this.options.tls ? { tls: this.options.tls } : {}), fetch: fetchPreview, websocket: proxyWebsocket })
-          current.port = server.port!
-          current.servers.push(server)
-        }
-      } catch (error) {
-        for (const server of current.servers) server.stop(true)
-        throw error
+      const hosts = [...this.hosts]
+      current.bind = certificate => {
+        const bound: Server<ProxySocket>[] = []
+        try {
+          for (const hostname of hosts) {
+            const server = Bun.serve<ProxySocket>({ port: current.port, hostname,
+              ...(certificate ? { tls: { cert: certificate.cert, key: certificate.key } } : {}),
+              fetch: fetchPreview, websocket: proxyWebsocket })
+            current.port = server.port!
+            bound.push(server)
+          }
+          current.servers = bound
+        } catch (error) { for (const server of bound) server.stop(true); throw error }
       }
+      current.bind(tls)
       this.blockedPorts.add(current.port)
       this.previews.set(key, current)
     }
+    if (tls) this.rotate(preview, tls)
     preview.lastUsed = Date.now()
     const result = new URL(boardUrl.origin)
     result.port = String(preview.port)
-    result.protocol = this.options.tls ? 'https:' : 'http:'
+    result.protocol = preview.tls ? 'https:' : 'http:'
     result.pathname = '/_agentboard/open'
     result.searchParams.set('token', preview.secret)
     return result.href
   }
 
   dispose() {
+    this.disposed = true
     clearInterval(this.timer)
-    for (const preview of this.previews.values()) for (const server of preview.servers) server.stop(true)
+    for (const preview of this.previews.values()) for (const server of [...preview.servers, ...preview.draining]) server.stop(true)
     this.previews.clear()
   }
 }

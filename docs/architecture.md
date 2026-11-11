@@ -72,7 +72,7 @@ One Bun process runs everything. The main thread owns the read-write database, t
 | Public relay | `Bun.serve` in `src/server/terminalRelayWorker.ts` | `HOSTNAME`:`PORT` (default `127.0.0.1:4040`), with TLS when `TLS_CERT` and `TLS_KEY` are both set. |
 | Tailscale | `tailscaleReady` in `src/server/index.ts` | The Tailscale IPv4 address on `PORT`, only when `HOSTNAME` is `127.0.0.1`. The relay worker opens it with a `bind` message; with the relay off, the main thread opens a second `Bun.serve`. With `HOSTNAME=0.0.0.0` the address is only logged. |
 
-Preview listeners register the detected Tailscale interface independently of the dashboard listener. If Tailscale Serve already owns the dashboard port, previews still bind their separate ports on that interface.
+Preview listeners register the detected Tailscale interface independently of the dashboard listener. If Tailscale Serve already owns the dashboard port, previews still bind their separate ports on that interface. HTTPS preview transport is selected independently of dashboard TLS termination: the browser protocol or forwarded HTTPS header requests TLS, and `outputs/certificates.ts` supplies configured certificates or a certificate for the verified local Tailscale hostname. Preview origins retain their capability cookies and port-based isolation. Certificate renewal rebinds the same ports and drains existing connections ([#573](https://github.com/gbasin/agentboard/pull/573)).
 
 The relay is on unless `AGENTBOARD_TERMINAL_RELAY=0`, or `NODE_ENV=test` without the variable (`relayEnabled` in `src/server/index.ts`).
 

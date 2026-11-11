@@ -16,6 +16,7 @@ import { Hono, type Context } from 'hono'
 import { serveStatic } from 'hono/bun'
 import { config, isValidHostname } from './config'
 import { PreviewServers } from './outputs/previewServers'
+import { PreviewCertificates } from './outputs/certificates'
 import { outputRoutes } from './outputs/routes'
 import { createPasteFileRoutes } from './routes/pasteFile'
 import { OwnershipObserver } from './ownership/observer'
@@ -482,9 +483,14 @@ logger.info('terminal_mode_resolved', {
   resolved: resolvedTerminalMode,
 })
 
+const previewCert = process.env.PREVIEW_TLS_CERT || config.tlsCert
+const previewKey = process.env.PREVIEW_TLS_KEY || config.tlsKey
+const previewCertificates = new PreviewCertificates(previewCert || previewKey ? { cert: previewCert, key: previewKey } : undefined)
 const previews = new PreviewServers({
   hostname: config.hostname,
-  ...(config.tlsCert && config.tlsKey ? { tls: { cert: Bun.file(config.tlsCert), key: Bun.file(config.tlsKey) } } : {}),
+  getCertificate: hostname => previewCertificates.get(hostname),
+  forceTls: Boolean(config.tlsCert && config.tlsKey),
+  onTlsError: () => logger.warn('preview_tls_refresh_failed'),
 })
 const app = new Hono()
 // Preview apps run on another port. Reject their requests before any board
