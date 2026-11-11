@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 /// Run against the isolated real backend on port 4151, seeded with two shells.
 /// No commands are sent to the user's existing agent sessions.
@@ -100,6 +101,109 @@ final class LiveUITests: XCTestCase {
         app.tapTerminalKey("Enter")
         XCTAssertTrue(output("RETURN_\(token)_OK", in: app).waitForExistence(timeout: 10))
         capture("tmux-history-returned-to-live")
+    }
+
+    /// Same distance and velocity, with/without an endpoint hold. This fails
+    /// without momentum even though ordinary scrollback still works.
+    func testFlickTravelsFurtherAndExitCopyModeStaysLive() throws {
+        let app = launch(); open("native-live-one", app: app)
+        let token = String(UUID().uuidString.prefix(8))
+        type("for i in {1..400}; do printf 'FLICK_%s_%03d\\n' \(token) $i; done", app: app)
+        XCTAssertTrue(output("FLICK_\(token)_400", in: app).waitForExistence(timeout: 10))
+        let terminal = app.webViews.firstMatch
+        func earliest() throws -> Int {
+            let text = terminal.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: "\n")
+            let regex = try NSRegularExpression(pattern: "FLICK_\(token)_([0-9]{3})")
+            let values = regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+                Int((text as NSString).substring(with: $0.range(at: 1)))
+            }
+            return try XCTUnwrap(values.min(), "Expected seeded rows in terminal: " + text)
+        }
+        func swipe(hold: TimeInterval) {
+            terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.2))
+                .press(forDuration: 0, thenDragTo: terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.8)),
+                       withVelocity: XCUIGestureVelocity(rawValue: 1200), thenHoldForDuration: hold)
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        swipe(hold: 0.25)
+        let drag = try earliest()
+        app.buttons["Session actions"].tap(); app.tapNativeMenuAction("Scroll to bottom")
+        XCTAssertTrue(output("FLICK_\(token)_400", in: app).waitForExistence(timeout: 5))
+        swipe(hold: 0)
+        let flick = try earliest()
+        XCTAssertLessThan(flick, drag - 10, "Flick must traverse more history than the same drag held still at release")
+        let evidence = XCTAttachment(string: "Earliest visible row: held drag \(drag), flick \(flick); additional history \(drag - flick) lines")
+        evidence.name = "flick-distance"; evidence.lifetime = .keepAlways; add(evidence)
+        capture("flick-momentum-history")
+        app.buttons["Session actions"].tap(); app.tapNativeMenuAction("Exit copy mode")
+        XCTAssertTrue(output("FLICK_\(token)_400", in: app).waitForExistence(timeout: 5))
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(output("FLICK_\(token)_400", in: app).exists, "Exit copy mode must remain at live output")
+        capture("flick-exit-stays-live")
+    }
+
+    func testFlickSelectionAndBackgroundReturnToUsableTerminal() {
+        let app = launch(); open("native-live-one", app: app)
+        let token = String(UUID().uuidString.prefix(8))
+        type("for i in {1..240}; do printf 'PAUSE_%s_%03d\\n' \(token) $i; done", app: app)
+        XCTAssertTrue(output("PAUSE_\(token)_240", in: app).waitForExistence(timeout: 10))
+        let terminal = app.webViews.firstMatch
+        func flick() {
+            terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.2))
+                .press(forDuration: 0, thenDragTo: terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.8)),
+                       withVelocity: XCUIGestureVelocity(rawValue: 1200), thenHoldForDuration: 0)
+        }
+        flick()
+        app.buttons["Session actions"].tap(); app.tapNativeMenuAction("Select text")
+        let snapshot = app.textViews["terminal-snapshot-text"]
+        XCTAssertTrue(snapshot.waitForExistence(timeout: 10))
+        let frozen = snapshot.value as? String
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertEqual(snapshot.value as? String, frozen)
+        capture("flick-selection-frozen")
+        app.buttons["Done"].tap()
+        XCTAssertTrue(terminal.waitForExistence(timeout: 5))
+        flick()
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        let returned = terminal.staticTexts.allElementsBoundByIndex.map(\.label).filter { $0.hasPrefix("PAUSE_\(token)_") }
+        XCTAssertFalse(returned.isEmpty)
+        // tmux's clock/header and xterm's live announcement are transient. A
+        // middle history row must remain visible after the renderer settles.
+        if !returned.isEmpty {
+            let anchor = returned[returned.count / 2]
+            Thread.sleep(forTimeInterval: 1.5)
+            XCTAssertTrue(output(anchor, in: app).exists, "Reactivation must not resume the old flick")
+        }
+        type("printf 'AFTER_%s_OK\\n' \(token)", app: app)
+        XCTAssertTrue(output("AFTER_\(token)_OK", in: app).waitForExistence(timeout: 10))
+        capture("flick-background-restored")
+    }
+
+    func testNativeClipboardAfterFlickInsertsBeforeExplicitEnter() {
+        let token = String(UUID().uuidString.prefix(8))
+        UIPasteboard.general.string = "printf 'PASTED_%s_OK\\n' \(token)"
+        defer { UIPasteboard.general.items = [] }
+        let app = launch(); open("native-live-one", app: app)
+        type("for i in {1..240}; do printf 'PASTE_HISTORY_%03d\\n' $i; done", app: app)
+        XCTAssertTrue(output("PASTE_HISTORY_240", in: app).waitForExistence(timeout: 10))
+        let terminal = app.webViews.firstMatch
+        terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.2))
+            .press(forDuration: 0, thenDragTo: terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.8)),
+                   withVelocity: XCUIGestureVelocity(rawValue: 1200), thenHoldForDuration: 0)
+        app.tapTerminalKey("Paste text")
+        app.buttons["Paste from clipboard"].tap()
+        let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Paste"]
+        if allow.waitForExistence(timeout: 2) { allow.tap() }
+        XCTAssertTrue(output("PASTED_%s_OK", in: app).waitForExistence(timeout: 10))
+        XCTAssertFalse(output("PASTED_\(token)_OK", in: app).exists)
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(output("PASTED_%s_OK", in: app).exists, "Late wheel input must not hide the pasted command")
+        capture("flick-clipboard-inserted-not-executed")
+        app.tapTerminalKey("Enter")
+        XCTAssertTrue(output("PASTED_\(token)_OK", in: app).waitForExistence(timeout: 10))
+        capture("flick-clipboard-executed-on-enter")
     }
 
     func testConnectionAddressValidation() {

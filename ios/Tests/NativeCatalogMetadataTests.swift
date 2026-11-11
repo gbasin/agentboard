@@ -2,6 +2,12 @@ import XCTest
 @testable import AgentboardSpike
 
 final class NativeCatalogMetadataTests: XCTestCase {
+    func testProjectColorsMatchWebIncludingUTF16Names() {
+        for (name, hue) in [("agentboard", 255.0), ("eichler", 175.0), ("alpha", 50.0), ("beta", 225.0), ("工程🚀", 85.0)] {
+            XCTAssertEqual(ProjectChip.hue(for: name), hue, name)
+        }
+    }
+
     private func decode(_ extra: String = "") throws -> BoardSession {
         let json = """
         {"id":"one","name":"One","projectPath":"/project","status":"working"\(extra)}
