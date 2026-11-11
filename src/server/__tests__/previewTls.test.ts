@@ -11,8 +11,8 @@ import { PreviewServers } from '../outputs/previewServers'
 import { validateCertificate } from '../outputs/certificates'
 import { previewCertificate } from './fixtures/previewCertificate'
 
-const fingerprint = (port: number) => new Promise<string>((resolve, reject) => {
-  const socket = tls.connect({ host: '127.0.0.1', port, servername: 'localhost', rejectUnauthorized: false }, () => {
+const fingerprint = (port: number, ca: string[]) => new Promise<string>((resolve, reject) => {
+  const socket = tls.connect({ host: '127.0.0.1', port, servername: 'localhost', ca }, () => {
     resolve(socket.getPeerCertificate().fingerprint256); socket.destroy()
   })
   socket.on('error', reject)
@@ -34,8 +34,8 @@ test('HTTPS renewal rebinds the same port, preserves sockets and blocks capabili
     const board = new URL('https://localhost:4040')
     const url = await previews.open(target, board), port = Number(new URL(url).port)
     expect(url.startsWith('https:')).toBe(true)
-    expect(await fingerprint(port)).toBe(certificates[0].fingerprint)
-    const options = { tls: { rejectUnauthorized: false }, redirect: 'manual' as const }
+    expect(await fingerprint(port, certificates.map(c => c.cert))).toBe(certificates[0].fingerprint)
+    const options = { tls: { ca: certificates.map(c => c.cert) }, redirect: 'manual' as const }
     const response = await fetch(url, options)
     expect(response.status).toBe(302)
     expect(response.headers.get('set-cookie')).toContain('; Secure')
@@ -43,7 +43,7 @@ test('HTTPS renewal rebinds the same port, preserves sockets and blocks capabili
     const entry = new URL('/', url).href
     expect((await fetch(entry, options)).status).toBe(403)
     const Socket = WebSocket as unknown as { new(url: string, options: Bun.WebSocketOptions): WebSocket }
-    socket = new Socket(entry.replace('https:', 'wss:'), { headers: { cookie }, tls: { rejectUnauthorized: false } })
+    socket = new Socket(entry.replace('https:', 'wss:'), { headers: { cookie }, tls: { ca: certificates.map(c => c.cert) } })
     const send = (text: string) => new Promise<string>((resolve, reject) => {
       const timeout = setTimeout(() => reject(Error('WebSocket timed out')), 3000)
       socket!.onmessage = e => { clearTimeout(timeout); resolve(String(e.data)) }
@@ -52,12 +52,12 @@ test('HTTPS renewal rebinds the same port, preserves sockets and blocks capabili
     await new Promise<void>((resolve, reject) => { socket!.onopen = () => resolve(); socket!.onerror = () => reject(Error('TLS websocket failed')) })
     expect(await send('before')).toBe('before')
     fail = true; await previews.refreshCertificates(); expect(errors).toBe(1)
-    expect(await fingerprint(port)).toBe(certificates[0].fingerprint)
+    expect(await fingerprint(port, certificates.map(c => c.cert))).toBe(certificates[0].fingerprint)
     fail = false; selected = 1
     await previews.refreshCertificates()
     await Bun.sleep(5) // Draining sockets must also prevent idle reaping.
     expect(await previews.open(target, board)).toBe(url)
-    expect(await fingerprint(port)).toBe(certificates[1].fingerprint)
+    expect(await fingerprint(port, certificates.map(c => c.cert))).toBe(certificates[1].fingerprint)
     expect(await send('after')).toBe('after')
     expect(await (await fetch(entry, { ...options, headers: { cookie }, keepalive: false })).text()).toBe('preview content')
     expect(previews.isPreviewOrigin(new URL(url).origin)).toBe(true)
