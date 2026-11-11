@@ -216,6 +216,7 @@ export class LogPoller {
   private pollInFlight = false
   private pendingChangedPaths = new Set<string>()
   matchingError: string | null = null
+  private initialReconciliation: Promise<void> = Promise.resolve()
   private orphanRematchPending = true
   private orphanRematchInProgress = false
   private orphanRematchPromise: Promise<void> | null = null
@@ -335,7 +336,7 @@ export class LogPoller {
       void this.runComprehensiveReconciliation()
     }, safeInterval)
     // Start orphan rematch after the first successful comprehensive poll.
-    void this.runComprehensiveReconciliation()
+    this.initialReconciliation = this.runComprehensiveReconciliation()
   }
 
   private startWatchMode(fallbackIntervalMs: number): void {
@@ -392,8 +393,9 @@ export class LogPoller {
     }
   }
 
-  /** Wait for the background orphan rematch to complete (for testing) */
+  /** Await poll-mode startup before joining its background orphan rematch. */
   async waitForOrphanRematch(): Promise<void> {
+    await this.initialReconciliation
     if (this.orphanRematchPromise) {
       await this.orphanRematchPromise
     }

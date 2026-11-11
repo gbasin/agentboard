@@ -2,6 +2,8 @@ import { expect, test } from 'bun:test'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createTmuxTmpDir, privateTmuxEnv, privateTmuxSocket } from './testEnvironment'
+import { sendPaneBurst } from './fixtures/paneBurst'
+import { shellQuote } from '../shellQuote'
 
 async function until(check: () => boolean, detail = 'terminal event') {
   const deadline = Date.now() + 10000
@@ -19,12 +21,13 @@ test('relay lease workers share pane output across close, switch and reconnect',
     LOG_FILE: path.join(root, 'relay.log'), LOG_LEVEL: 'error', NODE_ENV: 'production', AGENTBOARD_TMUX_SET_CLIPBOARD: '0',
     AGENTBOARD_RELAY_GRACE_MS: '100', AGENTBOARD_RELAY_PROGRESS_MS: '90000' }
   const tmux = (args: string[]) => {
-    const result = Bun.spawnSync(['tmux', '-f', '/dev/null', '-S', socket, ...args], { env, stdout: 'pipe', stderr: 'pipe' })
-    if (result.exitCode) throw new Error(result.stderr.toString())
+    const result = Bun.spawnSync(['tmux', '-f', '/dev/null', '-S', socket, ...args], { env, stdout: 'pipe', stderr: 'pipe', timeout: 5000 })
+    if (result.exitCode || result.signalCode) throw new Error(`tmux ${JSON.stringify(args)} failed (${result.exitCode}/${result.signalCode}): ${result.stderr.toString()}`)
     return result.stdout.toString().trim()
   }
   const clients: WebSocket[] = []
   let child: ReturnType<typeof Bun.spawn> | null = null
+  const entered = path.join(root, 'stall-entered'), release = path.join(root, 'stall-release')
   try {
     const windows = [tmux(['new-session', '-d', '-s', 'pipe-relay-test', '-P', '-F', '#{window_id}', 'stty -echo; exec cat']),
       tmux(['new-window', '-d', '-t', 'pipe-relay-test', '-P', '-F', '#{window_id}', 'stty -echo; exec cat'])]
@@ -36,11 +39,14 @@ test('relay lease workers share pane output across close, switch and reconnect',
     await fs.mkdir(bin)
     const realTmux = Bun.which('tmux')!
     await fs.writeFile(path.join(bin, 'tmux'), `#!/bin/sh
-case "$*" in *PIPE_TEST_STALL*) sleep 8;; esac
+case "$*" in *PIPE_TEST_STALL*)
+  : > ${shellQuote(entered)}
+  while [ ! -e ${shellQuote(release)} ]; do sleep 0.05; done;;
+esac
 exec '${realTmux.replaceAll("'", "'\\''")}' "$@"
 `, { mode: 0o755 })
     child = Bun.spawn([process.execPath, 'src/server/__tests__/fixtures/relayHost.ts'], {
-      env: { ...env, PATH: `${bin}:${process.env.PATH ?? ''}`, AGENTBOARD_TMUX_TIMEOUT_MS: '10000', RELAY_TEST_SESSIONS: JSON.stringify(sessions) }, stdout: 'pipe', stderr: Bun.file(path.join(root, 'child.err')),
+      env: { ...env, PATH: `${bin}:${process.env.PATH ?? ''}`, AGENTBOARD_TMUX_TIMEOUT_MS: '60000', RELAY_TEST_SESSIONS: JSON.stringify(sessions) }, stdout: 'pipe', stderr: Bun.file(path.join(root, 'child.err')),
     })
     const reader = (child.stdout as ReadableStream<Uint8Array>).getReader()
     const first = await reader.read()
@@ -83,9 +89,14 @@ exec '${realTmux.replaceAll("'", "'\\''")}' "$@"
     expect(tmux(['display-message', '-t', sessions[0].tmuxWindow, '-p', '#{pane_pipe}'])).toBe('1')
     const slow = await connect()
     input(slow, 0, 1, 'PIPE_TEST_STALL')
-    await Bun.sleep(100)
-    tmux(['respawn-pane', '-k', '-t', sessions[0].tmuxWindow, "i=0; while [ $i -lt 80 ]; do head -c 40960 /dev/zero | tr '\\000' x; sleep 0.02; i=$((i+1)); done; printf '\\nRELAY-BURST-END\\n'; exec cat"])
-    await until(() => b.output().includes('RELAY-BURST-END'), 'healthy subscriber receives burst')
+    const stallDeadline = Date.now() + 10_000
+    while (!await fs.access(entered).then(() => true, () => false)) {
+      if (Date.now() > stallDeadline) throw Error('Slow worker never entered the fixture gate')
+      await Bun.sleep(10)
+    }
+    await sendPaneBurst({ tmux, target: sessions[0].tmuxWindow, root, marker: 'RELAY-BURST', received: b.output,
+      failure: () => b.ws.readyState !== WebSocket.OPEN ? 'Healthy subscriber disconnected' : undefined })
+    await fs.writeFile(release, '')
     await until(() => slow.frames.some(frame => frame.type === 'terminal-overload' || frame.type === 'terminal-error'), 'overflow recovery signal')
     expect(slow.frames.some(frame => frame.type === 'terminal-overload')).toBe(true)
     await until(() => slow.ws.readyState === WebSocket.CLOSED, 'overflow closes slow transport for resynchronization')
@@ -98,6 +109,7 @@ exec '${realTmux.replaceAll("'", "'\\''")}' "$@"
     b.ws.close(); c.ws.close()
     await until(() => windows.every(window => tmux(['display-message', '-t', `pipe-relay-test:${window}`, '-p', '#{pane_pipe}']) === '0'), 'final subscribers release pipes')
   } finally {
+    await fs.writeFile(release, '').catch(() => {})
     for (const ws of clients) ws.close()
     let childExit = 0
     if (child) { child.kill(); childExit = await child.exited }

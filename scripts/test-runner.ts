@@ -75,6 +75,7 @@ async function main() {
     // Bun.serve / setInterval mock; isolation keeps that mock window from
     // overlapping with any other test that captures globals at module load.
     const ISOLATED_FILES = new Set([
+      'sessionMetadataViews.test.ts',
       'terminalLeases.test.ts',
       'persistenceOwnership.test.ts',
       'persistenceRoutes.test.ts',

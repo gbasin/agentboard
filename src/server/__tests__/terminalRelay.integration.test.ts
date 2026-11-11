@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { reapPrivateTmuxServer, socketPath } from '../../../tests/e2e/tmuxReap'
@@ -22,6 +22,7 @@ class Peer {
     while (performance.now() < end) {
       const index = this.frames.findIndex(frame => frame.type === type)
       if (index >= 0) return this.frames.splice(index, 1)[0] as Extract<Frame, { type: T }>
+      if (this.closed) break
       await wait(5)
     }
     throw new Error(`Timed out waiting for ${type}; closed=${this.closed}; frames=${JSON.stringify(this.frames)}`)
@@ -54,6 +55,13 @@ describe('isolated terminal relay with real tmux', () => {
     if (result.exitCode) throw new Error(result.stderr.toString())
     return result.stdout.toString().trim()
   }
+  async function entered(file: string) {
+    const deadline = Date.now() + 5000
+    while (!existsSync(file)) {
+      if (Date.now() > deadline) throw new Error(`Stall did not enter: ${file}`)
+      await wait(10)
+    }
+  }
   async function connect(token?: string, claim = 1) {
     const peer = new Peer(url); peers.push(peer)
     await peer.receive('sessions')
@@ -71,8 +79,8 @@ describe('isolated terminal relay with real tmux', () => {
     sessions = [a, b].map((window, i) => ({ id: `relay-test:${window}`, tmuxWindow: `relay-test:${window}`, name: `Target ${i}`, projectPath: dir, status: 'unknown', lastActivity: new Date().toISOString(), createdAt: new Date().toISOString(), source: 'managed' }))
     const bin = path.join(dir, 'bin'); mkdirSync(bin)
     const realTmux = Bun.spawnSync(['which', 'tmux'], { env, stdout: 'pipe' }).stdout.toString().trim()
-    writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\ncase "$*" in *new-session*) if [ -f "$RELAY_TEST_SLOW_START" ]; then sleep 0.6; fi;; esac\nexec '${realTmux.replaceAll("'", "'\\''")}' "$@"\n`, { mode: 0o755 })
-    const childEnv = { ...env, PATH: `${bin}:${env.PATH}`, RELAY_TEST_SLOW_START: path.join(dir, 'slow'), RELAY_TEST_SESSIONS: JSON.stringify(sessions) }
+    writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\ncase "$*" in *new-session*) if [ -f "$RELAY_TEST_SLOW_START" ]; then touch "$RELAY_TEST_SLOW_START.entered"; while [ -f "$RELAY_TEST_SLOW_START" ]; do sleep 0.01; done; fi;; esac\nexec '${realTmux.replaceAll("'", "'\\''")}' "$@"\n`, { mode: 0o755 })
+    const childEnv = { ...env, PATH: `${bin}:${env.PATH}`, RELAY_TEST_SLOW_START: path.join(dir, 'slow'), RELAY_TEST_BLOCK: path.join(dir, 'dashboard-block'), RELAY_TEST_SESSIONS: JSON.stringify(sessions) }
     child = Bun.spawn([process.execPath, 'src/server/__tests__/fixtures/relayHost.ts'], { env: childEnv, stdout: 'pipe', stderr: Bun.file(path.join(dir, 'child.err')) })
     const reader = (child.stdout as ReadableStream<Uint8Array>).getReader(); let text = ''
     while (!url) {
@@ -114,13 +122,16 @@ describe('isolated terminal relay with real tmux', () => {
 
   test('dashboard stall does not block ping or PTY echo', async () => {
     const peer = await connect(); await peer.attach(sessions[0], 1)
-    await fetch(url.replace('ws:', 'http:').replace('/ws', '/block'))
-    await wait(90)
-    const start = performance.now()
-    peer.send({ type: 'ping', seq: 7 }); expect((await peer.receive('pong')).seq).toBe(7)
-    expect(performance.now() - start).toBeLessThan(350)
-    expect(await peer.echo(sessions[0], 1)).toBeLessThan(350)
-    await wait(650); peer.ws.close()
+    const gate = path.join(dir, 'dashboard-block')
+    writeFileSync(gate, '')
+    try {
+      await fetch(url.replace('ws:', 'http:').replace('/ws', '/block'))
+      await entered(`${gate}.entered`)
+      peer.send({ type: 'ping', seq: 7 })
+      expect((await peer.receive('pong')).seq).toBe(7)
+      await peer.echo(sessions[0], 1)
+      expect(existsSync(gate)).toBe(true)
+    } finally { unlinkSync(gate); peer.ws.close() }
   })
 
   test('slow new tmux observer cannot stall a different terminal', async () => {
@@ -129,10 +140,12 @@ describe('isolated terminal relay with real tmux', () => {
     writeFileSync(path.join(dir, 'slow'), '')
     try {
       second.send({ type: 'terminal-attach', sessionId: sessions[1].id, attachId: 1, cols: 80, rows: 24 })
-      await wait(80)
-      expect(await first.echo(sessions[0], 1)).toBeLessThan(350)
+      await entered(path.join(dir, 'slow.entered'))
+      await first.echo(sessions[0], 1)
+      expect(second.frames.some(frame => frame.type === 'terminal-ready')).toBe(false)
+      unlinkSync(path.join(dir, 'slow'))
       await second.receive('terminal-ready')
-    } finally { unlinkSync(path.join(dir, 'slow')); first.ws.close(); second.ws.close() }
+    } finally { rmSync(path.join(dir, 'slow'), { force: true }); first.ws.close(); second.ws.close() }
   })
 
   test('resume retains observer, revalidates target, and fences old attach IDs', async () => {

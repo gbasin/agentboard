@@ -280,6 +280,34 @@ afterEach(async () => {
 })
 
 describe('LogPoller', () => {
+  test('startup wait remains pending until the initial snapshot completes', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const worker = new RecordingMatchWorkerClient()
+    let release!: (snapshot: PollSnapshot) => void
+    const snapshot = new Promise<PollSnapshot>(resolve => { release = resolve })
+    const poller = new LogPoller(db, new SessionRegistry(), {
+      reader: { snapshot: () => snapshot, importCandidates: async () => [] },
+      matchWorkerClient: worker, devinSyncClient: null,
+    })
+    let finished = false
+    try {
+      poller.start()
+      const completion = poller.waitForOrphanRematch().then(() => { finished = true })
+      // Drain promise continuations while deliberately withholding the snapshot.
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(finished).toBe(false)
+      release({ lists: db.getSessionLists(), knownSessions: [] })
+      await completion
+      expect(finished).toBe(true)
+      expect(worker.requests).toHaveLength(1)
+    } finally {
+      release({ lists: db.getSessionLists(), knownSessions: [] })
+      poller.stop()
+      db.close()
+    }
+  })
+
   test('background snapshot failures surface as matching errors without an unhandled rejection', async () => {
     const db = initDatabase({ path: ':memory:' })
     const worker = new RecordingMatchWorkerClient()
@@ -675,7 +703,6 @@ describe('LogPoller', () => {
     })
 
     poller.start(5000)
-    await new Promise((resolve) => setTimeout(resolve, 100))
     await poller.waitForOrphanRematch()
 
     // One request is the normal startup poll. A second request would be the
@@ -828,7 +855,6 @@ describe('LogPoller', () => {
     })
 
     poller.start(5000)
-    await new Promise((resolve) => setTimeout(resolve, 100))
     await poller.waitForOrphanRematch()
 
     const record = db.getSessionById('hibernating-session')
@@ -894,7 +920,6 @@ describe('LogPoller', () => {
     })
 
     poller.start(5000)
-    await new Promise((resolve) => setTimeout(resolve, 100))
     await poller.waitForOrphanRematch()
 
     const record = db.getSessionById('wake-pending-session')
@@ -1796,8 +1821,6 @@ describe('LogPoller', () => {
     })
     // Start poller which triggers first poll and background orphan rematch
     poller.start(5000)
-    // Wait for initial poll to complete first (avoids worker contention)
-    await new Promise((resolve) => setTimeout(resolve, 100))
     // Wait for orphan rematch to complete
     await poller.waitForOrphanRematch()
 
@@ -1851,7 +1874,6 @@ describe('LogPoller', () => {
     const worker = new RecordingMatchWorkerClient()
     const poller = new LogPoller(db, registry, { matchWorkerClient: worker })
     poller.start(5000)
-    await new Promise((resolve) => setTimeout(resolve, 100))
     await poller.waitForOrphanRematch()
     poller.stop()
 
@@ -2111,7 +2133,6 @@ describe('LogPoller', () => {
       matchWorkerClient: new InlineMatchWorkerClient(),
     })
     poller.start(5000)
-    await new Promise((resolve) => setTimeout(resolve, 100))
     await poller.waitForOrphanRematch()
 
     const updated = db.getSessionById('claude-session-orphan')

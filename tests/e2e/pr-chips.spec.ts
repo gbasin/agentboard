@@ -228,8 +228,11 @@ test('footer rail +N spills chips above the bar', async ({ page }) => {
   await expect(strip).toBeVisible()
   await expect(strip.locator(PR_LINK).first()).toBeVisible()
 
-  // The rail hugs the viewport bottom — the strip must flip above it.
-  const s = await strip.boundingBox()
-  const f = await rail.boundingBox()
-  expect(s!.y + s!.height).toBeLessThanOrEqual(f!.y + 5)
+  // Positioning is anchored to the +N control inside the padded footer.
+  // Assert the flip relative to that control, not the footer's outer box.
+  await expect.poll(async () => {
+    const s = await strip.boundingBox()
+    const anchor = await more.boundingBox()
+    return s && anchor ? s.y + s.height - anchor.y : Infinity
+  }).toBeLessThanOrEqual(1)
 })
