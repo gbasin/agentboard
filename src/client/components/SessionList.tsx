@@ -82,10 +82,10 @@ interface SessionListProps {
 
 /** Status pill classes for the time/activity badge */
 const statusPillClass: Record<Session['status'], string> = {
-  working: 'bg-green-500/20 text-green-600',
-  waiting: 'bg-zinc-500/20 text-zinc-400',
-  permission: 'bg-amber-500/20 text-amber-600',
-  unknown: 'bg-zinc-500/20 text-zinc-400',
+  working: 'text-working',
+  waiting: 'text-muted',
+  permission: 'bg-approval/10 text-approval',
+  unknown: 'text-muted',
 }
 
 function useTimestampRefresh() {
@@ -554,7 +554,7 @@ export default function SessionList({
   const filterBar = (
     <div
       key="filter-bar"
-      className={`sticky z-10 flex h-10 items-center gap-2 bg-elevated px-3 ${
+      className={`session-toolbar sticky z-10 flex h-[40px] items-center gap-2 bg-elevated px-3 ${
         // shrink-0: under bottom the bar is a flex item of the scroll column
         isBottom ? 'bottom-0 shrink-0 border-t border-border' : 'top-0 border-b border-border'
       }`}
@@ -736,7 +736,7 @@ export default function SessionList({
   )
 
   return (
-    <aside className="flex min-h-0 flex-1 flex-col border-r border-border bg-elevated">
+    <aside className="session-sidebar flex min-h-0 flex-1 flex-col border-r border-border bg-elevated">
       {error && (
         <div className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
           {error}
@@ -747,11 +747,11 @@ export default function SessionList({
 
       {isBottom ? (
         // Mirrored: rows stack from the bottom edge (mt-auto spacer, not
-        // justify-end, which would make overflow unreachable); scroll-pb-10
+        // justify-end, which would make overflow unreachable); scroll-pb-[40px]
         // keeps selected rows clear of the sticky bottom filter bar.
         <div
           ref={listScrollRef}
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain scroll-pb-10"
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain scroll-pb-[40px]"
         >
           <div ref={listContentRef} className="mt-auto shrink-0">
             {historySection}
@@ -761,10 +761,10 @@ export default function SessionList({
           {filterBar}
         </div>
       ) : (
-        // scroll-pt-10 keeps rows scrolled past the sticky h-10 filter bar
+        // scroll-pt-[40px] keeps rows scrolled past the sticky h-10 filter bar
         <div
           ref={listScrollRef}
-          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-pt-10"
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-pt-[40px]"
         >
           {filterBar}
           {notice}
@@ -775,7 +775,7 @@ export default function SessionList({
       )}
 
       {/* Keyboard shortcuts hint — shares the status rail's 40px bottom bar */}
-      <div className="hidden h-10 shrink-0 items-center border-t border-border px-4 md:flex">
+      <div className="hidden h-[40px] shrink-0 items-center border-t border-border px-4 md:flex">
         <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
           <span>{modDisplay}[ ] nav</span>
           <span>{modDisplay}N new</span>
@@ -1157,6 +1157,7 @@ function SessionRow({
     <div
       className={`session-row group cursor-pointer select-none px-3 py-2 ${MOBILE_ROW_TARGET_CLASS} ${isSelected ? 'selected' : ''} ${isDragging ? 'cursor-grabbing shadow-lg ring-1 ring-accent/30 bg-elevated' : 'cursor-grab'}`}
       role="button"
+      aria-pressed={isSelected}
       tabIndex={0}
       data-testid="session-card"
       data-session-id={session.id}
@@ -1217,7 +1218,7 @@ function SessionRow({
               className="min-w-0 flex-1 rounded border border-border bg-surface px-1.5 py-0.5 text-sm font-medium text-primary outline-none focus:border-accent"
             />
           ) : (
-            <span className="min-w-0 flex-1 truncate text-sm font-medium text-primary">
+            <span className="session-name min-w-0 flex-1 truncate text-primary">
               {displayName}
             </span>
           )}
@@ -1241,27 +1242,26 @@ function SessionRow({
           />
         </div>
 
-        {/* Line 2: Project badge + last user message (up to 2 lines total) */}
-        {(showDirectory || showHostBadge || showMessage) && (
-          <div className="flex flex-wrap items-center gap-1 pl-[1.375rem]">
+        {/* Project metadata and preview occupy their own stable lines. */}
+        {(showDirectory || showHostBadge) && (
+          <div className="session-metadata">
             {showHostBadge && <HostBadge name={hostLabel!} />}
             {showDirectory && (
               <ProjectBadge name={directoryLeaf!} fullPath={session.projectPath} />
             )}
-            {showMessage && (
-              <span className="line-clamp-2 text-xs italic text-muted">
-                "{session.lastUserMessage!.length > 200
-                  ? session.lastUserMessage!.slice(0, 200) + '…'
-                  : session.lastUserMessage}"
-              </span>
-            )}
           </div>
         )}
+        {showMessage && (
+          <span className="session-preview">
+            {session.lastUserMessage!.length > 200
+              ? session.lastUserMessage!.slice(0, 200) + '…'
+              : session.lastUserMessage}
+          </span>
+        )}
 
-
-        {/* Line 3: PR chips */}
+        {/* PR context stays below the preview. */}
         {session.prs && session.prs.length > 0 && (
-          <PrChips prs={session.prs} />
+          <PrChips prs={session.prs} className="ml-[20px] font-mono" />
         )}
       </div>
 

@@ -151,7 +151,7 @@ describe('SessionRail', () => {
     const renderer = render(railProps())
 
     const footer = renderer.root.findByType('footer')
-    expect(footer.props.className).toContain('h-10')
+    expect(footer.props.className).toContain('h-[40px]')
     expect(footer.props.className).toContain('px-4')
 
     const name = renderer.root
