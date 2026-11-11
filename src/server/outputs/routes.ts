@@ -1,5 +1,6 @@
 /** Resolve only transcript-discovered references; never accept an arbitrary target. */
 import path from 'node:path'
+import { PreviewTlsError } from './certificates'
 import { OutputFileResolver } from './fileResolver'
 import { absoluteOutputPath } from './fileEvidence'
 import { visualizationFile, VisualizationError } from './visualization'
@@ -72,13 +73,18 @@ export function outputRoutes(options: {
       }
       await options.ready()
       const resolvedFile = descriptor.kind === 'visualization' ? await visualizationFile(file, options.cacheRoot) : file
-      const url = await options.previews.open(upstream ? { kind: 'localhost', url: upstream.href } : { kind: 'html', file: resolvedFile }, new URL(c.req.url))
+      const boardUrl = new URL(c.req.url)
+      // A browser can require HTTPS even when the proxy omits forwarding headers.
+      // This only upgrades transport; certificate issuance still verifies local identity.
+      if (c.req.query('protocol') === 'https:' || c.req.header('x-forwarded-proto') === 'https') boardUrl.protocol = 'https:'
+      const url = await options.previews.open(upstream ? { kind: 'localhost', url: upstream.href } : { kind: 'html', file: resolvedFile }, boardUrl)
       void thumbnails.ensure(thumbnailKey, url)
       c.header('Cache-Control', 'no-store')
       c.header('Referrer-Policy', 'no-referrer')
       if (c.req.query('format') === 'json') return c.json({ url })
       return c.redirect(url)
     } catch (error) {
+      if (error instanceof PreviewTlsError) return c.json({ error: error.message }, 503)
       if (error instanceof VisualizationError) return c.json({ error: error.message }, 422)
       const missing = (error as NodeJS.ErrnoException).code === 'ENOENT'
       return c.json({ error: missing ? `Output file not found at ${file}. Ask the agent to share its current path.` : 'Unable to start preview. Check available ports and try again.' }, missing ? 404 : 503)

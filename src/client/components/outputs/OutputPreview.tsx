@@ -48,7 +48,7 @@ export function OutputPreview({ item, mobile, open, onClose, onChoose, status }:
       }
       return () => controller.abort()
     }
-    fetch(item.url + '&format=json' + (selected ? '&candidate=' + encodeURIComponent(selected) : ''), { signal: controller.signal })
+    fetch(item.url + '&format=json&protocol=' + encodeURIComponent(window.location.protocol) + (selected ? '&candidate=' + encodeURIComponent(selected) : ''), { signal: controller.signal })
       .then(async response => {
         const body = await response.json()
         if (!response.ok) {
@@ -60,6 +60,7 @@ export function OutputPreview({ item, mobile, open, onClose, onChoose, status }:
           return
         }
         if (typeof body.url !== 'string' || !/^https?:\/\//.test(body.url)) throw new Error('Invalid preview address')
+        if (window.location.protocol === 'https:' && new URL(body.url).protocol !== 'https:') throw new Error('This server returned an HTTP preview for an HTTPS dashboard. Update Agentboard or use Open original.')
         if (!controller.signal.aborted) setLoad({ url: body.url })
       }).catch(error => {
         if (!controller.signal.aborted) setLoad({ error: error.message || 'Preview unavailable' })
