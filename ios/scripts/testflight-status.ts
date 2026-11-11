@@ -4,7 +4,7 @@ import { appStoreRequest } from './app-store-connect'
 interface Resource {
   id: string
   type: string
-  attributes: { version?: string; processingState?: string; expired?: boolean; buildAudienceType?: string; isInternalGroup?: boolean; bundleId?: string }
+  attributes: { version?: string; processingState?: string; expired?: boolean; buildAudienceType?: string; isInternalGroup?: boolean; hasAccessToAllBuilds?: boolean; bundleId?: string }
   relationships?: { preReleaseVersion?: { data: { id: string } }; betaGroups?: { data: { id: string }[] }; app?: { data: { id: string } } }
 }
 interface Builds { data: Resource[]; included?: Resource[] }
@@ -21,6 +21,7 @@ export async function waitForTestFlight(request = appStoreRequest, sleep = Bun.s
   if (appResponse.data.attributes.bundleId !== 'dev.agentboard.ios-spike') throw new Error('Wrong App Store Connect app')
   const groupResponse = await request(`/v1/betaGroups/${encodeURIComponent(group)}?include=app`)
   if (!groupResponse.data.attributes.isInternalGroup || groupResponse.data.relationships.app.data.id !== app) throw new Error('Expected an internal group for this app')
+  if (!groupResponse.data.attributes.hasAccessToAllBuilds) throw new Error('Enable automatic distribution for the internal TestFlight group before publishing')
   const query = new URLSearchParams({ 'filter[app]': app, 'filter[version]': build, include: 'preReleaseVersion,betaGroups', limit: '200' })
   for (let attempt = 0; attempt < attempts; attempt++) {
     const response: Builds = await request(`/v1/builds?${query}`)
@@ -34,11 +35,9 @@ export async function waitForTestFlight(request = appStoreRequest, sleep = Bun.s
           console.log(`TestFlight ${version} (${build}) processed and assigned to the internal group.`)
           return candidate.id
         }
-        // Existing automatic distribution normally handles this. Explicitly attach
-        // only to the validated internal group if it has not appeared yet.
-        await request(`/v1/betaGroups/${encodeURIComponent(group)}/relationships/builds`, {
-          method: 'POST', body: JSON.stringify({ data: [{ type: 'builds', id: candidate.id }] }),
-        })
+        // Apple can mark a build VALID before automatic group membership appears.
+        // Keep polling: manually assigning an internal-only build here can return
+        // 404 even though automatic distribution completes moments later.
       }
       console.log(`Apple processing: ${processingState}; waiting for internal group availability.`)
     } else console.log('Waiting for the uploaded build to appear in App Store Connect.')

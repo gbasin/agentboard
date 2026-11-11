@@ -19,11 +19,11 @@ function build(state = 'VALID', assigned = true, version = '0.1.0', audience = '
     included: [{ id: 'version', type: 'preReleaseVersions', attributes: { version } }],
   }
 }
-function api(responses: ReturnType<typeof build>[], writes: string[] = [], internal = true) {
+function api(responses: ReturnType<typeof build>[], writes: string[] = [], internal = true, automatic = true) {
   return async (path: string, options?: RequestInit) => {
     if (path === '/v1/apps/app') return { data: { attributes: { bundleId: 'dev.agentboard.ios-spike' } } }
-    if (path === '/v1/betaGroups/group?include=app') return { data: { attributes: { isInternalGroup: internal }, relationships: { app: { data: { id: 'app' } } } } }
-    if (options?.method === 'POST') { writes.push(String(options.body)); return undefined }
+    if (path === '/v1/betaGroups/group?include=app') return { data: { attributes: { isInternalGroup: internal, hasAccessToAllBuilds: automatic }, relationships: { app: { data: { id: 'app' } } } } }
+    if (options?.method === 'POST') { writes.push(String(options.body)); throw new Error('App Store Connect 404: NOT_FOUND') }
     const response = responses.shift()
     if (!response) throw new Error('Unexpected polling request')
     return response
@@ -37,10 +37,10 @@ test('distinguishes the same build number on another marketing version', () => {
 test('waits through processing and verifies internal group availability', async () => {
   expect(await waitForTestFlight(api([build('PROCESSING'), build()]), sleep, 2)).toBe('build')
 })
-test('assigns only the configured internal group and confirms the result', async () => {
+test('waits for automatic assignment without the failing manual POST', async () => {
   const writes: string[] = []
-  expect(await waitForTestFlight(api([build('VALID', false), build()], writes), sleep, 2)).toBe('build')
-  expect(writes).toEqual([JSON.stringify({ data: [{ type: 'builds', id: 'build' }] })])
+  expect(await waitForTestFlight(api([build('VALID', false), build('VALID', false), build()], writes), sleep, 3)).toBe('build')
+  expect(writes).toEqual([])
 })
 test('refuses external groups before any build assignment', async () => {
   await expect(waitForTestFlight(api([], [], false), sleep, 1)).rejects.toThrow('Expected an internal group')
@@ -51,4 +51,13 @@ test('fails immediately for rejected builds and wrong audiences', async () => {
 })
 test('does not report an upload as ready on processing timeout', async () => {
   await expect(waitForTestFlight(api([build('PROCESSING')]), sleep, 1)).rejects.toThrow('upload may have succeeded')
+})
+
+test('fails clearly when automatic distribution is disabled', async () => {
+  await expect(waitForTestFlight(api([], [], true, false), sleep, 1)).rejects.toThrow('Enable automatic distribution')
+})
+test('does not report a valid but unassigned build as available', async () => {
+  const writes: string[] = []
+  await expect(waitForTestFlight(api([build('VALID', false), build('VALID', false)], writes), sleep, 2)).rejects.toThrow('Timed out waiting for TestFlight')
+  expect(writes).toEqual([])
 })
