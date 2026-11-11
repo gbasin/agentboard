@@ -4,6 +4,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createTmuxTmpDir, privateTmuxEnv, privateTmuxSocket } from '../testEnvironment'
 import type { PaneBrokerResponse } from '../../relay/paneOutputProtocol'
+import { sendPaneBurst } from './paneBurst'
 import type { TerminalToRelay } from '../../relay/protocol'
 const root = createTmuxTmpDir('ab-pane-credit-')
 const socket = privateTmuxSocket(root)
@@ -69,8 +70,9 @@ try {
   const key = tmux(['display-message', '-t', 'credit-test:0', '-p', '#{socket_path}:#{pid}:#{pane_id}'])
   worker.postMessage({ type: 'pane-subscribe', id: 'fast', key, target: '%0' })
   await until(() => ready.has('fast'))
-  tmux(['respawn-pane', '-k', '-t', 'credit-test:0', "i=0; while [ $i -lt 80 ]; do head -c 40960 /dev/zero | tr '\\000' x; sleep 0.02; i=$((i+1)); done; printf '\\nCREDIT-END\\n'; exec cat"])
-  await until(() => (slowFailed || terminalError) && tail.includes('CREDIT-END'))
+  await sendPaneBurst({ tmux, target: 'credit-test:0', root, marker: 'CREDIT', received: () => tail,
+    failure: () => fastFailed ? 'Credited subscriber overflowed' : undefined })
+  await until(() => slowFailed || terminalError)
   if (terminalError || !slowFailed) throw new Error('Broker overflow used terminal-error instead of the relay overflow recovery signal')
   if (fastFailed) throw new Error('Fast subscriber was stopped with slow subscriber')
   terminal.postMessage({ type: 'shutdown' })
