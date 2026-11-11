@@ -76,6 +76,33 @@ final class NativeGlassUITests: XCTestCase {
         capture("sessions-metadata")
     }
 
+    func testProjectChipsAcrossSessionsRecoverySavedAndHistory() {
+        _ = request("reset", reset: true)
+        let app = XCUIApplication(); app.launchArguments = ["-serverURL", base]; app.launch()
+        let row = app.buttons["session-alpha-local"]
+        XCTAssertTrue(row.waitForExistence(timeout: 15))
+        XCTAssertTrue(row.staticTexts["project-chip-alpha"].exists)
+        capture("project-chips-sessions")
+        app.buttons["Library"].tap()
+        XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
+        let saved = app.buttons["saved-Recovered fixture"]
+        reveal(saved, app: app)
+        XCTAssertTrue(saved.staticTexts["project-chip-alpha"].exists)
+        capture("project-chips-recovery")
+        app.segmentedControls["library-category"].buttons["Saved"].tap()
+        XCTAssertTrue(saved.waitForExistence(timeout: 5))
+        XCTAssertTrue(saved.staticTexts["project-chip-alpha"].exists)
+        capture("project-chips-saved")
+        app.segmentedControls["library-category"].buttons["History"].tap()
+        app.buttons["Conversation history (4)"].tap()
+        XCTAssertTrue(app.staticTexts["project-chip-alpha"].firstMatch.waitForExistence(timeout: 5))
+        capture("project-chips-history")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["Hibernating conversations (4)"].tap()
+        XCTAssertTrue(app.staticTexts["project-chip-alpha"].firstMatch.waitForExistence(timeout: 5))
+        capture("project-chips-hibernating")
+    }
+
     func testCatalogActivityMediaKeyboardAndRecovery() {
         _ = request("reset", reset: true)
         let app = XCUIApplication()

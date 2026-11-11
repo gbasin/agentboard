@@ -54,8 +54,9 @@ struct LibraryView: View {
                                 }
                                 Text(saved.state.capitalized)
                                     .font(.caption).foregroundStyle(.secondary)
-                                Text(saved.projectPath).font(.caption).foregroundStyle(.secondary)
-                                    .lineLimit(2).truncationMode(.middle)
+                                if preferences.bool("showProjectName", true), !saved.projectPath.isEmpty {
+                                    ProjectChip(name: URL(fileURLWithPath: saved.projectPath).lastPathComponent)
+                                }
                                 if let error = saved.error { Text(error).font(.callout).foregroundStyle(.primary) }
                             }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
                         }.buttonStyle(.plain).disabled(resuming != nil).accessibilityIdentifier("saved-\(saved.name)")
@@ -284,7 +285,9 @@ struct AgentHistoryView: View {
                             Text(renamed[session.id] ?? session.displayName)
                         }
                     }
-                    Text(session.projectPath).font(.caption)
+                    if preferences.bool("showProjectName", true), !session.projectPath.isEmpty {
+                        ProjectChip(name: URL(fileURLWithPath: session.projectPath).lastPathComponent)
+                    }
                     if let error = session.lastResumeError { Text(error).font(.caption) }
                     Button("Rename conversation") { newName = renamed[session.id] ?? session.displayName; renaming = session }.disabled(busy != nil)
                     Button(sleeping ? "Wake" : "Resume") { action("session-wake", session) }.disabled(busy != nil)

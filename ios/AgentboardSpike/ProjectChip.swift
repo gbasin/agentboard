@@ -36,5 +36,6 @@ struct ProjectChip: View {
             .foregroundStyle(color(dark ? 0.85 : 0.50, dark ? 0.07 : 0.13))
             .background(color(0.70, 0.12).opacity(dark ? 0.22 : 0.18), in: Capsule())
             .accessibilityLabel("Project \(name)")
+            .accessibilityIdentifier("project-chip-\(name)")
     }
 }
