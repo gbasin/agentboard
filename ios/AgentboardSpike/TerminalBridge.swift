@@ -21,8 +21,9 @@ final class TerminalBridge: ObservableObject {
         if !active { shift = false }
         updateScrollPermission()
     }
+    var canScroll: Bool { ready && !readingSnapshot && sceneActive }
     private func updateScrollPermission() {
-        call("scrollEnabled", ["enabled": ready && !readingSnapshot && sceneActive])
+        call("scrollEnabled", ["enabled": canScroll])
     }
     func exitCopyMode() { call("bottom") }
     func insert(_ message: NativePasteDelivery) {
@@ -183,7 +184,11 @@ struct TerminalWebView: UIViewRepresentable {
                 } else if type == "bottom" {
                     if !bridge.readingSnapshot { live.exitCopyMode() }
                 } else if let value = data["data"] as? String, type == "input" || type == "paste" || type == "scroll" {
-                    if !bridge.readingSnapshot { live.input(value, owner: owner, paste: type == "paste", scroll: type == "scroll") }
+                    // WebKit cancellation is asynchronous: reject a wheel that
+                    // was already queued before readiness or scene state changed.
+                    if !bridge.readingSnapshot && (type != "scroll" || bridge.canScroll) {
+                        live.input(value, owner: owner, paste: type == "paste", scroll: type == "scroll")
+                    }
                 }
             }
             if let status = data["status"] as? String { bridge.connection = status }

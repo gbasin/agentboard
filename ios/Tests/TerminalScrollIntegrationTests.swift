@@ -126,6 +126,21 @@ import WebKit
         try await assertStopped()
         try await flick()
     }
+    func testInactiveSceneRejectsAlreadyQueuedWebKitWheel() async throws {
+        _ = try await js("""
+        setTimeout(() => {
+            const deadline = performance.now() + 250;
+            while (performance.now() < deadline) {}
+            window.webkit.messageHandlers.terminal.postMessage({type:'scroll', data:'\\x1b[<64;40;12M'});
+        }, 0); true
+        """)
+        try await Task.sleep(for: .milliseconds(30))
+        bridge.setSceneActive(false)
+        _ = try await js("true")
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(wheels, 0, "A wheel already queued in WebKit must not reach the server after inactivity")
+    }
+
     func testClipboardCannotOvertakeQueuedWebKitScrollOrConsumeControl() async throws {
         // Deliberately occupy WebKit while native clipboard delivery completes.
         // The old direct native send overtook this already-queued wheel message.
