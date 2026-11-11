@@ -51,6 +51,13 @@ for (const theme of ['light', 'dark']) {
     await expect(actions).toBeFocused()
     await expect(page.getByRole('menu')).toHaveCount(0)
 
+    // A second click on the trigger closes the menu rather than reopening it
+    // after the document's outside-mousedown handler.
+    await actions.click()
+    await expect(page.getByRole('menu')).toBeVisible()
+    await actions.click()
+    await expect(page.getByRole('menu')).toHaveCount(0)
+
     // Saved narrow sidebars still fit the six controls without horizontal clipping.
     await page.evaluate(() => {
       const sidebar = document.querySelector('.session-sidebar')!

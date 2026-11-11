@@ -54,7 +54,9 @@ export default function ContextMenu({
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent | TouchEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      const target = e.target as Node
+      if (keyboardNavigation && returnFocusRef?.current?.contains(target)) return
+      if (ref.current && !ref.current.contains(target)) onClose()
     }
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -67,7 +69,7 @@ export default function ContextMenu({
       document.removeEventListener('touchstart', handleClickOutside)
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [onClose])
+  }, [onClose, keyboardNavigation, returnFocusRef])
 
   // Clamp horizontally so a right-click near the viewport edge keeps the
   // menu on-screen (min-w + padding ≈ 190px).
