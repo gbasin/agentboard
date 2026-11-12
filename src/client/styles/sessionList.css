@@ -57,3 +57,14 @@
   .session-toolbar > div { gap: 8px; }
   .session-toolbar .icon-button { width: 44px; height: 44px; }
 }
+
+/* Keep live activity easy to scan without competing with approval requests. */
+.session-working-status {
+  background: color-mix(in srgb, var(--working) 15%, transparent);
+  color: var(--working);
+  font-weight: 600;
+}
+
+[data-theme="light"] .session-working-status {
+  color: color-mix(in srgb, var(--working) 75%, black);
+}

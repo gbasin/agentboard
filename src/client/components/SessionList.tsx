@@ -82,7 +82,7 @@ interface SessionListProps {
 
 /** Status pill classes for the time/activity badge */
 const statusPillClass: Record<Session['status'], string> = {
-  working: 'text-working',
+  working: 'session-working-status',
   waiting: 'text-muted',
   permission: 'bg-approval/10 text-approval',
   unknown: 'text-muted',
