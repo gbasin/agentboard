@@ -49,4 +49,21 @@ test('attention reorders and preview growth retain the bottom until the user scr
   harness.pushSessions()
   await expect.poll(order).not.toEqual(before)
   await expect.poll(gap).toBeGreaterThan(100)
+
+  // Re-arm bottom pinning, then select an off-screen row without Playwright
+  // scrolling it first. Selection must take precedence over the bottom pin.
+  await scroller.evaluate(el => {
+    el.addEventListener('scroll', () => el.setAttribute('data-repinned', 'true'), { once: true })
+    el.scrollTop = el.scrollHeight
+  })
+  await expect(scroller).toHaveAttribute('data-repinned', 'true')
+  const target = sidebar.getByTestId('session-card').first()
+  const targetId = await target.getAttribute('data-session-id')
+  await target.dispatchEvent('click')
+  await expect(sidebar.locator(`[data-testid="session-card"][data-session-id="${targetId}"]`)).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(gap).toBeGreaterThan(100)
+  harness.extras.find(session => session.id === targetId)!.lastUserMessage = 'Selected session receives a new prompt.'
+  harness.pushSessions()
+  await expect(sidebar.locator(`[data-testid="session-card"][data-session-id="${targetId}"]`)).toContainText('Selected session receives a new prompt.')
+  await expect.poll(gap).toBeGreaterThan(100)
 })

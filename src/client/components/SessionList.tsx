@@ -239,12 +239,13 @@ export default function SessionList({
   const listScrollRef = useRef<HTMLDivElement>(null)
   const listContentRef = useRef<HTMLDivElement>(null)
   // Must run before useScrollToSelection (layout effects run in order).
-  useBottomPinnedScroll(listScrollRef, listContentRef, isBottom)
+  const syncBottomPin = useBottomPinnedScroll(listScrollRef, listContentRef, isBottom)
   useScrollToSelection(
     listScrollRef,
     selectedSessionId ?? selectedHibernatingSessionId,
     (id) => id !== selectedHibernatingSessionId || showHibernating,
-    scrollSelectionActive && !activeId
+    scrollSelectionActive && !activeId,
+    syncBottomPin
   )
 
 

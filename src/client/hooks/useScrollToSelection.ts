@@ -87,7 +87,8 @@ export function useScrollToSelection<T extends HTMLElement>(
   containerRef: RefObject<T | null>,
   selectedId: string | null,
   canTarget?: (id: string) => boolean,
-  active = true
+  active = true,
+  onScrollComplete?: () => void
 ) {
   const pendingIdRef = useRef<string | null>(selectedId)
 
@@ -111,6 +112,7 @@ export function useScrollToSelection<T extends HTMLElement>(
     )
     if (container && node) {
       scrollRowIntoView(container, node)
+      onScrollComplete?.()
       pendingIdRef.current = null
     }
   })

@@ -633,11 +633,26 @@ describe('SessionList anchor: bottom pinning', () => {
     act(() => renderer.unmount())
   })
 
-  test('a selection scroll in the same commit as a height change wins', () => {
+  test('selection wins across subsequent commits before a scroll event arrives', () => {
     const el = fakeScroller(1000, 100)
     el.rows.set('s1', 100)
     const renderer = renderList({ anchor: 'bottom' }, scrollerMock(el))
     el.scrollHeight = 1050
+    act(() => {
+      renderer.update(
+        <SessionList
+          sessions={sessions}
+          selectedSessionId="s1"
+          loading={false}
+          error={null}
+          onSelect={() => {}}
+          onRename={() => {}}
+          anchor="bottom"
+        />
+      )
+    })
+    expect(el.scrollTop).toBe(100)
+    // No scroll event yet: another commit must not restore the stale pin.
     act(() => {
       renderer.update(
         <SessionList

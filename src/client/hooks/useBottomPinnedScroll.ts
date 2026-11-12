@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 
 /** Distance (px) from the bottom that still counts as "at the bottom". */
 const PIN_TOLERANCE_PX = 2
@@ -31,6 +31,12 @@ export function useBottomPinnedScroll<C extends HTMLElement, I extends HTMLEleme
   enabled: boolean
 ) {
   const pinnedRef = useRef(true)
+  // Selection scrolling must update this synchronously: a React commit or
+  // ResizeObserver can run before the browser dispatches its scroll event.
+  const syncBottomPin = useCallback(() => {
+    const el = containerRef.current
+    if (el) pinnedRef.current = isAtBottom(el)
+  }, [containerRef])
   const repin = () => {
     const el = containerRef.current
     // WebKit can shift the viewport during a reorder without resizing it.
@@ -57,12 +63,9 @@ export function useBottomPinnedScroll<C extends HTMLElement, I extends HTMLEleme
     if (!enabled) return
     const el = containerRef.current
     if (!el || typeof el.addEventListener !== 'function') return
-    const onScroll = () => {
-      pinnedRef.current = isAtBottom(el)
-    }
-    el.addEventListener('scroll', onScroll, { passive: true })
-    return () => el.removeEventListener('scroll', onScroll)
-  }, [enabled, containerRef])
+    el.addEventListener('scroll', syncBottomPin, { passive: true })
+    return () => el.removeEventListener('scroll', syncBottomPin)
+  }, [enabled, containerRef, syncBottomPin])
 
   useEffect(() => {
     if (!enabled || typeof ResizeObserver === 'undefined') return
@@ -75,4 +78,6 @@ export function useBottomPinnedScroll<C extends HTMLElement, I extends HTMLEleme
     if (containerRef.current) observer.observe(containerRef.current)
     return () => observer.disconnect()
   }, [enabled, contentRef, containerRef])
+
+  return syncBottomPin
 }
