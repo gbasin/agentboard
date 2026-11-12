@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.1](https://github.com/gbasin/agentboard/compare/v0.46.0...v0.46.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* keep session list bottom-pinned and restore visible activity badges ([#575](https://github.com/gbasin/agentboard/issues/575)) ([7163afa](https://github.com/gbasin/agentboard/commit/7163afaaa7269f5d2585706422fe67474b001a6c))
+
 ## [0.46.0](https://github.com/gbasin/agentboard/compare/v0.45.0...v0.46.0) (2026-11-11)
 
 
