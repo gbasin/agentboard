@@ -4,7 +4,7 @@ import { Popover } from '@base-ui/react/popover'
 import type { Session } from '@shared/types'
 import type { AgentActivity } from '@shared/activity'
 import { formatRelativeTime } from '../utils/time'
-import { Users01Icon, XCloseIcon } from './icons'
+import { XCloseIcon } from './icons'
 import { ICON_SIZE } from './controlStyles'
 
 const activityDot: Record<AgentActivity['phase'], string> = {
@@ -34,10 +34,11 @@ interface Props {
   session: Session
   statusClassName: string
   statusContent: ReactNode
+  children: (counter: ReactNode, status: ReactNode) => ReactNode
   onAnimationEnd?: AnimationEventHandler
 }
 
-export default function SessionActivity({ session, statusClassName, statusContent, onAnimationEnd }: Props) {
+export default function SessionActivity({ session, statusClassName, statusContent, onAnimationEnd, children }: Props) {
   const [open, setOpen] = useState(false)
   const counterRef = useRef<HTMLButtonElement>(null)
   const statusRef = useRef<HTMLButtonElement>(null)
@@ -46,7 +47,7 @@ export default function SessionActivity({ session, statusClassName, statusConten
   const hasActivity = !!session.activity
   useEffect(() => { if (!hasActivity) setOpen(false) }, [hasActivity])
   const data = session.activity
-  if (!data) return <span className={`activity-status relative ${statusClassName}`} onAnimationEnd={onAnimationEnd}>{statusContent}</span>
+  if (!data) return children(null, <span className={`activity-status relative ${statusClassName}`} onAnimationEnd={onAnimationEnd}>{statusContent}</span>)
   const summary = session.status === 'permission' ? 'Needs input (terminal signal)' : data.main.label
   const counts = [
     `${data.running} running`,
@@ -61,20 +62,19 @@ export default function SessionActivity({ session, statusClassName, statusConten
       restoreFocus.current = details.reason !== 'outside-press' && details.reason !== 'focus-out'
       setOpen(next)
     }} modal={false}>
-      {(counterVisible || (open && data.total > 0)) && (
+      {children((counterVisible || (open && data.total > 0)) ? (
         <Popover.Trigger
           ref={counterRef}
           data-testid="session-activity-counter"
           aria-label={`Subagents: ${counts}`}
           title={`Subagents: ${counts}`}
-          className="activity-counter relative inline-flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-xs tabular-nums text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="activity-counter relative inline-flex shrink-0 items-center min-h-[24px] min-w-[24px] justify-center rounded text-[11px] leading-none tabular-nums text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           onPointerDown={stop} onTouchStart={stop} onTouchEnd={stop} onClick={event => { event.stopPropagation(); lastTrigger.current = event.currentTarget }}
         >
-          <Users01Icon aria-hidden width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
-          <span>{data.running}</span>
-          {data.blocked > 0 && <span aria-hidden data-testid="activity-attention" className="h-1 w-1 rounded-full bg-amber-500" />}
+          <span>+{data.running}</span>
+          {data.blocked > 0 && <span aria-hidden data-testid="activity-attention" className="absolute -right-1 top-0.5 h-1 w-1 rounded-full bg-amber-500" />}
         </Popover.Trigger>
-      )}
+      ) : null,
       <Popover.Trigger
         ref={statusRef}
         data-testid="session-activity-status"
@@ -83,7 +83,7 @@ export default function SessionActivity({ session, statusClassName, statusConten
         className={`activity-status relative focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${statusClassName}`}
         onAnimationEnd={onAnimationEnd}
         onPointerDown={stop} onTouchStart={stop} onTouchEnd={stop} onClick={event => { event.stopPropagation(); lastTrigger.current = event.currentTarget }}
-      >{statusContent}</Popover.Trigger>
+      >{statusContent}</Popover.Trigger>)}
       <Popover.Portal>
         <Popover.Positioner side="bottom" align="end" sideOffset={8} collisionPadding={8} className="z-[70]">
           <Popover.Popup

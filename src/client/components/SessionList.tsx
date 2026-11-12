@@ -1178,95 +1178,102 @@ function SessionRow({
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchEnd}
     >
-      <div className="flex flex-col gap-0.5 pl-0.5">
-        {/* Line 1: Icon + Name + Time/Hand */}
-        <div className="flex items-center gap-2">
-          {dragHandleListeners ? (
-            // On coarse pointers the icon doubles as the drag handle.
-            // touch-action:none keeps the browser from claiming the pan for
-            // scrolling, which would pointercancel the drag at activation;
-            // the padding widens the hit target without growing the icon.
-            <span
-              {...dragHandleListeners}
-              data-testid="drag-handle"
-              aria-label="Drag to reorder"
-              style={{ touchAction: 'none' }}
-              className="-my-1 -ml-1 flex items-center py-1 pl-1 cursor-grab"
-            >
-              <AgentIcon
-                agentType={session.agentType}
-                command={session.command}
-                className="h-3.5 w-3.5 shrink-0 text-muted"
-              />
-            </span>
-          ) : (
-            <AgentIcon
-              agentType={session.agentType}
-              command={session.command}
-              className="h-3.5 w-3.5 shrink-0 text-muted"
-            />
-          )}
-          {isEditing ? (
-            <input
-              ref={inputRef}
-              type="text"
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onBlur={handleSubmit}
-              onKeyDown={handleKeyDown}
-              onClick={(e) => e.stopPropagation()}
-              // Without this, dragging to select text inside the input arms
-              // the row's dnd-kit PointerSensor on the wrapper.
-              onPointerDown={(e) => e.stopPropagation()}
-              className="min-w-0 flex-1 rounded border border-border bg-surface px-1.5 py-0.5 text-sm font-medium text-primary outline-none focus:border-accent"
-            />
-          ) : (
-            <span className="session-name min-w-0 flex-1 truncate text-primary">
-              {displayName}
-            </span>
-          )}
-          {sessionIdPrefix && (
-            <span
-              className="shrink-0 text-[11px] font-mono text-muted"
-              title={agentSessionId}
-            >
-              {sessionIdPrefix}
-            </span>
-          )}
-          <SessionActivity
-            session={session}
-            statusClassName={needsInput
-              ? `ml-1 flex shrink-0 items-center justify-center rounded-full px-1.5 py-0.5 ${statusPillClass[session.status]} pulse-approval`
-              : `ml-1 shrink-0 rounded-full px-1.5 py-0.5 text-right text-xs tabular-nums ${statusPillClass[session.status]}${isPulsingComplete ? ' pulse-complete' : ''}`}
-            onAnimationEnd={handlePulseAnimationEnd}
-            statusContent={needsInput
-              ? <HandIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} aria-label="Needs input" />
-              : lastActivity}
-          />
-        </div>
+      <SessionActivity
+        session={session}
+        statusClassName={needsInput
+          ? `ml-1 flex shrink-0 items-center justify-center rounded-full px-1.5 py-0.5 ${statusPillClass[session.status]} pulse-approval`
+          : `ml-1 shrink-0 rounded-full px-1.5 py-0.5 text-right text-xs tabular-nums ${statusPillClass[session.status]}${isPulsingComplete ? ' pulse-complete' : ''}`}
+        onAnimationEnd={handlePulseAnimationEnd}
+        statusContent={needsInput
+          ? <HandIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} aria-label="Needs input" />
+          : lastActivity}
+      >
+        {(counter, status) => (
+          <div className="flex items-start gap-[6px] pl-0.5">
+            <div data-testid="session-agent-column" className={`flex w-[28px] shrink-0 flex-col items-center gap-1 pt-[3px] ${session.activity?.total ? 'min-h-[44px]' : ''}`}>
+              {dragHandleListeners ? (
+                // On coarse pointers the icon doubles as the drag handle.
+                // touch-action:none keeps the browser from claiming the pan for
+                // scrolling, which would pointercancel the drag at activation;
+                // the padding widens the hit target without growing the icon.
+                <span
+                  {...dragHandleListeners}
+                  data-testid="drag-handle"
+                  aria-label="Drag to reorder"
+                  style={{ touchAction: 'none' }}
+                  className="-my-1 -ml-1 flex items-center py-1 pl-1 cursor-grab"
+                >
+                  <AgentIcon
+                    agentType={session.agentType}
+                    command={session.command}
+                    className="h-3.5 w-3.5 shrink-0 text-muted"
+                  />
+                </span>
+              ) : (
+                <AgentIcon
+                  agentType={session.agentType}
+                  command={session.command}
+                  className="h-3.5 w-3.5 shrink-0 text-muted"
+                />
+              )}
+              {counter}
+            </div>
+            <div className="session-details flex min-w-0 flex-1 flex-col gap-0.5">
+              <div className="flex items-center gap-2">
+                {isEditing ? (
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={handleSubmit}
+                    onKeyDown={handleKeyDown}
+                    onClick={(e) => e.stopPropagation()}
+                    // Without this, dragging to select text inside the input arms
+                    // the row's dnd-kit PointerSensor on the wrapper.
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="min-w-0 flex-1 rounded border border-border bg-surface px-1.5 py-0.5 text-sm font-medium text-primary outline-none focus:border-accent"
+                  />
+                ) : (
+                  <span className="session-name min-w-0 flex-1 truncate text-primary">
+                    {displayName}
+                  </span>
+                )}
+                {sessionIdPrefix && (
+                  <span
+                    className="shrink-0 text-[11px] font-mono text-muted"
+                    title={agentSessionId}
+                  >
+                    {sessionIdPrefix}
+                  </span>
+                )}
+                {status}
+              </div>
+              {/* Project metadata and preview occupy their own stable lines. */}
+              {(showDirectory || showHostBadge) && (
+                <div className="session-metadata">
+                  {showHostBadge && <HostBadge name={hostLabel!} />}
+                  {showDirectory && (
+                    <ProjectBadge name={directoryLeaf!} fullPath={session.projectPath} />
+                  )}
+                </div>
+              )}
+              {showMessage && (
+                <span className="session-preview">
+                  {session.lastUserMessage!.length > 200
+                    ? session.lastUserMessage!.slice(0, 200) + '…'
+                    : session.lastUserMessage}
+                </span>
+              )}
 
-        {/* Project metadata and preview occupy their own stable lines. */}
-        {(showDirectory || showHostBadge) && (
-          <div className="session-metadata">
-            {showHostBadge && <HostBadge name={hostLabel!} />}
-            {showDirectory && (
-              <ProjectBadge name={directoryLeaf!} fullPath={session.projectPath} />
-            )}
+              {/* PR context stays below the preview. */}
+              {session.prs && session.prs.length > 0 && (
+                <PrChips prs={session.prs} className="font-mono" />
+              )}
+            </div>
           </div>
         )}
-        {showMessage && (
-          <span className="session-preview">
-            {session.lastUserMessage!.length > 200
-              ? session.lastUserMessage!.slice(0, 200) + '…'
-              : session.lastUserMessage}
-          </span>
-        )}
-
-        {/* PR context stays below the preview. */}
-        {session.prs && session.prs.length > 0 && (
-          <PrChips prs={session.prs} className="ml-[20px] font-mono" />
-        )}
-      </div>
+      </SessionActivity>
 
       {/* Context menu */}
       {contextMenu && (
