@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.3](https://github.com/gbasin/agentboard/compare/v0.46.2...v0.46.3) (2026-11-12)
+
+
+### Bug Fixes
+
+* show subagent plus counts beneath harness icons ([#579](https://github.com/gbasin/agentboard/issues/579)) ([6374018](https://github.com/gbasin/agentboard/commit/6374018633bd16ea33dbb9647f3bd53fe05b042f))
+
 ## [0.46.2](https://github.com/gbasin/agentboard/compare/v0.46.1...v0.46.2) (2026-11-12)
 
 
