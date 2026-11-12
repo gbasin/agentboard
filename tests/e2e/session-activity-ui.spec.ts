@@ -54,7 +54,7 @@ test('counter sits below the harness; click/tap opens details without selection 
   const trigger = card.getByTestId('session-activity-counter')
   await expect(trigger).toHaveText('+2')
   await expect(trigger.locator('svg')).toHaveCount(0)
-  await expect(trigger).toHaveAttribute('title', 'Subagents: 2 running, 1 awaiting input, 1 unknown')
+  await expect(trigger).toHaveAttribute('aria-label', 'Show subagents: 2 running, 1 awaiting input, 1 unknown')
   const icon = (await card.getByTestId('session-agent-column').locator('svg').first().boundingBox())!
   const count = (await trigger.boundingBox())!
   expect(count.y).toBeGreaterThanOrEqual(icon.y + icon.height)
@@ -67,6 +67,7 @@ test('counter sits below the harness; click/tap opens details without selection 
   const wasSelected = (await card.getAttribute('class'))!.split(' ').includes('selected')
   await activate(page, trigger)
   await expect(popup(page)).toBeVisible()
+  await expect(page.getByRole('tooltip')).toBeHidden()
   expect((await card.getAttribute('class'))!.split(' ').includes('selected')).toBe(wasSelected)
   expect((await card.boundingBox())!.height).toBeCloseTo(before.height, 2)
   expect((await other.boundingBox())!.y).toBeCloseTo(nextBefore.y, 2)
@@ -94,6 +95,38 @@ test('counter sits below the harness; click/tap opens details without selection 
   await activate(page, popup(page).getByRole('button', { name: 'Close activity' }))
   await expect(popup(page)).toBeHidden()
   await expect(trigger).toBeFocused()
+})
+
+test('counter has a visible button affordance and a hover or keyboard tooltip', async ({ page }) => {
+  test.skip(Boolean(test.info().project.use.hasTouch), 'Hover and keyboard apply to desktop')
+  const { card } = await setup(page)
+  const trigger = card.getByTestId('session-activity-counter')
+  await expect(trigger).not.toHaveAttribute('title')
+  await expect(trigger.locator('button')).toHaveCount(0)
+  const idle = await trigger.evaluate(el => {
+    const style = getComputedStyle(el)
+    return { border: style.borderTopWidth, background: style.backgroundColor, cursor: style.cursor }
+  })
+  expect(idle.border).toBe('1px')
+  expect(idle.background).not.toBe('rgba(0, 0, 0, 0)')
+  expect(idle.cursor).toBe('pointer')
+  await trigger.hover()
+  const tooltip = page.getByRole('tooltip')
+  await expect(tooltip).toHaveText('Show subagents · 2 running, 1 awaiting input, 1 unknown')
+  expect(await trigger.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(idle.background)
+  await tooltip.hover()
+  await expect(tooltip).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(tooltip).toBeHidden()
+  await page.mouse.move(700, 500)
+  // Leave and return by keyboard after Escape dismisses this trigger's tooltip.
+  await trigger.focus()
+  await page.keyboard.press('Tab')
+  await page.keyboard.press('Shift+Tab')
+  await expect(tooltip).toBeVisible()
+  await page.keyboard.press('Enter')
+  await expect(popup(page)).toBeVisible()
+  await expect(tooltip).toBeHidden()
 })
 
 test('keyboard opens, Escape dismisses and restores focus; outside input keeps focus', async ({ page }) => {
@@ -211,7 +244,7 @@ test('plus counts update in place and retain blocked or unknown child details', 
   harness.pushSessions()
   await expect(trigger).toHaveText('+0')
   await expect(trigger.getByTestId('activity-attention')).toBeVisible()
-  await expect(trigger).toHaveAttribute('title', 'Subagents: 0 running, 1 awaiting input')
+  await expect(trigger).toHaveAttribute('aria-label', 'Show subagents: 0 running, 1 awaiting input')
   current.value = { ...data(), running: 0, blocked: 0, unknown: 1 }
   harness.pushSessions()
   await expect(trigger).toHaveText('+0')
