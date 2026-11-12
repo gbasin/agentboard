@@ -516,6 +516,32 @@ describe('SessionList anchor: bottom pinning', () => {
     act(() => renderer.unmount())
   })
 
+  test('repins after a same-height attention reorder shifts the viewport', () => {
+    useSettingsStore.setState({ sessionSortMode: 'status' })
+    const el = fakeScroller(1000, 100)
+    const renderer = renderList({ anchor: 'bottom' }, scrollerMock(el))
+    expect(el.scrollTop).toBe(900)
+    // Layout moves the viewport before its scroll event is dispatched.
+    el.scrollTop = 860
+    act(() => {
+      renderer.update(
+        <SessionList
+          sessions={sessions.map((session, index) => ({
+            ...session, status: index === 0 ? 'permission' : 'working',
+          }))}
+          selectedSessionId={null}
+          loading={false}
+          error={null}
+          onSelect={() => {}}
+          onRename={() => {}}
+          anchor="bottom"
+        />
+      )
+    })
+    expect(el.scrollTop).toBe(900)
+    act(() => renderer.unmount())
+  })
+
   test('stays pinned when the viewport shrinks (a banner appears above the list)', () => {
     const el = fakeScroller(1000, 100)
     const renderer = renderList({ anchor: 'bottom' }, scrollerMock(el))

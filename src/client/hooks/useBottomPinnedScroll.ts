@@ -31,17 +31,10 @@ export function useBottomPinnedScroll<C extends HTMLElement, I extends HTMLEleme
   enabled: boolean
 ) {
   const pinnedRef = useRef(true)
-  // Keyed on both heights: the viewport shrinking (a banner appearing above
-  // the list, a window resize) moves the bottom edge just like new content.
-  const lastSizeRef = useRef<string | null>(null)
-
   const repin = () => {
     const el = containerRef.current
-    if (!el) return
-    const size = `${el.scrollHeight}:${el.clientHeight}`
-    if (size === lastSizeRef.current) return
-    lastSizeRef.current = size
-    if (pinnedRef.current) {
+    // WebKit can shift the viewport during a reorder without resizing it.
+    if (el && pinnedRef.current && !isAtBottom(el)) {
       el.scrollTop = el.scrollHeight
     }
   }
@@ -50,13 +43,12 @@ export function useBottomPinnedScroll<C extends HTMLElement, I extends HTMLEleme
 
   // Enabling (mount or a settings flip) opens the list at the bottom.
   useLayoutEffect(() => {
-    lastSizeRef.current = null
     if (!enabled) return
     pinnedRef.current = true
     repinRef.current()
   }, [enabled])
 
-  // No dep array: re-check after every commit; cheap when height is unchanged.
+  // No dep array: re-check after every commit; writes only when the bottom gap changes.
   useLayoutEffect(() => {
     if (enabled) repinRef.current()
   })

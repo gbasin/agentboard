@@ -749,9 +749,11 @@ export default function SessionList({
         // Mirrored: rows stack from the bottom edge (mt-auto spacer, not
         // justify-end, which would make overflow unreachable); scroll-pb-[40px]
         // keeps selected rows clear of the sticky bottom filter bar.
+        // Native scroll anchoring would preserve a moving row during status
+        // sorts, fighting useBottomPinnedScroll and disarming its bottom pin.
         <div
           ref={listScrollRef}
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain scroll-pb-[40px]"
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain scroll-pb-[40px] [overflow-anchor:none]"
         >
           <div ref={listContentRef} className="mt-auto shrink-0">
             {historySection}
