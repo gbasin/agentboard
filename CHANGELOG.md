@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.2](https://github.com/gbasin/agentboard/compare/v0.46.1...v0.46.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* track stopped agents and parked Claude continuations ([#577](https://github.com/gbasin/agentboard/issues/577)) ([3e09aa0](https://github.com/gbasin/agentboard/commit/3e09aa08efdc2789984464688c3a39735cdbec97))
+
 ## [0.46.1](https://github.com/gbasin/agentboard/compare/v0.46.0...v0.46.1) (2026-11-12)
 
 
