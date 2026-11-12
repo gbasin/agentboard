@@ -1,6 +1,7 @@
 // Counter and existing status pill share one accessible, collision-aware popover.
 import { useState, useRef, useEffect, type ReactNode, type AnimationEventHandler } from 'react'
 import { Popover } from '@base-ui/react/popover'
+import { Tooltip } from '@base-ui/react/tooltip'
 import type { Session } from '@shared/types'
 import type { AgentActivity } from '@shared/activity'
 import { formatRelativeTime } from '../utils/time'
@@ -63,17 +64,26 @@ export default function SessionActivity({ session, statusClassName, statusConten
       setOpen(next)
     }} modal={false}>
       {children((counterVisible || (open && data.total > 0)) ? (
-        <Popover.Trigger
-          ref={counterRef}
-          data-testid="session-activity-counter"
-          aria-label={`Subagents: ${counts}`}
-          title={`Subagents: ${counts}`}
-          className="activity-counter relative inline-flex shrink-0 items-center min-h-[24px] min-w-[24px] justify-center rounded text-[11px] leading-none tabular-nums text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          onPointerDown={stop} onTouchStart={stop} onTouchEnd={stop} onClick={event => { event.stopPropagation(); lastTrigger.current = event.currentTarget }}
-        >
-          <span>+{data.running}</span>
-          {data.blocked > 0 && <span aria-hidden data-testid="activity-attention" className="absolute -right-1 top-0.5 h-1 w-1 rounded-full bg-amber-500" />}
-        </Popover.Trigger>
+        <Tooltip.Root disabled={open}>
+          <Tooltip.Trigger delay={350} render={<Popover.Trigger
+            ref={counterRef}
+            data-testid="session-activity-counter"
+            aria-label={`Show subagents: ${counts}`}
+            className="activity-counter relative inline-flex shrink-0 cursor-pointer items-center min-h-[24px] min-w-[28px] justify-center rounded-md border border-secondary/25 bg-elevated/70 text-[11px] leading-none tabular-nums text-secondary hover:border-secondary/50 hover:bg-hover hover:text-primary focus-visible:bg-hover focus-visible:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent data-[popup-open]:bg-hover"
+            onPointerDown={stop} onTouchStart={stop} onTouchEnd={stop} onClick={event => { event.stopPropagation(); lastTrigger.current = event.currentTarget }}
+          />}>
+            <span>+{data.running}</span>
+            {data.blocked > 0 && <span aria-hidden data-testid="activity-attention" className="absolute -right-1 top-0.5 h-1 w-1 rounded-full bg-amber-500" />}
+          </Tooltip.Trigger>
+          <Tooltip.Portal>
+            <Tooltip.Positioner side="right" sideOffset={6} collisionPadding={8} className="z-[80]">
+              <Tooltip.Popup
+                className="max-w-[min(280px,calc(100vw-16px))] rounded-lg bg-primary px-2.5 py-1.5 text-[11px] leading-relaxed text-base shadow-md"
+                onPointerDown={stop} onClick={stop}
+              >Show subagents · {counts}</Tooltip.Popup>
+            </Tooltip.Positioner>
+          </Tooltip.Portal>
+        </Tooltip.Root>
       ) : null,
       <Popover.Trigger
         ref={statusRef}
