@@ -82,7 +82,7 @@ interface SessionListProps {
 
 /** Status pill classes for the time/activity badge */
 const statusPillClass: Record<Session['status'], string> = {
-  working: 'text-working',
+  working: 'session-working-status',
   waiting: 'text-muted',
   permission: 'bg-approval/10 text-approval',
   unknown: 'text-muted',
@@ -239,12 +239,13 @@ export default function SessionList({
   const listScrollRef = useRef<HTMLDivElement>(null)
   const listContentRef = useRef<HTMLDivElement>(null)
   // Must run before useScrollToSelection (layout effects run in order).
-  useBottomPinnedScroll(listScrollRef, listContentRef, isBottom)
+  const syncBottomPin = useBottomPinnedScroll(listScrollRef, listContentRef, isBottom)
   useScrollToSelection(
     listScrollRef,
     selectedSessionId ?? selectedHibernatingSessionId,
     (id) => id !== selectedHibernatingSessionId || showHibernating,
-    scrollSelectionActive && !activeId
+    scrollSelectionActive && !activeId,
+    syncBottomPin
   )
 
 
@@ -749,9 +750,11 @@ export default function SessionList({
         // Mirrored: rows stack from the bottom edge (mt-auto spacer, not
         // justify-end, which would make overflow unreachable); scroll-pb-[40px]
         // keeps selected rows clear of the sticky bottom filter bar.
+        // Native scroll anchoring would preserve a moving row during status
+        // sorts, fighting useBottomPinnedScroll and disarming its bottom pin.
         <div
           ref={listScrollRef}
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain scroll-pb-[40px]"
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain scroll-pb-[40px] [overflow-anchor:none]"
         >
           <div ref={listContentRef} className="mt-auto shrink-0">
             {historySection}

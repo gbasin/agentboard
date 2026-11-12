@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 
 /** Distance (px) from the bottom that still counts as "at the bottom". */
 const PIN_TOLERANCE_PX = 2
@@ -31,17 +31,16 @@ export function useBottomPinnedScroll<C extends HTMLElement, I extends HTMLEleme
   enabled: boolean
 ) {
   const pinnedRef = useRef(true)
-  // Keyed on both heights: the viewport shrinking (a banner appearing above
-  // the list, a window resize) moves the bottom edge just like new content.
-  const lastSizeRef = useRef<string | null>(null)
-
+  // Selection scrolling must update this synchronously: a React commit or
+  // ResizeObserver can run before the browser dispatches its scroll event.
+  const syncBottomPin = useCallback(() => {
+    const el = containerRef.current
+    if (el) pinnedRef.current = isAtBottom(el)
+  }, [containerRef])
   const repin = () => {
     const el = containerRef.current
-    if (!el) return
-    const size = `${el.scrollHeight}:${el.clientHeight}`
-    if (size === lastSizeRef.current) return
-    lastSizeRef.current = size
-    if (pinnedRef.current) {
+    // WebKit can shift the viewport during a reorder without resizing it.
+    if (el && pinnedRef.current && !isAtBottom(el)) {
       el.scrollTop = el.scrollHeight
     }
   }
@@ -50,13 +49,12 @@ export function useBottomPinnedScroll<C extends HTMLElement, I extends HTMLEleme
 
   // Enabling (mount or a settings flip) opens the list at the bottom.
   useLayoutEffect(() => {
-    lastSizeRef.current = null
     if (!enabled) return
     pinnedRef.current = true
     repinRef.current()
   }, [enabled])
 
-  // No dep array: re-check after every commit; cheap when height is unchanged.
+  // No dep array: re-check after every commit; writes only when the bottom gap changes.
   useLayoutEffect(() => {
     if (enabled) repinRef.current()
   })
@@ -65,12 +63,9 @@ export function useBottomPinnedScroll<C extends HTMLElement, I extends HTMLEleme
     if (!enabled) return
     const el = containerRef.current
     if (!el || typeof el.addEventListener !== 'function') return
-    const onScroll = () => {
-      pinnedRef.current = isAtBottom(el)
-    }
-    el.addEventListener('scroll', onScroll, { passive: true })
-    return () => el.removeEventListener('scroll', onScroll)
-  }, [enabled, containerRef])
+    el.addEventListener('scroll', syncBottomPin, { passive: true })
+    return () => el.removeEventListener('scroll', syncBottomPin)
+  }, [enabled, containerRef, syncBottomPin])
 
   useEffect(() => {
     if (!enabled || typeof ResizeObserver === 'undefined') return
@@ -83,4 +78,6 @@ export function useBottomPinnedScroll<C extends HTMLElement, I extends HTMLEleme
     if (containerRef.current) observer.observe(containerRef.current)
     return () => observer.disconnect()
   }, [enabled, contentRef, containerRef])
+
+  return syncBottomPin
 }
