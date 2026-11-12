@@ -93,3 +93,71 @@ for (const kind of ['claude', 'codex'] as const) {
     } finally { fixture.stop() }
   })
 }
+
+test('Claude parked continuation rebinds identity, prompt and children; unpark restores the original', async ({ page, request }, info) => {
+  test.skip(process.platform !== 'darwin', 'Process ownership matching is enabled only on macOS')
+  // Two ownership transitions use the production 30-second observation cadence.
+  test.setTimeout(150_000)
+  const fixture = seedActivity('claude', true)
+  const { randomUUID } = await import('node:crypto')
+  const path = await import('node:path')
+  const nextId = randomUUID(), jobId = nextId.slice(0, 8)
+  const nextLog = path.join(path.dirname(fixture.log), nextId + '.jsonl')
+  const childDir = path.join(path.dirname(fixture.log), nextId, 'subagents')
+  const jobDir = path.join(process.env.CLAUDE_CONFIG_DIR!, 'jobs', jobId)
+  const prompt = 'Continue the parked fixture'
+  const session = async () => (await (await request.get('/api/sessions')).json()).find((s: { name: string }) => s.name === fixture.name)
+  try {
+    await page.goto('/')
+    await expect.poll(async () => (await session())?.agentSessionId, { timeout: 60_000 }).toBe(fixture.sessionId)
+    const card = page.locator('[data-testid="session-card"]:visible').filter({ hasText: fixture.name }).first()
+    await expect(card.getByTestId('session-activity-counter')).toHaveText('1', { timeout: 20_000 })
+    await card.getByTestId('session-activity-counter').click()
+    const popup = page.getByTestId('session-activity-popover')
+    fixture.append({ type: 'user', message: { content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] } })
+    await expect(popup).toContainText('Interrupted', { timeout: 20_000 })
+    await expect.poll(async () => (await session())?.activity?.unknown).toBe(0)
+    fixture.append({ type: 'api-request' })
+    await expect(popup).toContainText('1 running', { timeout: 20_000 })
+    await page.keyboard.press('Escape')
+
+    fs.mkdirSync(childDir, { recursive: true })
+    fs.mkdirSync(jobDir, { recursive: true })
+    fs.writeFileSync(nextLog, activityLine({ type: 'user', sessionId: nextId, cwd: fixture.project, message: { role: 'user', content: prompt } }))
+    for (const name of ['one', 'two']) {
+      fs.writeFileSync(path.join(childDir, `agent-${name}.jsonl`), activityLine({ type: 'api-request' }))
+    }
+    fs.writeFileSync(path.join(jobDir, 'state.json'), JSON.stringify({ template: 'bg', daemonShort: jobId, sessionId: nextId }))
+    fs.appendFileSync(fixture.log, activityLine({ type: 'continued-in', sessionId: fixture.sessionId, continuedInSessionId: nextId }))
+    fixture.park(jobId)
+    await expect.poll(async () => (await session())?.agentSessionId, { timeout: 60_000 }).toBe(nextId)
+    await expect.poll(async () => {
+      const s = await session()
+      return { path: s?.logFilePath, prompt: s?.lastUserMessage, running: s?.activity?.running, total: s?.activity?.total }
+    }, { timeout: 30_000 }).toEqual({ path: nextLog, prompt, running: 2, total: 2 })
+    await expect(card.getByTestId('session-activity-counter')).toHaveText('2')
+    await card.getByTestId('session-activity-counter').click()
+    await expect(popup).toContainText('2 running')
+    await page.screenshot({ path: info.outputPath('claude-parked-desktop.png') })
+    await info.attach('parked-session', { body: JSON.stringify(await session(), null, 2), contentType: 'application/json' })
+    await page.keyboard.press('Escape')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.getByLabel('Open session menu', { exact: true }).click()
+    const mobile = page.locator('.session-drawer [data-testid="session-card"]').filter({ hasText: fixture.name }).first()
+    await mobile.getByTestId('session-activity-counter').click()
+    await expect(popup).toContainText('2 running')
+    await page.screenshot({ path: info.outputPath('claude-parked-mobile.png') })
+    await page.keyboard.press('Escape')
+    // Historical continued-in remains present: only the current parked link
+    // authorizes rebinding, so resuming the original cannot redirect again.
+    fixture.park(null)
+    await expect.poll(async () => (await session())?.agentSessionId, { timeout: 60_000 }).toBe(fixture.sessionId)
+    await expect.poll(async () => (await session())?.activity?.running, { timeout: 20_000 }).toBe(1)
+  } catch (error) {
+    await info.attach('parked-association-failure', {
+      body: JSON.stringify({ session: await session(), terminal: fixture.capture() }, null, 2),
+      contentType: 'application/json',
+    })
+    throw error
+  } finally { fixture.stop() }
+})

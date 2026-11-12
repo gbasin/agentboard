@@ -34,7 +34,7 @@ interface ClaudeMetadata {
   size: number
   mtime: number
   name?: string
-  finished: boolean
+  completion?: 'Stopped' | 'Turn finished'
 }
 
 const unknown = (): AgentActivity => ({ phase: 'unknown', label: 'Activity unknown', tools: [] })
@@ -121,7 +121,7 @@ export class SessionActivityTracker {
           if (!meta || meta.ino !== stat.ino || meta.size !== stat.size || meta.mtime !== stat.mtimeMs) {
             const raw = JSON.parse(await fs.readFile(metaPath, 'utf8'))
             const name = typeof raw.description === 'string' ? raw.description : typeof raw.agentType === 'string' ? raw.agentType : undefined
-            meta = { ino: stat.ino, size: stat.size, mtime: stat.mtimeMs, name: name?.slice(0, 120), finished: raw.finished === true }
+            meta = { ino: stat.ino, size: stat.size, mtime: stat.mtimeMs, name: name?.slice(0, 120), completion: raw.stoppedByUser === true ? 'Stopped' : raw.finished === true ? 'Turn finished' : undefined }
             this.metadata.delete(metaPath)
             this.metadata.set(metaPath, meta)
             if (this.metadata.size > SUMMARY_LIMIT) this.metadata.delete(this.metadata.keys().next().value!)
@@ -130,8 +130,8 @@ export class SessionActivityTracker {
           // This private sidecar signal is only trusted when strictly newer
           // than the transcript, so tied timestamps cannot hide a resume.
           const transcript = this.summaries.get(logPath)
-          if (meta.finished && transcript && stat.mtimeMs > transcript.mtime) {
-            activity = { ...activity, phase: 'idle', label: 'Turn finished', tools: [] }
+          if (meta.completion && transcript && stat.mtimeMs > transcript.mtime) {
+            activity = { ...activity, phase: 'idle', label: meta.completion, tools: [] }
           }
         }
       } catch { /* older versions need not have a metadata sidecar */ }

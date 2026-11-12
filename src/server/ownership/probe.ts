@@ -1,5 +1,5 @@
 // Shared read-only collection and validation. No database or registry write capability.
-import { claudeRoots, parseClaudeRecord, resolveClaudeRecord } from './claude'
+import { claudeRoots, parseClaudeJobSession, parseClaudeRecord, resolveClaudeRecord } from './claude'
 import { isTranscript, paneCodexRoots, parseTranscriptHead, resolveOwnership } from './codex'
 import type { OpenFile, PaneIdentity, ProcessIdentity, TranscriptIdentity } from './codex'
 
@@ -52,6 +52,17 @@ export async function probeOwnership(windows: OwnershipWindow[], io: OwnershipIO
       claude.set(process.pid, parseClaudeRecord(await io.head(`${io.claudeHome}/sessions/${process.pid}.json`, false) ?? '', process.pid, io.platform))
     }
   }
+  // Read only jobs selected by a validated local CLI record. Keep both
+  // snapshots inside the registry/process bracket so unpark/repark races fail closed.
+  const jobs = new Map<number, string | null>()
+  const finalJobs = new Map<number, string | null>()
+  for (const [pid, record] of claude) {
+    if (record?.parkedJobId) {
+      const file = `${io.claudeHome}/jobs/${record.parkedJobId}/state.json`
+      jobs.set(pid, parseClaudeJobSession(await io.head(file, false) ?? '', record.parkedJobId))
+      finalJobs.set(pid, parseClaudeJobSession(await io.head(file, false) ?? '', record.parkedJobId))
+    }
+  }
   let finalFiles: OpenFile[] = []
   try { finalFiles = pids.length ? await io.files(pids) : [] } catch { fileError = true }
   const finalClaude = new Map<number, ReturnType<typeof parseClaudeRecord>>()
@@ -82,6 +93,11 @@ export async function probeOwnership(windows: OwnershipWindow[], io: OwnershipIO
     if (finalRoots.length !== 1 || finalRoots[0].pid !== process.pid) return unknown('process_ancestry_changed')
     if (agent === 'claude') {
       const result = resolveClaudeRecord(process, claude.get(process.pid) ?? null, finalClaude.get(process.pid) ?? null)
+      if (result.status === 'resolved' && claude.get(process.pid)?.parkedJobId) {
+        const sessionId = jobs.get(process.pid)
+        if (!sessionId || sessionId !== finalJobs.get(process.pid)) return unknown('claude_parked_job_unavailable_or_changed')
+        return { ...base, status: 'resolved', sessionId, pid: process.pid, started: process.started }
+      }
       return { ...base, ...result, ...(result.status === 'resolved' ? { pid: process.pid, started: process.started } : {}) } as Observation
     }
     if (fileError) return unknown('codex_descriptor_inspection_failed')

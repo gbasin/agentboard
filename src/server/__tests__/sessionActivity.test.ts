@@ -249,3 +249,46 @@ test('cursor eviction retains compact summaries and avoids replaying unchanged h
     expect(reads).toHaveBeenCalledTimes(1)
   } finally { reads.mockRestore() }
 })
+
+test('Claude interruption ends pending work, survives cold replay, and resumes on new activity', async () => {
+  const log = path.join(dir, 'parent.jsonl')
+  for (const marker of ['[Request interrupted by user]', '[Request interrupted by user for tool use]']) {
+    const stopped = { type: 'user', timestamp: '2026-01-01T00:00:00Z', message: { content: [{ type: 'text', text: marker }] } }
+    await fs.writeFile(log, line(claudeTool('x', 'Bash')) + line(stopped))
+    const tracker = new SessionActivityTracker()
+    expect((await tracker.enrich([session('claude', log)]))[0].activity?.main)
+      .toMatchObject({ phase: 'idle', label: 'Interrupted', tools: [] })
+    await fs.appendFile(log, line({ type: 'api-request' }))
+    expect((await tracker.enrich([session('claude', log)]))[0].activity?.main)
+      .toMatchObject({ phase: 'model', label: 'Model turn active', tools: [] })
+  }
+  const state = newActivityState()
+  reduceActivity(state, claudeTool('x', 'Bash'), 'claude')
+  reduceActivity(state, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'x', content: '[Request interrupted by user]' }] } }, 'claude')
+  expect(state.phase).toBe('model')
+  reduceActivity(state, { type: 'user', message: { content: 'Explain [Request interrupted by user]' } }, 'claude')
+  expect(state.phase).toBe('model')
+})
+
+test('stoppedByUser metadata ends a child only while strictly newer than its transcript', async () => {
+  const log = path.join(dir, 'parent.jsonl')
+  const child = path.join(dir, 'parent/subagents/agent-a.jsonl')
+  await fs.mkdir(path.dirname(child), { recursive: true })
+  await fs.writeFile(log, line({ type: 'api-request' }))
+  await fs.writeFile(child, line(claudeTool('x', 'Bash')))
+  const meta = child.replace('.jsonl', '.meta.json')
+  await fs.writeFile(meta, JSON.stringify({ stoppedByUser: true }))
+  const stamp = Date.now() / 1000
+  await fs.utimes(child, stamp - 2, stamp - 2)
+  await fs.utimes(meta, stamp, stamp)
+  const tracker = new SessionActivityTracker()
+  let [s] = await tracker.enrich([session('claude', log)])
+  expect(s.activity).toMatchObject({ running: 0, unknown: 0 })
+  expect(s.activity?.subagents[0].activity.label).toBe('Stopped')
+  await fs.appendFile(child, line({ type: 'api-request' }))
+  for (const time of [stamp, stamp + 1]) {
+    await fs.utimes(child, time, time)
+    ;[s] = await tracker.enrich([session('claude', log)])
+    expect(s.activity?.running).toBe(1)
+  }
+})

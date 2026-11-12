@@ -14,7 +14,7 @@ function tmux(args: string[]) {
   if (result.status !== 0) throw new Error(result.stderr)
   return result.stdout.trim()
 }
-export function seedActivity(kind: 'claude' | 'codex') {
+export function seedActivity(kind: 'claude' | 'codex', ownership = false) {
   const root = process.env.E2E_TMUX_TMPDIR!
   const sessionId = randomUUID(), childId = randomUUID()
   const name = `activity-${kind}-${sessionId.slice(0, 8)}`
@@ -50,9 +50,46 @@ export function seedActivity(kind: 'claude' | 'codex') {
     child = path.join(dir, `rollout-${childId}.jsonl`)
     fs.writeFileSync(child, activityLine({ type: 'session_meta', payload: { id: childId, cwd: project, source: { subagent: { thread_spawn: { parent_thread_id: sessionId, agent_path: '/root/review-parser' } } } } }) + activityLine({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'child1' } }) + activityLine({ type: 'response_item', payload: { type: 'custom_tool_call', call_id: 'exec1', name: 'exec', input: 'secret body' } }))
   }
+  const registryControl = path.join(project, 'parked-job.json')
+  let registryPath: string | undefined
+  if (ownership) {
+    if (kind !== 'claude') throw new Error('Ownership fixture is Claude only')
+    // A real executable named claude lets process ancestry + UTC start-time
+    // validation run unchanged. No ownership observations are mocked.
+    // Homebrew's node executable depends on relative dylib paths, so it
+    // cannot be relocated. Bun is self-contained and already required here.
+    const executable = spawnSync('bun', ['-e', 'console.log(process.execPath)'], { env: process.env, encoding: 'utf8' })
+    if (executable.status !== 0) throw new Error(executable.stderr)
+    fs.copyFileSync(executable.stdout.trim(), fixtureCli)
+    fs.chmodSync(fixtureCli, 0o755)
+    const script = path.join(project, 'fixture.cjs')
+    fs.writeFileSync(script, `
+      const fs = require('node:fs');
+      const { execFileSync } = require('node:child_process');
+      const record = {
+        pid: process.pid, sessionId: ${JSON.stringify(sessionId)},
+        procStart: execFileSync('ps', ['-p', String(process.pid), '-o', 'lstart='],
+          { env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' }, encoding: 'utf8' }).trim(),
+        version: '2.1.322', kind: 'interactive', entrypoint: 'cli', pidDomain: process.platform
+      };
+      const registryDir = process.env.CLAUDE_CONFIG_DIR + '/sessions';
+      fs.mkdirSync(registryDir, { recursive: true });
+      const file = registryDir + '/' + process.pid + '.json';
+      fs.writeFileSync(${JSON.stringify(path.join(project, 'registry-path'))}, file);
+      const publish = () => {
+        let parkedJobId;
+        try { parkedJobId = JSON.parse(fs.readFileSync(${JSON.stringify(registryControl)}, 'utf8')); } catch {}
+        fs.writeFileSync(file + '.tmp', JSON.stringify({ ...record, parkedJobId }));
+        fs.renameSync(file + '.tmp', file);
+      };
+      publish();
+      console.log(fs.readFileSync(${JSON.stringify(textFile)}, 'utf8'));
+      setInterval(publish, 200);
+    `)
+  }
   // Publish complete transcripts before the board can discover the window or
   // its prompt. Discovery must never cache a fixture's half-created log tree.
-  const windowId = tmux(['new-window', '-d', '-P', '-F', '#{window_id}', '-t', `=${process.env.E2E_TMUX_SESSION}`, '-n', name, '-c', project, fixtureCli])
+  const windowId = tmux(['new-window', '-d', '-P', '-F', '#{window_id}', '-t', `=${process.env.E2E_TMUX_SESSION}`, '-n', name, '-c', project, ownership ? `'${fixtureCli}' '${path.join(project, 'fixture.cjs')}'` : fixtureCli])
   tmux(['resize-window', '-t', windowId, '-x', '160', '-y', '40'])
   const windowSize = tmux(['display-message', '-p', '-t', windowId, '#{window_width}x#{window_height}'])
   fs.writeFileSync(gate, 'ready')
@@ -63,6 +100,14 @@ export function seedActivity(kind: 'claude' | 'codex') {
     refreshPrompt() { fs.appendFileSync(log, userPrompt()) },
     append(value: object) { fs.appendFileSync(child, activityLine(value)) },
     capture() { return tmux(['capture-pane', '-p', '-J', '-t', windowId, '-S', '-100']) },
-    stop() { tmux(['kill-window', '-t', windowId]) },
+    park(jobId: string | null) { fs.writeFileSync(registryControl, JSON.stringify(jobId)) },
+    stop() {
+      if (ownership) {
+        try { registryPath = fs.readFileSync(path.join(project, 'registry-path'), 'utf8') } catch {}
+      }
+ try { tmux(['kill-window', '-t', windowId]) }
+      catch (error) { if (!String(error).includes("can't find window")) throw error }
+      if (registryPath) fs.rmSync(registryPath, { force: true })
+    },
   }
 }
