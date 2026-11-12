@@ -68,3 +68,7 @@
 [data-theme="light"] .session-working-status {
   color: color-mix(in srgb, var(--working) 75%, black);
 }
+
+/* Live rows share a content column beside the harness and activity counter. */
+.session-details > .session-metadata,
+.session-details > .session-preview { margin-left: 0; }

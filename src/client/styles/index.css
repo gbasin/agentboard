@@ -601,10 +601,9 @@ body {
   z-index: 11;
 }
 
-/* Expand the counter hit area without increasing session-row height. Keep the
-   horizontal inset inside the existing gaps beside the name and status pill. */
+/* Expand the status hit area within the header. The counter has its own
+   24px target below the harness; expanding it would cover the drag handle. */
 @media (pointer: coarse) {
-  .activity-counter::after,
   .activity-status::after {
     content: '';
     position: absolute;
