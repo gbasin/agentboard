@@ -48,7 +48,7 @@ jobs:
         run: ios/scripts/build-for-testing.sh
       - name: Archive test products with executable permissions and symlinks
         run: tar -czf ios-test-products.tar.gz -C ios/.build/Build Products
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: native-ios-test-products
           path: ios-test-products.tar.gz
@@ -86,7 +86,7 @@ jobs:
         run: ios/scripts/ci-e2e.sh
       - name: Preserve first batch immediately
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: native-ios-${{ matrix.firstMode }}-${{ matrix.firstShard }}
           path: |
@@ -102,7 +102,7 @@ jobs:
         run: ios/scripts/ci-e2e.sh
       - name: Preserve second batch
         if: ${{ always() && matrix.secondShard != '' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: native-ios-${{ matrix.secondMode }}-${{ matrix.secondShard }}
           path: |
