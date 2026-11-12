@@ -323,7 +323,9 @@ Catalog messages carry media counts (`mediaSummary`), never descriptor lists (`s
 
 ### Subagent activity
 
-`sessionActivityWorker` (`src/server/sessionActivity.ts`, `activityReducer.ts`) tracks subagents for local managed Claude and Codex sessions. Claude subagents live in `<transcript stem>/subagents/agent-*.jsonl`; Codex subagents are linked through an ID-to-parent index that `logMatchWorker` rebuilds every 5 minutes (`src/server/subagentLogs.ts`, `codexSubagentScan.ts`). Reads are incremental (256 KiB) with bounded caches. A session with no lifecycle signal for 15 minutes reports `unknown`. The reducer sends only phases and counts, never prompts, arguments, reasoning, or tool output.
+`sessionActivityWorker` (`src/server/sessionActivity.ts`, `activityReducer.ts`) tracks subagents for local managed Claude and Codex sessions. Claude subagents live in `<transcript stem>/subagents/agent-*.jsonl`; Codex subagents are linked through an ID-to-parent index that `logMatchWorker` rebuilds every 5 minutes (`src/server/subagentLogs.ts`, `codexSubagentScan.ts`). Reads are incremental (256 KiB) with bounded caches. An unfinished turn with no lifecycle signal for 15 minutes reports `unknown`. Exact Claude interruption records end the turn with an “Interrupted” label. A `stoppedByUser` or `finished` sidecar ends a child only when strictly newer than its transcript; a subsequent resume takes precedence. The reducer sends only phases and counts, never prompts, arguments, reasoning, or tool output.
+
+On macOS, Claude ownership follows the interactive registry’s `parkedJobId` to the selected job’s `state.json` session identity. Registry, job identity, and process snapshots must remain stable during observation. Missing or invalid job evidence leaves ownership unresolved; historical `continued-in` records alone do not redirect a resumed terminal. The normal ownership matcher updates session identity, prompt, and transcript together.
 
 ## Storage
 

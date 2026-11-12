@@ -1,7 +1,7 @@
 // Isolated feature matrix, including real browser touch events and WebKit.
 import { defineConfig } from '@playwright/test'
 import base from './playwright.config'
-process.env.AGENTBOARD_OWNERSHIP_MATCHING = 'false'
+process.env.AGENTBOARD_OWNERSHIP_MATCHING = 'true'
 process.env.AGENTBOARD_SKIP_MATCHING_PATTERNS = ''
 process.env.ACTIVITY_E2E_MATRIX = '1'
 const binary = process.env.ACTIVITY_E2E_BINARY

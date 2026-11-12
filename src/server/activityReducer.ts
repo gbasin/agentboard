@@ -4,6 +4,7 @@ import type { AgentActivity } from '../shared/activity'
 
 export interface ActivityState {
   phase: AgentActivity['phase']
+  idleReason?: 'Interrupted'
   updatedAt?: string
   name?: string
   turnId?: string
@@ -69,6 +70,20 @@ export function reduceActivity(state: ActivityState, value: unknown, kind: 'clau
       }
     }
   } else {
+    // Claude emits these as user envelopes, but they end a turn rather than
+    // starting one. Match the complete singleton marker, never quoted output.
+    const content = m.content
+    const text = typeof content === 'string' ? content
+      : Array.isArray(content) && content.length === 1 && record(content[0]).type === 'text'
+        ? record(content[0]).text : undefined
+    if (e.type === 'user' && e.isMeta !== true &&
+      (text === '[Request interrupted by user]' || text === '[Request interrupted by user for tool use]')) {
+      state.phase = 'idle'
+      state.idleReason = 'Interrupted'
+      state.tools.clear()
+      if (typeof e.timestamp === 'string') state.updatedAt = e.timestamp
+      return
+    }
     if (e.type === 'api-request') {
       state.phase = state.tools.size ? 'tool' : 'model'
       relevant = true
@@ -106,6 +121,7 @@ export function reduceActivity(state: ActivityState, value: unknown, kind: 'clau
       relevant = true
     }
   }
+  if (relevant) state.idleReason = undefined
   if (relevant && typeof e.timestamp === 'string') state.updatedAt = e.timestamp
 }
 
@@ -117,7 +133,7 @@ export function activitySnapshot(state: ActivityState): AgentActivity {
       : tools.some(t => /^(wait_agent|wait)$/.test(t)) ? 'Waiting on tool or agents'
       : `Tool pending: ${tools.slice(0, 3).join(', ')}${tools.length > 3 ? ` +${tools.length - 3} more` : ''}`
     : state.phase === 'model' ? 'Model turn active'
-    : state.phase === 'idle' ? 'Turn finished' : 'Activity unknown'
+    : state.phase === 'idle' ? state.idleReason ?? 'Turn finished' : 'Activity unknown'
   const phase = state.phase === 'tool' && tools.length === 1 && /^(AskUserQuestion|request_user_input|request_user_input_async)$/.test(tools[0]) ? 'blocked' : state.phase
   return { phase, label, updatedAt: state.updatedAt, tools: tools.slice(0, 8) }
 }

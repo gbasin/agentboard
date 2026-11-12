@@ -95,3 +95,52 @@ describe('ownership probe', () => {
     expect(parseClaudeRecord(JSON.stringify(f.record), 10, 'darwin')?.procStart).toBe(started)
   })
 })
+
+function parkedFixture() {
+  const f = fixture()
+  Object.assign(f.record, { parkedJobId: 'job-123' })
+  const job = { template: 'bg', daemonShort: 'job-123', sessionId: codexId }
+  const original = f.io.head
+  f.io.head = async (file, cache) => file.includes('/jobs/') ? JSON.stringify(job) : original(file, cache)
+  return { ...f, job }
+}
+
+test('parked Claude resolves its selected background job, then returns to the original on unpark', async () => {
+  const f = parkedFixture()
+  expect((await probeOwnership([f.windows[0]], f.io))[0]).toMatchObject({ status: 'resolved', sessionId: codexId })
+  Object.assign(f.record, { parkedJobId: null })
+  expect((await probeOwnership([f.windows[0]], f.io))[0]).toMatchObject({ status: 'resolved', sessionId: claudeId })
+})
+
+test('parked job requires valid stable identity; unrelated state churn is allowed', async () => {
+  for (const value of [
+    null, '{',
+    JSON.stringify({ template: 'bg', daemonShort: 'wrong', sessionId: codexId }),
+    JSON.stringify({ template: 'bg', daemonShort: 'job-123', sessionId: '../../bad' }),
+    JSON.stringify({ template: 'interactive', daemonShort: 'job-123', sessionId: codexId }),
+  ]) {
+    const f = parkedFixture(), original = f.io.head
+    f.io.head = async (file, cache) => file.includes('/jobs/') ? value : original(file, cache)
+    expect((await probeOwnership([f.windows[0]], f.io))[0].status).toBe('unresolved')
+  }
+  const f = parkedFixture(), original = f.io.head
+  let reads = 0
+  f.io.head = async (file, cache) => file.includes('/jobs/')
+    ? JSON.stringify({ ...f.job, detail: ++reads }) : original(file, cache)
+  expect((await probeOwnership([f.windows[0]], f.io))[0].status).toBe('resolved')
+  f.io.head = async (file, cache) => file.includes('/jobs/')
+    ? JSON.stringify({ ...f.job, sessionId: ++reads % 2 ? codexId : claudeId }) : original(file, cache)
+  expect((await probeOwnership([f.windows[0]], f.io))[0].status).toBe('unresolved')
+})
+
+test('unpark during job inspection and unsafe job paths fail closed', async () => {
+  const f = parkedFixture(), original = f.io.head
+  f.io.head = async (file, cache) => {
+    if (file.includes('/jobs/')) Object.assign(f.record, { parkedJobId: null })
+    return original(file, cache)
+  }
+  expect((await probeOwnership([f.windows[0]], f.io))[0]).toMatchObject({ status: 'unresolved', reason: 'claude_registry_changed' })
+  for (const parkedJobId of ['../../outside', '', 12]) {
+    expect(parseClaudeRecord(JSON.stringify({ ...f.record, parkedJobId }), 10, 'darwin')).toBeNull()
+  }
+})

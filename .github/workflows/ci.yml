@@ -283,3 +283,16 @@ jobs:
         run: |
           bun build scripts/verify-media-thumbnail-worker.ts scripts/fixtures/mediaThumbnailDelayedWorker.ts src/server/mediaThumbnailWorker.ts --compile --outfile "$RUNNER_TEMP/agentboard-thumbnail-smoke"
           "$RUNNER_TEMP/agentboard-thumbnail-smoke"
+
+      - name: Parked Claude ownership E2E (Chromium and WebKit)
+        timeout-minutes: 10
+        run: |
+          bunx playwright install chromium webkit
+          bunx playwright test --config playwright.activity.config.ts --grep 'parked continuation' --project chromium --project webkit
+
+      - name: Upload parked Claude browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: parked-claude-macos
+          path: test-results/
