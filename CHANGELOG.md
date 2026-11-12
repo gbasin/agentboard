@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.4](https://github.com/gbasin/agentboard/compare/v0.46.3...v0.46.4) (2026-11-12)
+
+
+### Bug Fixes
+
+* clarify subagent counter interaction ([#581](https://github.com/gbasin/agentboard/issues/581)) ([dd24129](https://github.com/gbasin/agentboard/commit/dd2412959ccf39dedb8894e1f8c8264bb410118f))
+
 ## [0.46.3](https://github.com/gbasin/agentboard/compare/v0.46.2...v0.46.3) (2026-11-12)
 
 
