@@ -78,6 +78,7 @@ export default function SessionActivity({ session, statusClassName, statusConten
           <Tooltip.Portal>
             <Tooltip.Positioner side="right" sideOffset={6} collisionPadding={8} className="z-[80]">
               <Tooltip.Popup
+                role="tooltip"
                 className="max-w-[min(280px,calc(100vw-16px))] rounded-lg bg-primary px-2.5 py-1.5 text-[11px] leading-relaxed text-base shadow-md"
                 onPointerDown={stop} onClick={stop}
               >Show subagents · {counts}</Tooltip.Popup>

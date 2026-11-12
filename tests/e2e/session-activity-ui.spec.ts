@@ -119,7 +119,10 @@ test('counter has a visible button affordance and a hover or keyboard tooltip', 
   await page.keyboard.press('Escape')
   await expect(tooltip).toBeHidden()
   await page.mouse.move(700, 500)
+  // Leave and return by keyboard after Escape dismisses this trigger's tooltip.
   await trigger.focus()
+  await page.keyboard.press('Tab')
+  await page.keyboard.press('Shift+Tab')
   await expect(tooltip).toBeVisible()
   await page.keyboard.press('Enter')
   await expect(popup(page)).toBeVisible()
