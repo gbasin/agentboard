@@ -52,7 +52,9 @@ test('counter sits below the harness; click/tap opens details without selection 
   const { card, other } = await setup(page)
   const before = (await card.boundingBox())!, nextBefore = (await other.boundingBox())!
   const trigger = card.getByTestId('session-activity-counter')
-  await expect(trigger).toHaveText('2')
+  await expect(trigger).toHaveText('+2')
+  await expect(trigger.locator('svg')).toHaveCount(0)
+  await expect(trigger).toHaveAttribute('title', 'Subagents: 2 running, 1 awaiting input, 1 unknown')
   const icon = (await card.getByTestId('session-agent-column').locator('svg').first().boundingBox())!
   const count = (await trigger.boundingBox())!
   expect(count.y).toBeGreaterThanOrEqual(icon.y + icon.height)
@@ -120,7 +122,7 @@ test('live updates preserve the open panel; completed and main-only sessions use
   current.value = { ...data(), running: 0, blocked: 0, unknown: 0 }
   harness.pushSessions()
   await expect(popup(page)).toContainText('0 running')
-  await expect(card.getByTestId('session-activity-counter')).toHaveText('0')
+  await expect(card.getByTestId('session-activity-counter')).toHaveText('+0')
   await activate(page, popup(page).getByRole('button', { name: 'Close activity' }))
   await expect(card.getByTestId('session-activity-counter')).toHaveCount(0)
   current.value = { ...data(), running: 0, blocked: 0, unknown: 0, total: 0, subagents: [] }
@@ -175,12 +177,12 @@ test('global navigation shortcuts work from the counter and the open popover', a
   await expect(other).toHaveClass(/selected/)
 })
 
-// Check the actual columns at the sidebar width, including capped large counts.
+// Check the actual columns at the sidebar width, including three-digit counts.
 test('large counts stay in the harness column and preserve row geometry on completion', async ({ page }) => {
   const activity = { ...data(), running: 125, total: 127 }
   const { card, current, harness } = await setup(page, activity)
   const trigger = card.getByTestId('session-activity-counter')
-  await expect(trigger).toHaveText('99+')
+  await expect(trigger).toHaveText('+125')
   await expect(trigger).toHaveAttribute('aria-label', /125 running/)
   const before = (await card.boundingBox())!
   const counter = (await trigger.boundingBox())!
@@ -190,4 +192,30 @@ test('large counts stay in the harness column and preserve row geometry on compl
   harness.pushSessions()
   await expect(trigger).toHaveCount(0)
   expect((await card.boundingBox())!.height).toBeCloseTo(before.height, 2)
+})
+
+
+test('plus counts update in place and retain blocked or unknown child details', async ({ page }) => {
+  const { card, current, harness } = await setup(page)
+  const trigger = card.getByTestId('session-activity-counter')
+  const icon = (await card.getByTestId('session-agent-column').locator('svg').first().boundingBox())!
+  for (const running of [1, 7, 24, 125]) {
+    current.value = { ...data(), running, total: running + 2 }
+    harness.pushSessions()
+    await expect(trigger).toHaveText(`+${running}`)
+    const count = (await trigger.boundingBox())!
+    expect(count.x + count.width / 2).toBeCloseTo(icon.x + icon.width / 2, 0)
+    await expect(trigger.locator('svg')).toHaveCount(0)
+  }
+  current.value = { ...data(), running: 0, blocked: 1, unknown: 0 }
+  harness.pushSessions()
+  await expect(trigger).toHaveText('+0')
+  await expect(trigger.getByTestId('activity-attention')).toBeVisible()
+  await expect(trigger).toHaveAttribute('title', 'Subagents: 0 running, 1 awaiting input')
+  current.value = { ...data(), running: 0, blocked: 0, unknown: 1 }
+  harness.pushSessions()
+  await expect(trigger).toHaveText('+0')
+  await expect(trigger.getByTestId('activity-attention')).toHaveCount(0)
+  await activate(page, trigger)
+  await expect(popup(page)).toContainText('1 unknown')
 })

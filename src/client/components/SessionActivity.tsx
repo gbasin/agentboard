@@ -4,7 +4,7 @@ import { Popover } from '@base-ui/react/popover'
 import type { Session } from '@shared/types'
 import type { AgentActivity } from '@shared/activity'
 import { formatRelativeTime } from '../utils/time'
-import { Users01Icon, XCloseIcon } from './icons'
+import { XCloseIcon } from './icons'
 import { ICON_SIZE } from './controlStyles'
 
 const activityDot: Record<AgentActivity['phase'], string> = {
@@ -68,11 +68,10 @@ export default function SessionActivity({ session, statusClassName, statusConten
           data-testid="session-activity-counter"
           aria-label={`Subagents: ${counts}`}
           title={`Subagents: ${counts}`}
-          className="activity-counter relative inline-flex shrink-0 items-center min-h-[24px] min-w-[24px] justify-center gap-[3px] rounded text-[11px] leading-none tabular-nums text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="activity-counter relative inline-flex shrink-0 items-center min-h-[24px] min-w-[24px] justify-center rounded text-[11px] leading-none tabular-nums text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           onPointerDown={stop} onTouchStart={stop} onTouchEnd={stop} onClick={event => { event.stopPropagation(); lastTrigger.current = event.currentTarget }}
         >
-          <Users01Icon aria-hidden width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
-          <span>{data.running > 99 ? '99+' : data.running}</span>
+          <span>+{data.running}</span>
           {data.blocked > 0 && <span aria-hidden data-testid="activity-attention" className="absolute -right-1 top-0.5 h-1 w-1 rounded-full bg-amber-500" />}
         </Popover.Trigger>
       ) : null,

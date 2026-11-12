@@ -37,7 +37,7 @@ for (const kind of ['claude', 'codex'] as const) {
         return session?.activity?.running
       }, { timeout: 60_000 }).toBe(1)
       const trigger = card.getByTestId('session-activity-counter')
-      await expect(trigger).toHaveText('1')
+      await expect(trigger).toHaveText('+1')
       const height = (await card.boundingBox())!.height
       await trigger.click()
       const popover = page.getByTestId('session-activity-popover')
@@ -51,11 +51,11 @@ for (const kind of ['claude', 'codex'] as const) {
         ? { type: 'assistant', message: { stop_reason: 'end_turn', content: [] } }
         : { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'child1' } })
       await expect(popover).toContainText('0 running', { timeout: 20_000 })
-      await expect(trigger).toHaveText('0')
+      await expect(trigger).toHaveText('+0')
       expect(fs.readFileSync(fixture.log, 'utf8')).toBe(parentBefore)
       fixture.append(kind === 'claude' ? { type: 'api-request' } : { type: 'event_msg', payload: { type: 'task_started', turn_id: 'child2' } })
       await expect(popover).toContainText('1 running', { timeout: 20_000 })
-      await expect(trigger).toHaveText('1')
+      await expect(trigger).toHaveText('+1')
       await page.screenshot({ path: info.outputPath(`${kind}-desktop.png`) })
       await page.keyboard.press('Escape')
       await expect(popover).toBeHidden()
@@ -111,7 +111,7 @@ test('Claude parked continuation rebinds identity, prompt and children; unpark r
     await page.goto('/')
     await expect.poll(async () => (await session())?.agentSessionId, { timeout: 60_000 }).toBe(fixture.sessionId)
     const card = page.locator('[data-testid="session-card"]:visible').filter({ hasText: fixture.name }).first()
-    await expect(card.getByTestId('session-activity-counter')).toHaveText('1', { timeout: 20_000 })
+    await expect(card.getByTestId('session-activity-counter')).toHaveText('+1', { timeout: 20_000 })
     await card.getByTestId('session-activity-counter').click()
     const popup = page.getByTestId('session-activity-popover')
     fixture.append({ type: 'user', message: { content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] } })
@@ -135,7 +135,7 @@ test('Claude parked continuation rebinds identity, prompt and children; unpark r
       const s = await session()
       return { path: s?.logFilePath, prompt: s?.lastUserMessage, running: s?.activity?.running, total: s?.activity?.total }
     }, { timeout: 30_000 }).toEqual({ path: nextLog, prompt, running: 2, total: 2 })
-    await expect(card.getByTestId('session-activity-counter')).toHaveText('2')
+    await expect(card.getByTestId('session-activity-counter')).toHaveText('+2')
     await card.getByTestId('session-activity-counter').click()
     await expect(popup).toContainText('2 running')
     await page.screenshot({ path: info.outputPath('claude-parked-desktop.png') })
