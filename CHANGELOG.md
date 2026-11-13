@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.46.5](https://github.com/gbasin/agentboard/compare/v0.46.4...v0.46.5) (2026-11-13)
+
+
+### Bug Fixes
+
+* keep mobile actions above media overlays ([#584](https://github.com/gbasin/agentboard/issues/584)) ([a4164f6](https://github.com/gbasin/agentboard/commit/a4164f6abc1b050b4c1e22b0deced787c0a333a8))
+* tighten session card left padding ([#583](https://github.com/gbasin/agentboard/issues/583)) ([ca8265d](https://github.com/gbasin/agentboard/commit/ca8265d4322fa66b21b7f5d33a999e5c421d7126))
+
 ## [0.46.4](https://github.com/gbasin/agentboard/compare/v0.46.3...v0.46.4) (2026-11-12)
 
 
