@@ -150,11 +150,14 @@ final class NativeParityUITests: XCTestCase {
         let app = app(); app.buttons["Settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5)); capture("settings")
         tap("Command presets", in: app); tap("Add preset", in: app)
-        app.textFields["Label"].tap(); app.textFields["Label"].typeText("Parity preset")
+        let presetName = "Parity preset " + String(UUID().uuidString.prefix(6))
+        app.textFields["Label"].tap(); app.textFields["Label"].typeText(presetName)
         app.textFields["Command"].tap(); app.textFields["Command"].typeText("/bin/zsh -f"); capture("preset-editor")
-        app.buttons["Save"].tap(); XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "Parity preset")).firstMatch.waitForExistence(timeout: 10))
+        app.buttons["Save"].tap()
+        XCTAssertTrue(app.navigationBars["Command preset"].waitForNonExistence(timeout: 10))
+        XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label CONTAINS %@", presetName)).firstMatch.waitForExistence(timeout: 10))
         capture("presets")
-        app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["Done"].tap()
+        app.navigationBars["Command presets"].buttons.element(boundBy: 0).tap(); app.buttons["Done"].tap()
         app.buttons["Filter and sort"].tap(); XCTAssertTrue(app.navigationBars["Filter and sort"].waitForExistence(timeout: 5)); capture("filters")
         tap("Clear filters", in: app); app.buttons["Done"].tap()
         openSession("native-live-one", in: app)
@@ -167,12 +170,19 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(filePicker.waitForExistence(timeout: 30))
         filePicker.buttons["Cancel"].tap()
         XCTAssertTrue(filePicker.waitForNonExistence(timeout: 10))
-        app.navigationBars["Attach to session"].buttons["Cancel"].tap()
+        let attachmentSheet = app.navigationBars["Attach to session"]
+        attachmentSheet.buttons["Cancel"].tap()
+        XCTAssertTrue(attachmentSheet.waitForNonExistence(timeout: 10))
         app.tapTerminalKey("Paste text")
-        let editor = app.textViews["Text to paste"]; XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        editor.tap(); editor.typeText("printf 'NUM_%s_OK\\n' ")
-        app.buttons["Insert"].tap()
-        app.buttons["Session actions"].tap(); tapMenu("Number keys", in: app)
+        let editor = app.expandedPasteEditor()
+        editor.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        editor.typeText("printf 'NUM_%s_OK\\n' ")
+        app.insertPasteDraft()
+        let actions = app.buttons["Session actions"]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: actions)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+        actions.tap(); tapMenu("Number keys", in: app)
         XCTAssertTrue(app.buttons["7"].waitForExistence(timeout: 5))
         let keyRows = ["1", "4", "7", ".", "Delete"].map { app.buttons[$0] }
         for key in keyRows { XCTAssertGreaterThanOrEqual(key.frame.height, 44); XCTAssertTrue(key.isHittable) }
@@ -276,13 +286,10 @@ final class NativeParityUITests: XCTestCase {
                 let location = app.staticTexts["On My iPhone"]
                 if !location.exists { browse.tap() }
                 XCTAssertTrue(location.waitForExistence(timeout: 10)); location.tap()
-                let folder = app.cells["Agentboard, Container"]
-                XCTAssertTrue(folder.waitForExistence(timeout: 10))
-                folder.images.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
             }
         }
         XCTAssertTrue(file.waitForExistence(timeout: 10))
-        file.images.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
+        file.tap()
         let open = app.buttons["Open"]
         if open.waitForExistence(timeout: 3) {
             // Files exposes Open before the selected provider item is ready.

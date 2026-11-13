@@ -15,6 +15,7 @@ const dependencies: Record<string, Fixture[]> = {
   CompactTerminalUITests: ['parity-gap-fixture'],
   ParityGapUITests: ['parity-gap-fixture'],
   SessionActionUITests: ['backend'],
+  DocumentExportUITests: ['backend', 'parity', 'warm', 'files'],
   NativeClipboardUITests: ['backend', 'live'],
   MediaActivityUITests: ['backend', 'media-activity-fixture'],
   'NativeParityUITests/testDirectoryBrowserPresetAndDuplicate': ['backend', 'parity', 'warm'],

@@ -9,7 +9,7 @@ const groups: Record<typeof shards[number], string[]> = {
     'NativeParityUITests/testLibraryTranscriptEventsAndPin',
   ],
   media: [
-    'MediaActivityUITests', 'NativeClipboardUITests',
+    'MediaActivityUITests', 'NativeClipboardUITests', 'DocumentExportUITests',
     'NativeParityUITests/testLoadedMediaDocumentAndLink',
     'NativeParityUITests/testFilePickerUploadAndInsert',
     'NativeParityUITests/testPhotoUploadAndInsertIntoShell',
@@ -26,8 +26,10 @@ export function e2eSelection(appearance: string, shard = 'all'): string[] {
   if (shard !== 'all' && !shards.includes(shard as typeof shards[number])) throw new Error(`Unknown shard: ${shard}`)
   const selected = shard === 'all' ? shards.flatMap(key => groups[key]) : groups[shard as typeof shards[number]]
   const ui = selected.flatMap(item => {
-    if (appearance === 'dark' && item === 'SpikeUITests') return []
+    if (appearance === 'dark' && item === 'SpikeUITests') return ['SpikeUITests/testPasteWaitsForEnterAndRestoresKeyboard']
     if (appearance === 'dark' && item === 'LiveUITests') return [
+      'LiveUITests/testLiveShellPasteAndBackgroundRecovery',
+      'LiveUITests/testMultilinePasteWaitsForExplicitEnter',
       'LiveUITests/testFrozenSnapshotRefreshCopyAndReturnToInput',
       'LiveUITests/testSessionOverviewSwitchesWithStatus',
     ]
