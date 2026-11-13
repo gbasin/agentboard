@@ -16,7 +16,8 @@ const expand = (selectors: string[]) => selectors.flatMap(selector => selector =
 for (const appearance of ['light', 'dark']) {
   test(`${appearance} shards cover every intended test exactly once`, () => {
     const expected = methods.filter(method => appearance === 'light' || (
-      !method.includes('/SpikeUITests/') && (!method.includes('/LiveUITests/') ||
+      (!method.includes('/SpikeUITests/') || method.endsWith('/testPasteWaitsForEnterAndRestoresKeyboard')) && (!method.includes('/LiveUITests/') ||
+        method.endsWith('/testLiveShellPasteAndBackgroundRecovery') || method.endsWith('/testMultilinePasteWaitsForExplicitEnter') ||
         method.endsWith('/testFrozenSnapshotRefreshCopyAndReturnToInput') || method.endsWith('/testSessionOverviewSwitchesWithStatus'))
     ))
     if (appearance === 'light') expected.push('AgentboardSpikeTests')
@@ -59,7 +60,7 @@ test('setup keeps media dependencies on terminal and restricts simulator imports
   const { e2eFixtures } = await import('./e2e-fixtures')
   expect(e2eFixtures('light', 'catalog')).toEqual(['parity-gap-fixture'])
   expect(e2eFixtures('light', 'terminal')).toEqual(['backend', 'live', 'parity', 'warm', 'shell-server', 'parity-gap-fixture', 'media-activity-fixture'])
-  expect(e2eFixtures('dark', 'terminal')).toEqual(['backend', 'live', 'parity-gap-fixture', 'media-activity-fixture'])
+  expect(e2eFixtures('dark', 'terminal')).toEqual(['backend', 'live', 'shell-server', 'parity-gap-fixture', 'media-activity-fixture'])
   expect(e2eFixtures('all', 'lifecycle')).toEqual(['backend', 'parity', 'warm'])
   expect(e2eFixtures('all', 'media')).toEqual(['backend', 'live', 'parity', 'warm', 'media-activity-fixture', 'photos', 'files'])
   expect(e2eFixtures('all', 'settings')).toEqual(['backend', 'live', 'parity', 'warm', 'pr-fixture'])
@@ -102,4 +103,25 @@ test('selected native test target provisions the fixture identities its Swift te
   expect(consumed).toContain('NativeParityTests.swift:parity')
   expect(consumed).toContain('MediaBackendTests.swift:parity')
   expect(consumed).toContain('MediaBackendTests.swift:media-activity-fixture')
+})
+
+// These exercise real terminal input and must cover the accessibility-size sheet transition.
+test('both appearances run real-shell paste and recovery regressions', () => {
+  const required = [
+    'LiveUITests/testLiveShellPasteAndBackgroundRecovery',
+    'LiveUITests/testMultilinePasteWaitsForExplicitEnter',
+    'SpikeUITests/testPasteWaitsForEnterAndRestoresKeyboard',
+  ].map(name => `AgentboardSpikeUITests/${name}`)
+  for (const appearance of ['light', 'dark']) {
+    const selected = expand(e2eSelection(appearance, 'terminal'))
+    for (const test of required) expect(selected).toContain(test)
+  }
+})
+
+test('document export runs in CI with real media and Files fixtures in both appearances', async () => {
+  const { e2eFixtures } = await import('./e2e-fixtures')
+  for (const appearance of ['light', 'dark']) {
+    expect(expand(e2eSelection(appearance, 'media'))).toContain('AgentboardSpikeUITests/DocumentExportUITests/testDocumentShareToFiles')
+    for (const fixture of ['backend', 'parity', 'warm', 'files']) expect(e2eFixtures(appearance, 'media')).toContain(fixture)
+  }
 })

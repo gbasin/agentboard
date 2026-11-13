@@ -20,6 +20,7 @@ lines.push(JSON.stringify({type:'user', timestamp:now, sessionId:id, message:{ro
 ]}}))
 lines.push(JSON.stringify({type:'assistant', timestamp:now, sessionId:id, message:{role:'assistant', content:[{type:'tool_use',id:'parity-pr',name:'Bash',input:{command:'gh pr create --title test --body test'}}]}}))
 lines.push(JSON.stringify({type:'user', timestamp:now, sessionId:id, message:{role:'user', content:[{type:'tool_result',tool_use_id:'parity-pr',content:'https://github.com/gbasin/agentboard/pull/1'}]}}))
+await writeFile(`${root}/export-expected.pdf`, nativePDFFixture())
 await writeFile(`${root}/photo.png`, Buffer.from(image, 'base64'))
 const log = `${root}/${id}.jsonl`
 await writeFile(log, lines.join('\n')+'\n')

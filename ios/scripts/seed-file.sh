@@ -11,3 +11,6 @@ if [ -z "$storage" ] || [ ! -d "$storage" ]; then
 fi
 mkdir -p "$storage/File Provider Storage"
 cp "$source_file" "$storage/File Provider Storage/parity-upload.txt"
+# Remove only this fixture's prior output so a stale export cannot satisfy CI.
+mkdir -p "$storage/File Provider Storage/Agentboard E2E Exports"
+rm -f "$storage/File Provider Storage/Agentboard E2E Exports/Document.pdf"

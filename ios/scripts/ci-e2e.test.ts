@@ -20,15 +20,18 @@ test('CI discovery selects only the available iPhone 17 on iOS 27.2', () => {
 
 for (const scenario of [
   ...['terminal', 'catalog', 'lifecycle', 'media', 'settings'].map(shard => ({ shard, archiveFailure: false, testStatus: 37 })),
+  { shard: 'media', archiveFailure: false, testStatus: 0 },
+  { shard: 'media', archiveFailure: false, testStatus: 0, exportFailure: true },
   { shard: 'catalog', archiveFailure: true, testStatus: 37 },
   { shard: 'catalog', archiveFailure: true, testStatus: 0 },
   { shard: 'terminal', archiveFailure: false, testStatus: 0, cacheFailure: true },
   { shard: 'catalog', archiveFailure: false, testStatus: 0, udidOverride: 'local-simulator' },
 ]) {
   const { shard, archiveFailure, testStatus } = scenario
+  const exportFailure = 'exportFailure' in scenario && scenario.exportFailure
   const cacheFailure = 'cacheFailure' in scenario && scenario.cacheFailure
   const udidOverride = 'udidOverride' in scenario ? scenario.udidOverride : ''
-  test(`CI orchestration ${shard}, tests=${testStatus}, archiveFailure=${archiveFailure}, cacheFailure=${cacheFailure}`, async () => {
+  test(`CI orchestration ${shard}, tests=${testStatus}, archiveFailure=${archiveFailure}, cacheFailure=${cacheFailure}, exportFailure=${exportFailure}`, async () => {
     const root = mkdtempSync(join(tmpdir(), 'ios-ci-orchestration-'))
     try {
       const scripts = join(root, 'ios/scripts'), bin = join(root, 'bin'), log = join(root, 'calls')
@@ -40,15 +43,16 @@ for (const scenario of [
         .replaceAll('/tmp/ab-ios-fixture-logs', join(root, 'archive'))
       writeFileSync(join(scripts, 'ci-e2e.sh'), source)
       writeFileSync(join(scripts, 'seed-file.sh'), readFileSync(new URL('./seed-file.sh', import.meta.url), 'utf8'))
+      writeFileSync(join(scripts, 'verify-file-export.sh'), readFileSync(new URL('./verify-file-export.sh', import.meta.url), 'utf8'))
       mkdirSync(join(root, 'app'))
       writeFileSync(join(scripts, 'ci-readiness.sh'), readFileSync(new URL('./ci-readiness.sh', import.meta.url), 'utf8'))
       writeFileSync(join(scripts, 'ci-diagnostics.sh'), 'ci_diagnostics_start() { :; }; ci_diagnostics_stop() { echo stopped >> "$CALL_LOG"; }; ci_phase() { echo "phase $1" >> "$CALL_LOG"; shift; "$@"; }\n')
-      writeFileSync(join(scripts, 'test-e2e.sh'), '#!/bin/bash\necho tests >> "$CALL_LOG"\nexit ' + testStatus + '\n', { mode: 0o755 })
+      writeFileSync(join(scripts, 'test-e2e.sh'), '#!/bin/bash\necho tests >> "$CALL_LOG"\nif [ -f "$TMUX_TMPDIR/export-expected.pdf" ] && [ -d "$APP_DATA/File Provider Storage/Agentboard E2E Exports" ]; then cp "$TMUX_TMPDIR/export-expected.pdf" "$APP_DATA/File Provider Storage/Agentboard E2E Exports/Document.pdf"; fi\n' + (exportFailure ? 'printf corrupt > "$APP_DATA/File Provider Storage/Agentboard E2E Exports/Document.pdf"\n' : '') + 'exit ' + testStatus + '\n', { mode: 0o755 })
       const stub = (name: string, body: string) => writeFileSync(join(bin, name), '#!/bin/bash\necho "' + name + ' $*" >> "$CALL_LOG"\n' + body, { mode: 0o755 })
       stub('bun', `case "$1" in
         ios/scripts/e2e-fixtures.ts) printf '%s\\n' "$FIXTURES" ;;
         ios/scripts/ci-simulator.ts) cat >/dev/null; echo mock-udid ;;
-        ios/scripts/seed-parity.ts) touch "$TMUX_TMPDIR/photo.png" "$TMUX_TMPDIR/upload.txt" ;;
+        ios/scripts/seed-parity.ts) touch "$TMUX_TMPDIR/photo.png" "$TMUX_TMPDIR/upload.txt" "$TMUX_TMPDIR/export-expected.pdf" ;;
         ios/scripts/seed-live.ts|ios/scripts/warm-parity.ts|ios/scripts/parity-media-ready.ts|ios/scripts/tmux-ready.ts) ;;
         *) trap 'exit 0' TERM; while :; do /bin/sleep 0.05; done ;;
       esac\n`)
@@ -58,7 +62,7 @@ for (const scenario of [
       const proc = Bun.spawn(['/bin/bash', join(scripts, 'ci-e2e.sh')], {
         env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CALL_LOG: log, APP_DATA: join(root, 'app'), IOS_SIMULATOR_UDID: udidOverride, IOS_TEST_PRODUCTS_DIR: join(root, 'products'), IOS_E2E_MODE: 'light', IOS_E2E_SHARD: shard, FIXTURES: e2eFixtures('light', shard).join('\n') }, stdout: 'pipe', stderr: 'pipe',
       })
-      expect(await proc.exited).toBe(cacheFailure ? 75 : testStatus || (archiveFailure ? 74 : 0))
+      expect(await proc.exited).toBe(cacheFailure ? 75 : testStatus || (exportFailure ? 1 : archiveFailure ? 74 : 0))
       const calls = readFileSync(log, 'utf8')
       if (cacheFailure) {
         expect(calls).not.toContain('xcrun simctl boot ')
@@ -92,6 +96,7 @@ for (const scenario of [
         expect(calls).not.toContain('curl ')
         expect(calls).not.toContain('phase backend-pre-tests')
       }
+      expect(calls.includes('phase files-export-verify')).toBe(plan.includes('files') && testStatus === 0)
       expect(calls).toContain('\ntests\n'); expect(calls).toContain('stopped\n')
       expect(calls).toContain(`tmux -S ${root}/fixtures/tmux-`)
       expect(readdirSync(join(root, 'archive'))).toHaveLength(archiveFailure ? 0 : 1)
@@ -142,17 +147,43 @@ for (const available of [true, false]) {
       const bin = join(root, 'bin'), storage = join(root, 'local storage'), source = join(root, 'upload.txt')
       mkdirSync(bin); mkdirSync(storage)
       writeFileSync(source, 'fixture payload\n')
+      const exportDirectory = join(storage, 'File Provider Storage/Agentboard E2E Exports')
+      mkdirSync(exportDirectory, { recursive: true })
+      writeFileSync(join(exportDirectory, 'Document.pdf'), 'stale output')
+      writeFileSync(join(exportDirectory, 'unrelated.pdf'), 'preserve')
       writeFileSync(join(bin, 'xcrun'), '#!/bin/bash\nprintf "group.com.apple.Other\\t/unused\\n"\nif [ "$AVAILABLE" = true ]; then printf "group.com.apple.FileProvider.LocalStorage\\t%s\\n" "$STORAGE"; fi\n', { mode: 0o755 })
       const proc = Bun.spawn(['/bin/bash', new URL('./seed-file.sh', import.meta.url).pathname, 'test-device', source], {
         env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, AVAILABLE: String(available), STORAGE: storage }, stdout: 'pipe', stderr: 'pipe',
       })
       expect(await proc.exited).toBe(available ? 0 : 1)
       const destination = join(storage, 'File Provider Storage/parity-upload.txt')
-      if (available) expect(readFileSync(destination, 'utf8')).toBe('fixture payload\n')
+      if (available) {
+        expect(readFileSync(destination, 'utf8')).toBe('fixture payload\n')
+        expect(existsSync(join(exportDirectory, 'Document.pdf'))).toBe(false)
+        expect(readFileSync(join(exportDirectory, 'unrelated.pdf'), 'utf8')).toBe('preserve')
+      }
       else {
         expect(existsSync(destination)).toBe(false)
         expect(await new Response(proc.stderr).text()).toContain('Files local storage is unavailable')
       }
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+}
+
+for (const output of ['correct', 'corrupt', 'missing'] as const) {
+  test(`export verification rejects absent or different bytes: ${output}`, async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ios-export-verification-'))
+    try {
+      const bin = join(root, 'bin'), storage = join(root, 'files'), expected = join(root, 'expected.pdf')
+      const destination = join(storage, 'File Provider Storage/Agentboard E2E Exports/Document.pdf')
+      mkdirSync(bin); mkdirSync(join(destination, '..'), { recursive: true })
+      writeFileSync(expected, '%PDF-fixture-bytes')
+      if (output !== 'missing') writeFileSync(destination, output === 'correct' ? '%PDF-fixture-bytes' : '%PDF-other-document')
+      writeFileSync(join(bin, 'xcrun'), '#!/bin/bash\nprintf "group.com.apple.FileProvider.LocalStorage\\t%s\\n" "$STORAGE"\n', { mode: 0o755 })
+      const proc = Bun.spawn(['/bin/bash', new URL('./verify-file-export.sh', import.meta.url).pathname, 'test-device', expected], {
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, STORAGE: storage }, stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(await proc.exited).toBe(output === 'correct' ? 0 : output === 'missing' ? 2 : 1)
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
 }

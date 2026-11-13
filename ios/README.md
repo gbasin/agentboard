@@ -76,7 +76,7 @@ bun ios/scripts/pr-fixture.ts
 
 Port 4190 proxies the private backend and supplies deterministic passed, running and failed GitHub checks. This validates native rendering without requiring GitHub credentials. It does not verify live GitHub CI.
 
-For the file-picker test, run `bash ios/scripts/seed-file.sh YOUR_UDID /tmp/ab-ios-parity/upload.txt` after booting the simulator. This places `parity-upload.txt` in Files’ local storage, available under On My iPhone.
+For the file-picker test, run `bash ios/scripts/seed-file.sh YOUR_UDID /tmp/ab-ios-parity/upload.txt` after booting the simulator. This places `parity-upload.txt` in Files’ local storage, available under On My iPhone, and prepares the `Agentboard E2E Exports` folder. The media CI shard runs PDF export in both appearances and checks its saved bytes with `bash ios/scripts/verify-file-export.sh YOUR_UDID /tmp/ab-ios-parity/export-expected.pdf`.
 
 The five legacy `SpikeUITests` also need the older raw PTY fixture on loopback port 4149. Run it in another shell:
 

@@ -174,17 +174,11 @@ final class NativeParityUITests: XCTestCase {
         attachmentSheet.buttons["Cancel"].tap()
         XCTAssertTrue(attachmentSheet.waitForNonExistence(timeout: 10))
         app.tapTerminalKey("Paste text")
-        let editor = app.textViews["Text to paste"]; XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        // Expand before editing so keyboard presentation cannot move the Insert toolbar.
-        let grabber = app.buttons["Sheet Grabber"]
-        grabber.swipeUp()
-        let expanded = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Expanded"), object: grabber)
-        XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 5), .completed)
+        let editor = app.expandedPasteEditor()
         editor.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         editor.typeText("printf 'NUM_%s_OK\\n' ")
-        app.buttons["Insert"].tap()
-        XCTAssertTrue(editor.waitForNonExistence(timeout: 10))
+        app.insertPasteDraft()
         let actions = app.buttons["Session actions"]
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: actions)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
