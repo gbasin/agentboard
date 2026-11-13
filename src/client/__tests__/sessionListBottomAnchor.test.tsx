@@ -134,7 +134,6 @@ function outline(node: Json | Json[], out: string[] = []): string[] {
     if (['Active', 'Hibernating', 'History'].includes(node)) out.push(`label:${node}`)
     else if (node === 'Show more (') out.push('show-more')
     else if (/^hist-\d+$/.test(node)) out.push(node)
-    else if (node === '[ ] nav') out.push('hint')
     return out
   }
   const { props } = node
@@ -193,7 +192,6 @@ describe('SessionList anchor: rendered order', () => {
       'label:History',
       ...topHistory,
       'show-more',
-      'hint',
     ])
     act(() => renderer.unmount())
   })
@@ -213,7 +211,6 @@ describe('SessionList anchor: rendered order', () => {
       'row:s3',
       'filter',
       'controls',
-      'hint',
     ])
     act(() => renderer.unmount())
   })
@@ -233,8 +230,8 @@ describe('SessionList anchor: rendered order', () => {
     const renderer = renderList({ anchor: 'bottom', notice: <div data-testid="notice" /> })
     const tokens = outline(renderer.toJSON())
     expect(tokens[0]).toBe('notice')
-    // The first row still sits directly on the filter bar, which sits on the hint.
-    expect(tokens.slice(-5)).toEqual(['row:s2', 'row:s3', 'filter', 'controls', 'hint'])
+    // The first row still sits directly on the filter bar, at the bottom edge.
+    expect(tokens.slice(-4)).toEqual(['row:s2', 'row:s3', 'filter', 'controls'])
     act(() => renderer.unmount())
   })
 

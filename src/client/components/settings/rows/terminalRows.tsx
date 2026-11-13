@@ -15,8 +15,14 @@ import { SWITCH_TOUCH_TARGET } from '../styles'
 import type { RowControlProps, SettingsRowDef } from '../types'
 import { useServerSetting, type ServerSettingName } from '../useServerSetting'
 
-/** Keys the shortcut modifier combines with, as shown in hint text. */
-export const SHORTCUT_KEYS_HINT = '1-9 [ ] N X ,'
+const SHORTCUTS = [
+  ['Session above', '['],
+  ['Session below', ']'],
+  ['Select session 1–9', '1–9'],
+  ['New session', 'N'],
+  ['Kill selected session', 'X'],
+  ['Settings', ','],
+] as const
 
 function WebGLControl({ ids }: RowControlProps) {
   const checked = useSettingsStore((state) => state.useWebGL)
@@ -80,26 +86,33 @@ const MODIFIER_CHOICES: readonly ModifierChoice[] = [
 function ShortcutModifierControl({ ids }: RowControlProps) {
   const value = useSettingsStore((state) => state.shortcutModifier)
   const set = useSettingsStore((state) => state.setShortcutModifier)
+  const mod = getModifierDisplay(getEffectiveModifier(value))
   return (
-    <SegmentedControl<ModifierChoice>
-      options={MODIFIER_CHOICES.map((choice) => ({
-        value: choice,
-        label: choice === 'auto' ? 'Auto' : getModifierDisplay(choice),
-      }))}
-      value={value}
-      onChange={set}
-      labelledBy={ids.label}
-      describedBy={ids.description}
-    />
+    <div className="w-full space-y-4">
+      <SegmentedControl<ModifierChoice>
+        options={MODIFIER_CHOICES.map((choice) => ({
+          value: choice,
+          label: choice === 'auto' ? 'Auto' : getModifierDisplay(choice),
+        }))}
+        value={value}
+        onChange={set}
+        labelledBy={ids.label}
+        describedBy={ids.description}
+      />
+      <dl className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-2 text-[12px] text-secondary">
+        {SHORTCUTS.map(([label, key]) => (
+          <ShortcutEntry key={key} label={label} shortcut={`${mod}${key}`} />
+        ))}
+      </dl>
+    </div>
   )
 }
 
-function ShortcutModifierDescription() {
-  const value = useSettingsStore((state) => state.shortcutModifier)
-  const mod = getModifierDisplay(getEffectiveModifier(value))
+function ShortcutEntry({ label, shortcut }: { label: string; shortcut: string }) {
   return (
     <>
-      Shortcuts: {mod} + {SHORTCUT_KEYS_HINT} (sessions, navigate, new, kill, settings).
+      <dt>{label}</dt>
+      <dd className="text-right"><kbd className="font-mono text-primary">{shortcut}</kbd></dd>
     </>
   )
 }
@@ -146,10 +159,9 @@ export const terminalRows: SettingsRowDef[] = [
     page: 'terminal',
     label: 'Keyboard shortcut modifier',
     description: 'Modifier keys for the app shortcuts. Auto picks ⌃⌥ on macOS, ⌃⇧ elsewhere.',
-    keywords: ['keyboard', 'shortcut', 'hotkey', 'ctrl', 'cmd', 'option', 'shift'],
+    keywords: ['keyboard', 'shortcut', 'hotkey', 'ctrl', 'cmd', 'option', 'shift', 'navigation', 'new session', 'kill', 'select session'],
     tags: ['desktop', 'device'],
-    layout: 'wide',
-    Description: ShortcutModifierDescription,
+    layout: 'block',
     Control: ShortcutModifierControl,
   },
 ]

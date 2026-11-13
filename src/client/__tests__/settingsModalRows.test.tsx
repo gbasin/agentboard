@@ -100,9 +100,9 @@ describe('SettingsModal instant apply', () => {
     expect(useSettingsStore.getState().useWebGL).toBe(false)
     act(() => radio(renderer.root, '⌘⇧').props.onClick())
     expect(useSettingsStore.getState().shortcutModifier).toBe('cmd-shift')
-    const desc = renderer.root.find((node) => node.props.id === 'settings-shortcut-modifier-desc')
-    expect(textOf(desc)).toContain('⌘⇧')
-    expect(textOf(desc)).toContain('1-9 [ ] N X ,')
+    const row = renderer.root.find((node) => node.props['data-setting-row'] === 'shortcut-modifier')
+    expect(row.findAllByType('kbd').map(textOf)).toEqual(['⌘⇧[', '⌘⇧]', '⌘⇧1–9', '⌘⇧N', '⌘⇧X', '⌘⇧,'])
+    expect(textOf(row)).toContain('Kill selected session')
   })
 
   test('notification switches write and prime audio; test buttons play', async () => {
