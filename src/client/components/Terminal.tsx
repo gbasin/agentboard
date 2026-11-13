@@ -1419,7 +1419,7 @@ export default function Terminal({
               </button>
 
               {showMoreMenu && (
-                <div className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-md border border-border bg-elevated shadow-lg py-1">
+                <div className="absolute right-0 top-full mt-1 z-[70] min-w-[140px] rounded-md border border-border bg-elevated shadow-lg py-1">
                   {canControl && (
                     <button
                       onClick={handleStartRename}
