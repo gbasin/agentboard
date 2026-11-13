@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.7](https://github.com/gbasin/agentboard/compare/v0.46.6...v0.46.7) (2026-11-13)
+
+
+### Bug Fixes
+
+* detect REST-created pull requests in Codex sessions ([#589](https://github.com/gbasin/agentboard/issues/589)) ([d3e4d7a](https://github.com/gbasin/agentboard/commit/d3e4d7aae3f29236be6a46094bf81d466380a338))
+
 ## [0.46.6](https://github.com/gbasin/agentboard/compare/v0.46.5...v0.46.6) (2026-11-13)
 
 
