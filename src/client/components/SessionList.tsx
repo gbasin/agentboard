@@ -607,7 +607,7 @@ export default function SessionList({
               type="button"
               onClick={onNewSession}
               className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium normal-case tracking-normal text-accent hover:bg-hover"
-              title="Start a new session"
+              title={`Start a new session (${modDisplay}N)`}
             >
               <PlusIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
               New session
@@ -776,15 +776,6 @@ export default function SessionList({
           {historySection}
         </div>
       )}
-
-      {/* Keyboard shortcuts hint — shares the status rail's 40px bottom bar */}
-      <div className="hidden h-[40px] shrink-0 items-center border-t border-border px-4 md:flex">
-        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
-          <span>{modDisplay}[ ] nav</span>
-          <span>{modDisplay}N new</span>
-          <span>{modDisplay}X kill</span>
-        </div>
-      </div>
 
       {previewSession && (
         <SessionPreviewModal
@@ -1020,6 +1011,8 @@ function SessionRow({
   onKill,
   onDuplicate,
 }: SessionRowProps) {
+  const shortcutModifier = useSettingsStore((state) => state.shortcutModifier)
+  const modDisplay = getModifierDisplay(getEffectiveModifier(shortcutModifier))
   const lastActivity = formatRelativeTime(session.lastActivity)
   const inputRef = useRef<HTMLInputElement>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
@@ -1358,6 +1351,7 @@ function SessionRow({
               >
                 <XCloseIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
                 Kill Session
+                {isSelected && <kbd className="ml-auto pl-3 text-xs font-mono">{modDisplay}X</kbd>}
               </button>
             </>
           )}
