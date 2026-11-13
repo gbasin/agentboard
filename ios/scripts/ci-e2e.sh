@@ -77,9 +77,7 @@ ci_phase app-uninstall xcrun simctl uninstall "$udid" dev.agentboard.ios-spike 2
 ci_phase app-install xcrun simctl install "$udid" "$IOS_TEST_PRODUCTS_DIR/Debug-iphonesimulator/AgentboardSpike.app"
 if needs photos; then ci_phase photos-import xcrun simctl addmedia "$udid" "$fixture_root/photo.png"; fi
 if needs files; then
-  app_data=$(ci_phase app-container xcrun simctl get_app_container "$udid" dev.agentboard.ios-spike data)
-  mkdir -p "$app_data/Documents"
-  ci_phase files-import cp "$fixture_root/upload.txt" "$app_data/Documents/parity-upload.txt"
+  ci_phase files-import bash ios/scripts/seed-file.sh "$udid" "$fixture_root/upload.txt"
 fi
 # A fixture crash during Simulator startup must not become dozens of slow UI failures.
 for pid in "${pids[@]}"; do

@@ -285,6 +285,7 @@ struct AgentHistoryView: View {
                             Text(renamed[session.id] ?? session.displayName)
                         }
                     }
+                    .accessibilityIdentifier("conversation-\(session.id)")
                     if preferences.bool("showProjectName", true), !session.projectPath.isEmpty {
                         ProjectChip(name: URL(fileURLWithPath: session.projectPath).lastPathComponent)
                     }

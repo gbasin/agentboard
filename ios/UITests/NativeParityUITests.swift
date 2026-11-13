@@ -276,13 +276,10 @@ final class NativeParityUITests: XCTestCase {
                 let location = app.staticTexts["On My iPhone"]
                 if !location.exists { browse.tap() }
                 XCTAssertTrue(location.waitForExistence(timeout: 10)); location.tap()
-                let folder = app.cells["Agentboard, Container"]
-                XCTAssertTrue(folder.waitForExistence(timeout: 10))
-                folder.images.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
             }
         }
         XCTAssertTrue(file.waitForExistence(timeout: 10))
-        file.images.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
+        file.tap()
         let open = app.buttons["Open"]
         if open.waitForExistence(timeout: 3) {
             // Files exposes Open before the selected provider item is ready.

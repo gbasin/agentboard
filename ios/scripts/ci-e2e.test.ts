@@ -39,6 +39,8 @@ for (const scenario of [
         .replaceAll('/tmp/ab-ios-parity', join(root, 'fixtures'))
         .replaceAll('/tmp/ab-ios-fixture-logs', join(root, 'archive'))
       writeFileSync(join(scripts, 'ci-e2e.sh'), source)
+      writeFileSync(join(scripts, 'seed-file.sh'), readFileSync(new URL('./seed-file.sh', import.meta.url), 'utf8'))
+      mkdirSync(join(root, 'app'))
       writeFileSync(join(scripts, 'ci-readiness.sh'), readFileSync(new URL('./ci-readiness.sh', import.meta.url), 'utf8'))
       writeFileSync(join(scripts, 'ci-diagnostics.sh'), 'ci_diagnostics_start() { :; }; ci_diagnostics_stop() { echo stopped >> "$CALL_LOG"; }; ci_phase() { echo "phase $1" >> "$CALL_LOG"; shift; "$@"; }\n')
       writeFileSync(join(scripts, 'test-e2e.sh'), '#!/bin/bash\necho tests >> "$CALL_LOG"\nexit ' + testStatus + '\n', { mode: 0o755 })
@@ -50,7 +52,7 @@ for (const scenario of [
         ios/scripts/seed-live.ts|ios/scripts/warm-parity.ts|ios/scripts/parity-media-ready.ts|ios/scripts/tmux-ready.ts) ;;
         *) trap 'exit 0' TERM; while :; do /bin/sleep 0.05; done ;;
       esac\n`)
-      stub('xcrun', (cacheFailure ? 'if [[ "$*" == *dyld_shared_cache* ]]; then exit 75; fi\n' : '') + 'if [[ "$*" == *get_app_container* ]]; then echo "$APP_DATA"; fi\n')
+      stub('xcrun', (cacheFailure ? 'if [[ "$*" == *dyld_shared_cache* ]]; then exit 75; fi\n' : '') + 'if [[ "$*" == *get_app_container* ]]; then printf "group.com.apple.FileProvider.LocalStorage\\t%s\\n" "$APP_DATA"; fi\n')
       if (archiveFailure) stub('mv', 'exit 74\n')
       stub('curl', 'exit 0\n'); stub('tmux', 'exit 0\n')
       const proc = Bun.spawn(['/bin/bash', join(scripts, 'ci-e2e.sh')], {
@@ -72,6 +74,7 @@ for (const scenario of [
       for (const [fixture, command] of Object.entries({ backend: 'bun src/server/index.ts', live: 'bun ios/scripts/seed-live.ts', parity: 'bun ios/scripts/seed-parity.ts', warm: 'bun ios/scripts/warm-parity.ts', 'shell-server': 'bun ios/scripts/shell-server.ts', 'pr-fixture': 'bun ios/scripts/pr-fixture.ts', 'parity-gap-fixture': 'bun ios/scripts/parity-gap-fixture.ts', 'media-activity-fixture': 'bun ios/scripts/media-activity-fixture.ts', photos: 'xcrun simctl addmedia', files: 'xcrun simctl get_app_container' })) {
         expect(calls.includes(command)).toBe(plan.includes(fixture as typeof plan[number]))
       }
+      if (plan.includes('files')) expect(existsSync(join(root, 'app/File Provider Storage/parity-upload.txt'))).toBe(true)
       expect(calls.includes('phase parity-media-ready')).toBe(plan.includes('warm'))
       if (plan.includes('warm')) {
         expect(calls.indexOf('phase parity-media-ready')).toBeGreaterThan(calls.indexOf('bun ios/scripts/warm-parity.ts'))
@@ -128,6 +131,28 @@ echo tests >> "$CALL_LOG"
       if (scenario === 'transient') expect(calls.split('\n').filter(line => line.startsWith('--max-time'))).toHaveLength(2)
       if (scenario === 'timeout') { expect(calls).toContain('--max-time 1 '); expect(Date.now() - started).toBeLessThan(4000) }
       if (scenario === 'dies-during-probe') expect(calls.split('\n').filter(line => line.startsWith('--max-time'))).toHaveLength(1)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+}
+
+for (const available of [true, false]) {
+  test(`file fixture requires Files local storage: available=${available}`, async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ios-file-fixture-'))
+    try {
+      const bin = join(root, 'bin'), storage = join(root, 'local storage'), source = join(root, 'upload.txt')
+      mkdirSync(bin); mkdirSync(storage)
+      writeFileSync(source, 'fixture payload\n')
+      writeFileSync(join(bin, 'xcrun'), '#!/bin/bash\nprintf "group.com.apple.Other\\t/unused\\n"\nif [ "$AVAILABLE" = true ]; then printf "group.com.apple.FileProvider.LocalStorage\\t%s\\n" "$STORAGE"; fi\n', { mode: 0o755 })
+      const proc = Bun.spawn(['/bin/bash', new URL('./seed-file.sh', import.meta.url).pathname, 'test-device', source], {
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, AVAILABLE: String(available), STORAGE: storage }, stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(await proc.exited).toBe(available ? 0 : 1)
+      const destination = join(storage, 'File Provider Storage/parity-upload.txt')
+      if (available) expect(readFileSync(destination, 'utf8')).toBe('fixture payload\n')
+      else {
+        expect(existsSync(destination)).toBe(false)
+        expect(await new Response(proc.stderr).text()).toContain('Files local storage is unavailable')
+      }
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
 }
