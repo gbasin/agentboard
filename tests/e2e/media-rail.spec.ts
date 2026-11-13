@@ -223,3 +223,38 @@ test('large media catalogs stay off the socket across reconnect and live updates
     await expect.poll(() => fixture.capture()).toContain(marker)
   } finally { fixture.cleanup() }
 })
+
+// Menus must win hit testing even when terminal overlays occupy the same pixels.
+test.describe('mobile overflow menu stacking', () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+  for (const expanded of [false, true]) {
+    test(`menu stays above media counter${expanded ? ' after collapsing the rail' : ''}`, async ({ page, request }, info) => {
+      const fixture = await mediaFixture(request, 2, true)
+      try {
+        await page.goto('/')
+        await page.getByLabel('Open session menu', { exact: true }).tap()
+        await fixture.select(page)
+        if (expanded) await page.getByTestId('media-rail-pill').tap()
+        if (expanded) await expect(page.getByTestId('media-rail')).toBeVisible()
+        await page.getByLabel('More options', { exact: true }).tap()
+        // Opening the menu is an outside press that collapses the media rail.
+        await expect(page.getByTestId('media-rail')).toBeHidden()
+        const overlay = page.getByTestId('media-rail-pill')
+        await expect(overlay).toBeVisible()
+        const rename = page.getByRole('button', { name: 'Rename', exact: true }).filter({ visible: true })
+        await expect(rename).toBeVisible()
+        const a = (await rename.boundingBox())!, b = (await overlay.boundingBox())!
+        const left = Math.max(a.x, b.x), right = Math.min(a.x + a.width, b.x + b.width)
+        const top = Math.max(a.y, b.y), bottom = Math.min(a.y + a.height, b.y + b.height)
+        expect(right).toBeGreaterThan(left)
+        expect(bottom).toBeGreaterThan(top)
+        const point = { x: (left + right) / 2, y: (top + bottom) / 2 }
+        expect(await rename.evaluate((el, p) => el.contains(document.elementFromPoint(p.x, p.y)), point)).toBe(true)
+        await page.screenshot({ path: info.outputPath('mobile-menu-above-media.png') })
+        await page.touchscreen.tap(point.x, point.y)
+        await expect(page.locator('.mobile-terminal-header input')).toBeVisible()
+        await expect(overlay).toBeVisible()
+      } finally { fixture.cleanup() }
+    })
+  }
+})
