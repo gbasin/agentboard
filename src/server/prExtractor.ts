@@ -1,12 +1,14 @@
 // Detects pull requests associated with a session by scanning its agent
 // JSONL log. Signals: `gh pr create` inside actual tool-call entries,
 // successful correlated GitHub connector creation results, and Claude Code's
-// self-contained `{"type":"pr-link",...}` records. CLI results supply PR URLs;
+// self-contained `{"type":"pr-link",...}` records, plus successful Codex REST
+// command completions. CLI results supply PR URLs;
 // connector results supply structured PR metadata. Prose is not a signal.
 // Scans incrementally: results are cached per file offset so polling only
 // reads bytes appended since the previous scan.
 
 import fs from 'node:fs'
+import { restPrCompletionUrls } from './restPrCompletion'
 import type { SessionPullRequest } from '../shared/types'
 import { logger } from './logger'
 import { connectorCompletionUrls, connectorCreateIds, connectorResults } from './connectorPr'
@@ -14,6 +16,7 @@ import {
   CREATE_BYTES,
   PR_LINK_BYTES,
   hasCreateCandidate,
+  hasRestCandidate,
   hasPrLinkCandidate,
   seamHasCreate,
   seamHasPrLink,
@@ -291,8 +294,11 @@ function parenInner(cmd: string, open: number): { text: string; end: number } {
   return { text: cmd.slice(open + 1), end: cmd.length }
 }
 
-// Does one command segment (its raw words) invoke `gh pr create`?
-function segmentInvokesGhPrCreate(words: string[]): boolean {
+// Match gh arguments while retaining the shell command-position rules.
+type GhMatcher = (args: string[]) => boolean
+const prCreateMatcher: GhMatcher = args => args[0] === 'pr' && args[1] === 'create'
+
+function segmentInvokesGhPrCreate(words: string[], matcher: GhMatcher): boolean {
   let i = 0
   for (; i < words.length; i++) {
     const w = unquoteShellWord(words[i])
@@ -309,13 +315,13 @@ function segmentInvokesGhPrCreate(words: string[]): boolean {
         continue
       }
       if (w.startsWith('--repo=')) continue
-      return w === 'pr' && unquoteShellWord(words[j + 1] ?? '') === 'create'
+      return matcher(words.slice(j).map(unquoteShellWord))
     }
     return false
   }
   if (name === 'eval') {
     return invokesGhPrCreate(
-      words.slice(i + 1).map(stripOuterQuotes).join(' ')
+      words.slice(i + 1).map(stripOuterQuotes).join(' '), matcher
     )
   }
   if (SHELL_COMMANDS.has(name)) {
@@ -325,7 +331,7 @@ function segmentInvokesGhPrCreate(words: string[]): boolean {
         // argv joined with spaces, where the command string arrives as
         // several words (["/bin/zsh","-lc","gh pr create ..."]).
         return invokesGhPrCreate(
-          words.slice(j + 1).map(stripOuterQuotes).join(' ')
+          words.slice(j + 1).map(stripOuterQuotes).join(' '), matcher
         )
       }
     }
@@ -333,8 +339,9 @@ function segmentInvokesGhPrCreate(words: string[]): boolean {
   return false
 }
 
-// True when `cmd` invokes `gh pr create` — see the block comment above.
-function invokesGhPrCreate(cmd: string): boolean {
+// Scan executable gh invocations; the default matcher checks `pr create`.
+// REST completions reuse this scanner with a repository-collecting matcher.
+function invokesGhPrCreate(cmd: string, matcher: GhMatcher = prCreateMatcher): boolean {
   let i = 0
   const n = cmd.length
   let words: string[] = []
@@ -348,7 +355,7 @@ function invokesGhPrCreate(cmd: string): boolean {
   }
   const endSegment = (): boolean => {
     endWord()
-    const hit = words.length > 0 && segmentInvokesGhPrCreate(words)
+    const hit = words.length > 0 && segmentInvokesGhPrCreate(words, matcher)
     words = []
     return hit
   }
@@ -371,13 +378,13 @@ function invokesGhPrCreate(cmd: string): boolean {
         }
         if (q === '"' && cmd[i] === '`') {
           const inner = backtickInner(cmd, i)
-          if (invokesGhPrCreate(inner.text)) return true
+          if (invokesGhPrCreate(inner.text, matcher)) return true
           i = inner.end
           continue
         }
         if (q === '"' && cmd[i] === '$' && cmd[i + 1] === '(') {
           const inner = parenInner(cmd, i + 1)
-          if (invokesGhPrCreate(inner.text)) return true
+          if (invokesGhPrCreate(inner.text, matcher)) return true
           i = inner.end
           continue
         }
@@ -389,14 +396,14 @@ function invokesGhPrCreate(cmd: string): boolean {
     }
     if (c === '`') {
       const inner = backtickInner(cmd, i)
-      if (invokesGhPrCreate(inner.text)) return true
+      if (invokesGhPrCreate(inner.text, matcher)) return true
       word += cmd.slice(i, inner.end)
       i = inner.end
       continue
     }
     if (c === '$' && cmd[i + 1] === '(') {
       const inner = parenInner(cmd, i + 1)
-      if (invokesGhPrCreate(inner.text)) return true
+      if (invokesGhPrCreate(inner.text, matcher)) return true
       word += cmd.slice(i, inner.end)
       i = inner.end
       continue
@@ -643,6 +650,11 @@ function collectUrls(state: ScanState, line: string): void {
 }
 
 function processLine(state: ScanState, line: string): void {
+  if (line.includes('"CommandExecution"') && line.includes('pulls')) {
+    try {
+      for (const url of restPrCompletionUrls(JSON.parse(line), invokesGhPrCreate)) collectUrls(state, url)
+    } catch { /* Ignore malformed records. */ }
+  }
   // Connector calls use exact parsed result IDs and structured MCP output;
   // they never enter the CLI's URL/prose fallback path.
   if (line.includes('github_create_pull_request') || line.includes('github.create_pull_request') || state.connectorPending.size > 0) {
@@ -750,7 +762,7 @@ function consumeChunk(state: ScanState, bytes: Buffer): void {
   const seamCreate = seamHasCreate(state.partial, bytes)
   const seamLink = seamHasPrLink(state.partial, bytes)
   if (lastNewline === -1) {
-    state.partialHasCreate ||= seamCreate || bytes.includes(CREATE_BYTES)
+    state.partialHasCreate ||= seamCreate || bytes.includes(CREATE_BYTES) || hasRestCandidate(bytes)
     state.partialHasLink ||= seamLink || bytes.includes(PR_LINK_BYTES)
     // Copy: `bytes` views the shared read buffer.
     state.partial.push(Buffer.from(bytes))
@@ -774,7 +786,7 @@ function consumeChunk(state: ScanState, bytes: Buffer): void {
   }
   const tail = bytes.subarray(lastNewline + 1)
   state.partial = tail.length > 0 ? [Buffer.from(tail)] : []
-  state.partialHasCreate = tail.includes(CREATE_BYTES)
+  state.partialHasCreate = tail.includes(CREATE_BYTES) || hasRestCandidate(tail)
   state.partialHasLink = tail.includes(PR_LINK_BYTES)
 }
 

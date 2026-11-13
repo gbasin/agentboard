@@ -10,7 +10,7 @@ const command = binary
   : base.webServer.command
 export default defineConfig({
   ...base,
-  testMatch: ['session-activity.spec.ts', 'session-activity-ui.spec.ts', 'connector-pr.spec.ts'],
+  testMatch: ['session-activity.spec.ts', 'session-activity-ui.spec.ts', 'connector-pr.spec.ts', 'rest-pr.spec.ts'],
   workers: 1,
   retries: 0,
   use: { ...base.use, serviceWorkers: 'block', trace: 'on', video: 'retain-on-failure', screenshot: 'only-on-failure' },
