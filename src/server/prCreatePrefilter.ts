@@ -1,9 +1,10 @@
 // Byte-level prefilter for the PR extractor. Decides from raw log bytes,
 // without decoding them, whether a span may hold `gh pr create`, a
-// GitHub connector create call, or a `pr-link` record. Every check over-matches and never under-matches: a
+// GitHub connector create call, REST pulls endpoint, or a `pr-link` record. Every check over-matches and never under-matches: a
 // false positive only costs a decode, a false negative loses a PR.
 
 export const CREATE_BYTES = Buffer.from('create')
+const REST_BYTES = Buffer.from('pulls')
 const CONNECTOR_CREATE_BYTES = Buffer.from('github_create_pull_request')
 const CONNECTOR_COMPLETION_BYTES = Buffer.from('github.create_pull_request')
 // Claude Code's `{"type":"pr-link",...}` session↔PR records. The bare word
@@ -21,6 +22,7 @@ function isSeparatorByte(b: number): boolean {
 // True when the bytes hold a `pr<seps>create` candidate, or a `create` whose
 // context may start before the buffer. Over-matches, never under-matches.
 export function hasCreateCandidate(bytes: Buffer): boolean {
+  if (bytes.includes(REST_BYTES)) return true
   if (bytes.includes(CONNECTOR_CREATE_BYTES) || bytes.includes(CONNECTOR_COMPLETION_BYTES)) return true
   let at = bytes.indexOf(CREATE_BYTES)
   while (at !== -1) {
@@ -36,6 +38,9 @@ export function hasCreateCandidate(bytes: Buffer): boolean {
   }
   return false
 }
+
+// REST endpoint marker; deliberately over-matches reads and prose.
+export function hasRestCandidate(bytes: Buffer): boolean { return bytes.includes(REST_BYTES) }
 
 // True when `bytes` holds a `pr-link` candidate.
 export function hasPrLinkCandidate(bytes: Buffer): boolean {
@@ -60,7 +65,7 @@ function seamHasWord(partial: Buffer[], bytes: Buffer, word: Buffer): boolean {
 }
 
 export function seamHasCreate(partial: Buffer[], bytes: Buffer): boolean {
-  return seamHasWord(partial, bytes, CREATE_BYTES) ||
+  return seamHasWord(partial, bytes, REST_BYTES) || seamHasWord(partial, bytes, CREATE_BYTES) ||
     seamHasWord(partial, bytes, CONNECTOR_CREATE_BYTES) ||
     seamHasWord(partial, bytes, CONNECTOR_COMPLETION_BYTES)
 }
