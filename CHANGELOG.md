@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.6](https://github.com/gbasin/agentboard/compare/v0.46.5...v0.46.6) (2026-11-13)
+
+
+### Bug Fixes
+
+* move shortcut discovery into settings and action hints ([#587](https://github.com/gbasin/agentboard/issues/587)) ([16fc35b](https://github.com/gbasin/agentboard/commit/16fc35b43d61d9cfbaeb0179a05f6064ae7d70c8))
+
 ## [0.46.5](https://github.com/gbasin/agentboard/compare/v0.46.4...v0.46.5) (2026-11-13)
 
 
