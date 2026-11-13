@@ -1158,7 +1158,7 @@ function SessionRow({
 
   return (
     <div
-      className={`session-row group cursor-pointer select-none px-3 py-2 ${MOBILE_ROW_TARGET_CLASS} ${isSelected ? 'selected' : ''} ${isDragging ? 'cursor-grabbing shadow-lg ring-1 ring-accent/30 bg-elevated' : 'cursor-grab'}`}
+      className={`session-row group cursor-pointer select-none pl-1 pr-3 py-2 ${MOBILE_ROW_TARGET_CLASS} ${isSelected ? 'selected' : ''} ${isDragging ? 'cursor-grabbing shadow-lg ring-1 ring-accent/30 bg-elevated' : 'cursor-grab'}`}
       role="button"
       aria-pressed={isSelected}
       tabIndex={0}
