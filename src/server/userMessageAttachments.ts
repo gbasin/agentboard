@@ -22,6 +22,7 @@ export function isContinuationSummary(text: string): boolean {
 
 export function hasUserImageAttachment(entry: unknown): boolean {
   const record = asRecord(entry)
+  if (record?.type === 'api-request-blob') return false
   if (!record || record.isMeta === true || record.isCompactSummary === true || record.synthetic_reason !== undefined) return false
   const payload = asRecord(record.payload)
   const message = record.type === 'response_item' ? payload : asRecord(record.message)
