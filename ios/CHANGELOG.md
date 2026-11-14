@@ -2,6 +2,14 @@
 
 Release Please maintains this file for the native iPhone client.
 
+## [0.2.3](https://github.com/gbasin/agentboard/compare/ios-v0.2.2...ios-v0.2.3) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** wait for automatic TestFlight group assignment ([#567](https://github.com/gbasin/agentboard/issues/567)) ([fa47e75](https://github.com/gbasin/agentboard/commit/fa47e75319fc2498debc53469e7a099c67448160))
+* stabilize native iOS CI fixtures and interactions ([#585](https://github.com/gbasin/agentboard/issues/585)) ([2d09c81](https://github.com/gbasin/agentboard/commit/2d09c813f1b76390e37411155ec9ff51e9e2f585))
+
 ## [0.2.2](https://github.com/gbasin/agentboard/compare/ios-v0.2.1...ios-v0.2.2) (2026-11-11)
 
 
