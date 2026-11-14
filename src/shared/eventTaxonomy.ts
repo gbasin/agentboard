@@ -376,6 +376,10 @@ export function normalizeAgentLogEntry(entry: unknown): NormalizedEvent[] {
   const record = asRecord(entry)
   if (!record) return []
 
+  // Claude's API request snapshots duplicate assembled messages, including
+  // tool output and metadata whose original isMeta flags are no longer present.
+  if (record.type === 'api-request-blob') return []
+
   // Claude Code marks harness-injected entries (system-reminders, recap notices,
   // compaction summaries) with isMeta or isCompactSummary. They aren't user-authored, so they
   // shouldn't surface as the last user message or count as conversation turns.

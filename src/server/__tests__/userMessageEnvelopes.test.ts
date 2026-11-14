@@ -20,6 +20,25 @@ const schemas = {
   }),
 }
 
+test('ignores Claude API snapshots that repackage image tool metadata as user text', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ab-api-snapshot-'))
+  dirs.push(dir)
+  const file = join(dir, 'session.jsonl')
+  const note = '[Image: original 1206x2622, displayed at 1185x2576. Multiply coordinates by 1.02 to map to original image.]'
+  const entries = [
+    schemas.claude('you can also run it on m1p if it’s free'),
+    { ...schemas.claude(note), isMeta: true, turnCompanion: true },
+    { type: 'api-request-blob', message: { role: 'user', content: [
+      { type: 'tool_result', tool_use_id: 'read-image', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: '' } }] },
+      { type: 'text', text: note },
+    ] } },
+    { type: 'api-request-blob', message: { role: 'user', content: [{ type: 'image' }] } },
+  ]
+  writeFileSync(file, entries.map(entry => JSON.stringify(entry)).join('\n'))
+  expect(extractLastUserMessageFromLog(file, { lineLimit: 0, byteLimit: 32768, maxByteLimit: 2097152 }))
+    .toBe('you can also run it on m1p if it’s free')
+})
+
 for (const [schema, entry] of Object.entries(schemas)) {
   describe(schema, () => {
     function extract(text: string) {
