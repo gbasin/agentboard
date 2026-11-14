@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.8](https://github.com/gbasin/agentboard/compare/v0.46.7...v0.46.8) (2026-11-14)
+
+
+### Bug Fixes
+
+* keep Claude API snapshots out of user previews ([7cff947](https://github.com/gbasin/agentboard/commit/7cff9479e29a4cdfac0abd1a492647ac19a276c8))
+
 ## [0.46.7](https://github.com/gbasin/agentboard/compare/v0.46.6...v0.46.7) (2026-11-13)
 
 
