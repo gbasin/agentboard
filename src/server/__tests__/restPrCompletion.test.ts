@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { extractPullRequests, getSessionPullRequests, clearPrScanCache } from '../prExtractor'
-import { restCompletion, restCommand, pythonRestCommand, restPrUrl } from '../../../tests/fixtures/restPr'
+import { restCompletion, restCommand, pythonRestCommand, pythonComprehensionRestCommand, restPrUrl } from '../../../tests/fixtures/restPr'
 const line = (entry: object) => JSON.stringify(entry) + '\n'
 const expected = [{ url: restPrUrl, repo: 'e2e/rest-pr', number: 15 }]
 
@@ -25,6 +25,11 @@ for (const command of [
   `echo ready; ${restCommand}`, `env FOO=bar ${restCommand}`,
   `echo "$( ${restCommand} )"`, pythonRestCommand,
   pythonRestCommand.replace('subprocess.run', 'subprocess.check_output'),
+  pythonComprehensionRestCommand,
+  pythonComprehensionRestCommand.replace("v[k] for k in ['GIT_AUTHOR_NAME','GIT_AUTHOR_EMAIL']", "v[k] for k in ['GIT_AUTHOR_NAME','GIT_AUTHOR_EMAIL'] if k in v"),
+  pythonRestCommand.replace("p=pathlib.Path", "unused=[x for x in []]\np=pathlib.Path"),
+  pythonRestCommand.replace("p=pathlib.Path", "unused=(x for x in [])\np=pathlib.Path"),
+  pythonRestCommand.replace("p=pathlib.Path", "unused={'[': ')', '#': '}'}\np=pathlib.Path"),
 ]) test(`recognizes literal REST creation: ${command.split('\n')[0]}`, () => {
   expect(extractPullRequests(line(restCompletion(command)))).toEqual(expected)
 })
@@ -42,6 +47,14 @@ for (const command of [
   pythonRestCommand.replace('r=subprocess.run', 'if False:\n r=subprocess.run'),
   pythonRestCommand.replace("'POST'", "'GET'"),
   pythonRestCommand.replace('r=subprocess.run', 'r=False and subprocess.run'),
+  pythonRestCommand.replace('r=subprocess.run', 'def create():\n r=subprocess.run'),
+  pythonRestCommand.replace('r=subprocess.run', 'for x in []:\n r=subprocess.run'),
+  pythonRestCommand.replace('r=subprocess.run', 'r=lambda: subprocess.run'),
+  pythonRestCommand.replace('r=subprocess.run', 'r=True or subprocess.run'),
+  pythonRestCommand.replace('r=subprocess.run', 'r=[subprocess.run').replace('check=True)', 'check=True) for x in []]'),
+  pythonRestCommand.replace('r=subprocess.run', 'r=(subprocess.run').replace('check=True)', 'check=True) for x in [])'),
+  pythonRestCommand.replace('r=subprocess.run', 'r=(False and subprocess.run').replace('check=True)', 'check=True))'),
+  pythonRestCommand.replace('r=subprocess.run', 'r=(subprocess.run').replace('check=True)', 'check=True) if False else None)'),
 ]) test(`ignores reads and inert source: ${command.split('\n')[0]}`, () => {
   expect(extractPullRequests(line(restCompletion(command)))).toEqual([])
 })
@@ -57,7 +70,7 @@ test('requires a successful completed command and matching repository', () => {
 test('incremental byte prefilter retains REST completions across every pulls seam', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-rest-pr-'))
   const file = path.join(dir, 'log.jsonl')
-  const content = line(restCompletion())
+  const content = line(restCompletion(pythonComprehensionRestCommand))
   try {
     for (let split = 1; split < 'pulls'.length; split++) {
       clearPrScanCache()
