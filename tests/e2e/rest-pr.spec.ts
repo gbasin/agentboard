@@ -2,11 +2,14 @@
 import { test, expect } from '@playwright/test'
 import fs from 'node:fs'
 import { seedActivity, activityLine } from './helpers/activityFixture'
-import { restCompletion, restCommand, pythonRestCommand, restPrUrl } from '../fixtures/restPr'
+import { restCompletion, restCommand, pythonRestCommand, pythonComprehensionRestCommand, restPrUrl } from '../fixtures/restPr'
 
 test.skip(process.env.ACTIVITY_E2E_MATRIX !== '1', 'Uses the isolated lifecycle matrix with temporary-path matching')
 test.use({ viewport: { width: 1280, height: 900 } })
-test('REST command completion adds one PR chip to the session card and panel', async ({ page, request }, info) => {
+for (const [variant, command] of [
+  ['straight-line Python', pythonRestCommand],
+  ['Python with env comprehension', pythonComprehensionRestCommand],
+]) test(`${variant} REST completion adds one PR chip to the session card and panel`, async ({ page, request }, info) => {
   test.setTimeout(120_000)
   const fixture = seedActivity('codex')
   const find = async () => ((await (await request.get('/api/sessions')).json()) as
@@ -33,15 +36,17 @@ test('REST command completion adds one PR chip to the session card and panel', a
     fs.appendFileSync(fixture.log, activityLine({ type: 'response_item', payload: {
       type: 'custom_tool_call_output', call_id: 'create', output: '{"session_id":66236,"output":""}',
     } }))
-    const completion = activityLine(restCompletion(pythonRestCommand))
+    const completion = activityLine(restCompletion(command))
     // Split inside the prefilter word across metadata-worker scans.
     const cut = completion.indexOf('pulls') + 2
     fs.appendFileSync(fixture.log, completion.slice(0, cut))
     await page.waitForTimeout(6000)
     await expect(chip).toHaveCount(0)
-    fs.appendFileSync(fixture.log, completion.slice(cut) + activityLine(restCompletion()) + completion)
+    fs.appendFileSync(fixture.log, completion.slice(cut))
     await expect(chip).toHaveCount(1, { timeout: 30_000 })
     await expect(chip).toBeVisible()
+    // Assert the Python completion works on its own before shell duplicates.
+    fs.appendFileSync(fixture.log, activityLine(restCompletion()) + completion)
     expect((await find())?.prs).toEqual([{ url: restPrUrl, repo: 'e2e/rest-pr', number: 15 }])
     await card.click({ position: { x: 100, y: 12 } })
     const railChip = page.locator('footer').locator(`a[href="${restPrUrl}"]`)

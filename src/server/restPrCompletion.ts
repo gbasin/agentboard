@@ -20,17 +20,20 @@ function restRepo(args: string[]): string | null {
   return /^\/?repos\/([\w.-]+\/[\w.-]+)\/pulls$/.exec(endpoint ?? '')?.[1] ?? null
 }
 
-interface Token { text: string; literal: boolean }
+interface Token { text: string; literal: boolean; depth: number }
 // Python strings/comments are opaque, so examples and printed source cannot
 // masquerade as subprocess calls. No Python is executed to inspect a log.
 function pythonTokens(source: string): Token[] {
   const tokens: Token[] = []
+  let depth = 0
   const re = /#[^\n]*|'''[\s\S]*?'''|"""[\s\S]*?"""|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|[A-Za-z_]\w*|[^\s]/g
   for (const match of source.matchAll(re)) {
     const text = match[0]
     if (text.startsWith('#')) continue
     const literal = text.startsWith("'") || text.startsWith('"')
-    tokens.push({ text: literal ? text.slice(1, -1) : text, literal })
+    if (!literal && [')', ']', '}'].includes(text)) depth--
+    tokens.push({ text: literal ? text.slice(1, -1) : text, literal, depth })
+    if (!literal && ['(', '[', '{'].includes(text)) depth++
   }
   return tokens
 }
@@ -41,10 +44,13 @@ function pythonRepos(command: string): string[] {
   const match = /^\s*(?:\S*\/)?python3?\s+-\s*<<\s*(['"]?)(\w+)\1\s*\n([\s\S]*?)\n\2\s*$/.exec(command)
   if (!match) return []
   const tokens = pythonTokens(match[3])
-  // Conditional/defined code needs runtime analysis; conservatively skip it.
-  if (tokens.some(t => !t.literal && ['def', 'class', 'if', 'for', 'while', 'lambda', 'and', 'or', 'try', 'except'].includes(t.text))) return []
+  // Comprehensions in unrelated expressions do not guard a top-level call.
+  // Keep rejecting control flow outside brackets and only accept calls at
+  // depth zero: a subprocess inside a comprehension/generator may never run.
+  if (tokens.some(t => !t.literal && t.depth === 0 && ['def', 'class', 'if', 'for', 'while', 'lambda', 'and', 'or', 'try', 'except'].includes(t.text))) return []
   const repos: string[] = []
   for (let i = 0; i + 6 < tokens.length; i++) {
+    if (tokens[i].depth !== 0) continue
     const head = tokens.slice(i, i + 5)
     if (head.some(t => t.literal) || head[0].text !== 'subprocess' || head[1].text !== '.' ||
       !['run', 'check_output', 'check_call'].includes(head[2].text) || head[3].text !== '(' || head[4].text !== '[') continue
