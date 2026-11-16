@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.9](https://github.com/gbasin/agentboard/compare/v0.46.8...v0.46.9) (2026-11-16)
+
+
+### Bug Fixes
+
+* detect Python PR creates alongside comprehensions ([#593](https://github.com/gbasin/agentboard/issues/593)) ([cfceedc](https://github.com/gbasin/agentboard/commit/cfceedc55d7efab4bd422e08a7d11ba162d17d12))
+
 ## [0.46.8](https://github.com/gbasin/agentboard/compare/v0.46.7...v0.46.8) (2026-11-14)
 
 
