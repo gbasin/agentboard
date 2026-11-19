@@ -8,6 +8,8 @@ import { clearSubagentLogCaches, registerCodexSubagent } from '../subagentLogs'
 import { SessionRegistry } from '../SessionRegistry'
 import type { Session } from '../../shared/types'
 
+const FULL_RANK_FOR_TESTS = 30 * 1000
+
 let dir: string
 beforeEach(async () => { dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ab-activity-')); clearSubagentLogCaches() })
 afterEach(async () => { await fs.rm(dir, { recursive: true, force: true }); clearSubagentLogCaches() })
@@ -293,18 +295,96 @@ test('stoppedByUser metadata ends a child only while strictly newer than its tra
   }
 })
 
-test('read cap keeps the most recently written children, not the first names', async () => {
-  const log = path.join(dir, 'parent.jsonl'), childDir = path.join(dir, 'parent/subagents')
-  await fs.mkdir(childDir, { recursive: true }); await fs.writeFile(log, line({ type: 'api-request' }))
-  const old = new Date(Date.now() - 60 * 60 * 1000)
-  for (let i = 0; i < 260; i++) {
-    const p = path.join(childDir, `agent-a${String(i).padStart(3, '0')}.jsonl`)
-    await fs.writeFile(p, line({ type: 'assistant', message: { stop_reason: 'end_turn', content: [] } }))
-    await fs.utimes(p, old, old)
+const finished = line({ type: 'assistant', message: { stop_reason: 'end_turn', content: [] } })
+async function claudeChildren(count: number, prefix: string, mtime: Date): Promise<string> {
+  const childDir = path.join(dir, 'parent/subagents')
+  await fs.mkdir(childDir, { recursive: true })
+  for (let i = 0; i < count; i++) {
+    const p = path.join(childDir, `agent-${prefix}${String(i).padStart(3, '0')}.jsonl`)
+    await fs.writeFile(p, finished)
+    await fs.utimes(p, mtime, mtime)
   }
+  return childDir
+}
+
+test('read cap keeps the most recently written children, not the first names', async () => {
+  const log = path.join(dir, 'parent.jsonl')
+  await fs.writeFile(log, line({ type: 'api-request' }))
+  const childDir = await claudeChildren(260, 'a', new Date(Date.now() - 60 * 60 * 1000))
   // Sorts after every finished child, so a name-ordered cap would skip it.
   await fs.writeFile(path.join(childDir, 'agent-zzz-live.jsonl'), line(claudeTool('x', 'Bash')))
-  const [s] = await new SessionActivityTracker().enrich([session('claude', log)])
+  let progress = 0
+  const [s] = await new SessionActivityTracker(() => { progress++ }).enrich([session('claude', log)])
   expect(s.activity).toMatchObject({ running: 1, total: 261, unknown: 5 })
   expect(s.activity?.subagents[0].id).toBe('zzz-live')
+  // The stat pass reports progress before any capped read starts.
+  expect(progress).toBeGreaterThan(256 + Math.floor(261 / 64))
+})
+
+test('a child last seen working keeps its read slot while newer siblings finish', async () => {
+  const log = path.join(dir, 'parent.jsonl')
+  await fs.writeFile(log, line({ type: 'api-request' }))
+  const childDir = path.join(dir, 'parent/subagents')
+  await fs.mkdir(childDir, { recursive: true })
+  const live = path.join(childDir, 'agent-a-long-tool.jsonl')
+  await fs.writeFile(live, line(claudeTool('x', 'Bash')))
+  const tracker = new SessionActivityTracker()
+  expect((await tracker.enrich([session('claude', log)]))[0].activity?.running).toBe(1)
+  // A long tool call writes nothing, so 260 newer finished siblings outrank it by mtime.
+  const silent = new Date(Date.now() - 5 * 60 * 1000)
+  await fs.utimes(live, silent, silent)
+  await claudeChildren(260, 'b', new Date())
+  const now = Date.now()
+  const clock = spyOn(Date, 'now').mockReturnValue(now + FULL_RANK_FOR_TESTS)
+  try {
+    const [s] = await tracker.enrich([session('claude', log)])
+    expect(s.activity).toMatchObject({ running: 1, total: 261 })
+    expect(s.activity?.subagents[0].id).toBe('a-long-tool')
+  } finally { clock.mockRestore() }
+})
+
+test('between full passes only the previous selection and new children are stat-ed', async () => {
+  const log = path.join(dir, 'parent.jsonl')
+  await fs.writeFile(log, line({ type: 'api-request' }))
+  const childDir = await claudeChildren(300, 'a', new Date(Date.now() - 60 * 60 * 1000))
+  const tracker = new SessionActivityTracker()
+  const start = Date.now()
+  const clock = spyOn(Date, 'now').mockReturnValue(start)
+  try {
+    await tracker.enrich([session('claude', log)])
+    // An old, unselected child resumes. The incremental pass does not see it yet.
+    const resumed = path.join(childDir, 'agent-a299.jsonl')
+    await fs.appendFile(resumed, line(claudeTool('y', 'Bash')))
+    const fresh = path.join(childDir, 'agent-new.jsonl')
+    await fs.writeFile(fresh, line(claudeTool('z', 'Bash')))
+    const stat = spyOn(fs, 'stat')
+    const [mid] = await tracker.enrich([session('claude', log)])
+    const childStats = stat.mock.calls.filter(([p]) => String(p).endsWith('.jsonl')).length
+    stat.mockRestore()
+    expect(childStats).toBe(257)
+    expect(mid.activity?.subagents.map(c => c.id)).toContain('new')
+    expect(mid.activity?.running).toBe(1)
+    clock.mockReturnValue(start + FULL_RANK_FOR_TESTS)
+    const [full] = await tracker.enrich([session('claude', log)])
+    expect(full.activity?.running).toBe(2)
+  } finally { clock.mockRestore() }
+})
+
+test('missing children sort last and sessions at the cap skip the stat pass', async () => {
+  const log = path.join(dir, 'parent.jsonl')
+  await fs.writeFile(log, line(event('task_started')))
+  for (let i = 0; i < 256; i++) {
+    const p = path.join(dir, `child-${i}.jsonl`)
+    await fs.writeFile(p, line(event('task_complete')))
+    registerCodexSubagent(`child-${i}`, 'parent', p)
+  }
+  const stat = spyOn(fs, 'stat')
+  const [atCap] = await new SessionActivityTracker().enrich([session('codex', log)])
+  expect(stat).not.toHaveBeenCalled()
+  stat.mockRestore()
+  expect(atCap.activity).toMatchObject({ total: 256, unknown: 0 })
+  registerCodexSubagent('gone', 'parent', path.join(dir, 'gone.jsonl'))
+  const [over] = await new SessionActivityTracker().enrich([session('codex', log)])
+  expect(over.activity).toMatchObject({ total: 257, unknown: 1 })
+  expect(over.activity?.subagents.some(c => c.id === 'gone')).toBe(false)
 })

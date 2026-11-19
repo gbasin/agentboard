@@ -13,6 +13,10 @@ const SUMMARY_LIMIT = 20_000
 const DETAIL_LIMIT = 40
 const CHILD_READ_LIMIT = 256
 const STALE_MS = 15 * 60 * 1000
+// Between full passes only the last selection and new paths are re-stat'ed,
+// so a resumed old child can take this long to enter the read cap.
+const FULL_RANK_MS = 30 * 1000
+const STAT_PROGRESS_EVERY = 64
 interface Cursor {
   state: ActivityState
   offset: number
@@ -28,6 +32,11 @@ interface Summary {
   mtime: number
   name?: string
   activity: AgentActivity
+}
+interface Ranking {
+  at: number
+  listed: Set<string>
+  selected: string[]
 }
 interface ClaudeMetadata {
   ino: number
@@ -45,6 +54,8 @@ export class SessionActivityTracker {
   // eviction. These records retain no partial lines or pending-call maps.
   private summaries = new Map<string, Summary>()
   private metadata = new Map<string, ClaudeMetadata>()
+  // Per parent log: which children the last capped scan read.
+  private rankings = new Map<string, Ranking>()
 
   constructor(private readonly progress?: () => void, private readonly cursorLimit = CACHE_LIMIT) {}
 
@@ -139,6 +150,39 @@ export class SessionActivityTracker {
     return { id, name, activity }
   }
 
+  // Long-lived sessions accumulate thousands of finished children. The read
+  // cap keeps children last seen working, then the most recently written,
+  // rather than whichever names sort first. A full stat pass runs at most
+  // every FULL_RANK_MS; between passes only the previous selection and newly
+  // listed paths are re-stat'ed.
+  private async select(parentLog: string, paths: string[]): Promise<string[]> {
+    if (paths.length <= CHILD_READ_LIMIT) {
+      this.rankings.delete(parentLog)
+      return paths
+    }
+    const now = Date.now()
+    const prev = this.rankings.get(parentLog)
+    const candidates = !prev || now - prev.at >= FULL_RANK_MS ? paths
+      : [...new Set([...prev.selected, ...paths.filter(p => !prev.listed.has(p))])]
+    const current = new Set(paths)
+    const stamped: { logPath: string; live: boolean; mtime: number }[] = []
+    for (const logPath of candidates) {
+      if (!current.has(logPath)) continue
+      let mtime = -Infinity
+      try { mtime = (await fs.stat(logPath)).mtimeMs } catch { /* missing files sort last */ }
+      const last = this.summaries.get(logPath)
+      const live = !!last && ['model', 'tool', 'blocked'].includes(observed(last.activity).phase)
+      stamped.push({ logPath, live, mtime })
+      if (stamped.length % STAT_PROGRESS_EVERY === 0) this.progress?.()
+    }
+    stamped.sort((a, b) => Number(b.live) - Number(a.live) || b.mtime - a.mtime || a.logPath.localeCompare(b.logPath))
+    const selected = stamped.slice(0, CHILD_READ_LIMIT).map(s => s.logPath)
+    this.rankings.delete(parentLog)
+    this.rankings.set(parentLog, { at: prev && candidates !== paths ? prev.at : now, listed: current, selected })
+    while (this.rankings.size > CHILD_READ_LIMIT) this.rankings.delete(this.rankings.keys().next().value!)
+    return selected
+  }
+
   async enrich<T extends ActivitySession>(sessions: T[]): Promise<(T & { activity?: SessionActivity })[]> {
     const result: (T & { activity?: SessionActivity })[] = []
     for (const session of sessions) {
@@ -151,7 +195,7 @@ export class SessionActivityTracker {
       const paths = [...new Set(getSubagentLogPaths(session.logFilePath!, kind, session.agentSessionId!))].filter(p => p !== session.logFilePath)
       const children: SubagentActivity[] = []
       // Sequential async reads keep filesystem fanout bounded.
-      for (const logPath of await newestFirst(paths, CHILD_READ_LIMIT)) children.push(await this.child(logPath, kind))
+      for (const logPath of await this.select(session.logFilePath!, paths)) children.push(await this.child(logPath, kind))
       const running = children.filter(c => c.activity.phase === 'model' || c.activity.phase === 'tool').length
       const uncertain = children.filter(c => c.activity.phase === 'unknown').length + Math.max(0, paths.length - CHILD_READ_LIMIT)
       const blocked = children.filter(c => c.activity.phase === 'blocked').length
@@ -164,21 +208,6 @@ export class SessionActivityTracker {
     }
     return result
   }
-}
-
-// Long-lived sessions accumulate thousands of finished children. Only the
-// most recently written transcripts can be live, so the read cap keeps those
-// rather than whichever names sort first.
-async function newestFirst(paths: string[], limit: number): Promise<string[]> {
-  if (paths.length <= limit) return paths
-  const stamped: { logPath: string; mtime: number }[] = []
-  for (const logPath of paths) {
-    let mtime = -Infinity
-    try { mtime = (await fs.stat(logPath)).mtimeMs } catch { /* missing files sort last */ }
-    stamped.push({ logPath, mtime })
-  }
-  stamped.sort((a, b) => b.mtime - a.mtime || a.logPath.localeCompare(b.logPath))
-  return stamped.slice(0, limit).map(s => s.logPath)
 }
 
 function priority(activity: AgentActivity): number {
