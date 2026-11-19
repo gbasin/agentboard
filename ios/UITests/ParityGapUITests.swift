@@ -78,15 +78,23 @@ final class ParityGapUITests: XCTestCase {
         let list = app.collectionViews.firstMatch
         // A switch behind the bottom search field can report hittable on iOS 26.5.
         // Scroll until the whole target is above that overlay before tapping.
-        for _ in 0..<12 {
-            let search = app.searchFields.firstMatch
-            let bottom = search.exists && search.frame.midY > app.frame.midY ? min(list.frame.maxY, search.frame.minY) : list.frame.maxY
-            if toggle.exists && toggle.isHittable && toggle.frame.maxY < bottom { break }
-            list.swipeUp(velocity: .slow)
+        // The navigation bar overlays the top of the list in the same way.
+        // A tap that lands on an overlay changes nothing, so check the value and
+        // tap again only while the switch is still off.
+        for _ in 0..<2 {
+            for _ in 0..<12 {
+                let search = app.searchFields.firstMatch
+                let bottom = search.exists && search.frame.midY > app.frame.midY ? min(list.frame.maxY, search.frame.minY) : list.frame.maxY
+                let top = max(list.frame.minY, app.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? list.frame.minY)
+                if toggle.exists && toggle.isHittable && toggle.frame.minY >= top && toggle.frame.maxY < bottom { break }
+                if toggle.exists && toggle.frame.minY < top { list.swipeDown(velocity: .slow) } else { list.swipeUp(velocity: .slow) }
+            }
+            if toggle.value as? String == "1" { return }
+            toggle.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap()
+            let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: toggle)
+            if XCTWaiter.wait(for: [selected], timeout: 10) == .completed { return }
         }
-        toggle.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap()
-        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: toggle)
-        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed)
+        XCTFail("Filter did not turn on: \(id)\n" + app.debugDescription)
     }
     private func open(_ name: String, in app: XCUIApplication) {
         let search = app.searchFields["Find a session"]
