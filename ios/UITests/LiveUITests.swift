@@ -34,8 +34,7 @@ final class LiveUITests: XCTestCase {
         XCTAssertTrue(app.waitForTerminalInput())
     }
     func type(_ command: String, app: XCUIApplication) {
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap() })
         app.typeText(command)
         app.tapTerminalKey("Enter")
     }
@@ -222,8 +221,7 @@ final class LiveUITests: XCTestCase {
         let token = String(UUID().uuidString.prefix(8))
         app.tapTerminalKey("Paste text")
         let editor = app.expandedPasteEditor()
-        editor.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.showKeyboard { editor.tap() })
         editor.typeText("printf 'MULTI_A_%s_OK\\n' \(token)\nprintf 'MULTI_B_%s_OK\\n' \(token)")
         app.insertPasteDraft()
         XCTAssertFalse(output("MULTI_A_\(token)_OK", in: app).exists)

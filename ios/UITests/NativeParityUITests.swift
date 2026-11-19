@@ -174,8 +174,7 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(attachmentSheet.waitForNonExistence(timeout: 10))
         app.tapTerminalKey("Paste text")
         let editor = app.expandedPasteEditor()
-        editor.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.showKeyboard { editor.tap() })
         editor.typeText("printf 'NUM_%s_OK\\n' ")
         app.insertPasteDraft()
         let actions = app.buttons["Session actions"]

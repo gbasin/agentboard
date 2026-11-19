@@ -11,6 +11,19 @@ extension XCUIApplication {
         return XCTWaiter.wait(for: [ready], timeout: timeout) == .completed
     }
 
+    /// Tap until the software keyboard appears. Under CI load the first tap can
+    /// reach WebKit or a text view before it accepts focus, and a fixed
+    /// five-second wait then fails. Re-tap only after ten quiet seconds.
+    func showKeyboard(timeout: TimeInterval = 30, by tap: () -> Void) -> Bool {
+        let keyboard = keyboards.firstMatch
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            tap()
+            if keyboard.waitForExistence(timeout: min(10, max(1, deadline.timeIntervalSinceNow))) { return true }
+        } while Date() < deadline
+        return keyboard.exists
+    }
+
     /// Allow each launch phase its own budget: toolbar registration, then connection.
     func waitForBoardConnection(timeout: TimeInterval) -> Bool {
         let status = buttons["connection-status"]

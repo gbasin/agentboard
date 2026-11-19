@@ -3,7 +3,7 @@ import XCTest
 final class SpikeUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
     func openKeyboard(_ app: XCUIApplication) {
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65)).tap()
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65)).tap() })
     }
 
     func output(_ value: String, in app: XCUIApplication) -> XCUIElement {

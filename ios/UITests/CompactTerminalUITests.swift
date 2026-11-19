@@ -52,8 +52,7 @@ final class CompactTerminalUITests: XCTestCase {
         let editor = app.textViews["Text to paste"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Insert"].isEnabled)
-        editor.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.showKeyboard { editor.tap() })
         // Tap software keys: typeText does not exercise the keyboard's correction pipeline.
         for letter in "recieve" {
             app.keyboards.keys.matching(NSPredicate(format: "label ==[c] %@", String(letter))).firstMatch.tap()
@@ -87,8 +86,7 @@ final class CompactTerminalUITests: XCTestCase {
         XCTAssertTrue(app.buttons["session-alpha-local"].waitForExistence(timeout: 15))
         app.buttons["session-alpha-local"].tap()
         XCTAssertTrue(app.waitForTerminalInput())
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap() })
         let strip = app.scrollViews["terminal-quick-keys"]
         XCTAssertTrue(strip.exists)
         capture("portrait-keyboard")
@@ -109,8 +107,7 @@ final class CompactTerminalUITests: XCTestCase {
         app.tapTerminalKey("Hide keyboard")
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
         capture("reading")
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap() })
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         capture("landscape-keyboard")

@@ -128,8 +128,7 @@ final class NativeGlassUITests: XCTestCase {
         XCTAssertTrue(app.waitForTerminalInput())
         let output = app.webViews.firstMatch.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Deterministic capability fixture")).firstMatch
         XCTAssertTrue(output.waitForExistence(timeout: 10))
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap() })
         capture("terminal-keyboard")
         app.tapTerminalKey("Arrow keys")
         app.buttons["Shift"].tap()

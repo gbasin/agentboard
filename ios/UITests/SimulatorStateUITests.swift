@@ -71,8 +71,7 @@ final class SimulatorStateUITests: XCTestCase {
         let enter = app.buttons["Enter"]
         XCTAssertTrue(enter.waitForExistence(timeout: 10))
         XCTAssertTrue(app.waitForTerminalInput())
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap() })
         for name in ["Enter", "Escape", "Tab", "Arrow keys", "Control", "Paste text", "Hide keyboard"] {
             let key = app.revealTerminalKey(name)
             assertVisible(key, in: app)
@@ -116,8 +115,7 @@ final class SimulatorStateUITests: XCTestCase {
         XCTAssertTrue(app.waitForTerminalInput())
         assertVisible(app.buttons["available-media"], in: app)
         capture("sim-portrait-media-controls")
-        terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.showKeyboard { terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap() })
         XCUIDevice.shared.orientation = .landscapeLeft
         sleep(1)
         assertVisible(app.buttons["session-overview"], in: app)
