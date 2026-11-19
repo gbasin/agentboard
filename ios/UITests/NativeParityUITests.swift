@@ -93,8 +93,7 @@ final class NativeParityUITests: XCTestCase {
         reveal(row, in: app)
         XCTAssertTrue(row.waitForExistence(timeout: 10)); XCTAssertTrue(row.isHittable); row.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["Enter"])
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, app.debugDescription)
+        XCTAssertTrue(app.waitForTerminalInput(), app.debugDescription)
     }
     func testDirectoryBrowserPresetAndDuplicate() {
         let app = app(); app.buttons["New session"].tap()
@@ -110,7 +109,7 @@ final class NativeParityUITests: XCTestCase {
         capture("create-presets")
         app.buttons["Create"].tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 15))
-        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        XCTAssertTrue(app.waitForTerminalInput())
         app.buttons["Session actions"].tap(); tapMenu("Duplicate session", in: app)
         XCTAssertTrue(app.textFields["session-command"].waitForExistence(timeout: 5))
         XCTAssertTrue((app.textFields["session-project"].value as? String ?? "").hasSuffix("/tmp/ab-ios-parity/project"))

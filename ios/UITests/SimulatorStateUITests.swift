@@ -70,8 +70,7 @@ final class SimulatorStateUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
         let enter = app.buttons["Enter"]
         XCTAssertTrue(enter.waitForExistence(timeout: 10))
-        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: enter)
-        waitForExpectations(timeout: 15)
+        XCTAssertTrue(app.waitForTerminalInput())
         app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         for name in ["Enter", "Escape", "Tab", "Arrow keys", "Control", "Paste text", "Hide keyboard"] {
@@ -114,7 +113,7 @@ final class SimulatorStateUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
         let terminal = app.webViews.firstMatch
         XCTAssertTrue(terminal.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        XCTAssertTrue(app.waitForTerminalInput())
         assertVisible(app.buttons["available-media"], in: app)
         capture("sim-portrait-media-controls")
         terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()

@@ -29,7 +29,7 @@ final class CompactTerminalUITests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", base]; app.launch()
         XCTAssertTrue(app.buttons["session-alpha-local"].waitForExistence(timeout: 15))
         app.buttons["session-alpha-local"].tap()
-        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        XCTAssertTrue(app.waitForTerminalInput())
         return app
     }
     func testProjectContextFollowsSessionSwitch() {
@@ -40,7 +40,7 @@ final class CompactTerminalUITests: XCTestCase {
         XCTAssertEqual(alpha.value as? String, "/work/alpha, Working")
         alpha.tap()
         app.buttons["Beta approval"].tap()
-        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        XCTAssertTrue(app.waitForTerminalInput())
         let beta = app.buttons["Switch session, Beta approval"]
         XCTAssertTrue(beta.waitForExistence(timeout: 5))
         XCTAssertEqual(beta.value as? String, "/work/beta, Permission")
@@ -86,7 +86,7 @@ final class CompactTerminalUITests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", base]; app.launch()
         XCTAssertTrue(app.buttons["session-alpha-local"].waitForExistence(timeout: 15))
         app.buttons["session-alpha-local"].tap()
-        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        XCTAssertTrue(app.waitForTerminalInput())
         app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         let strip = app.scrollViews["terminal-quick-keys"]
@@ -128,7 +128,7 @@ final class CompactTerminalUITests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", base]; app.launch()
         XCTAssertTrue(app.buttons["session-alpha-local"].waitForExistence(timeout: 15))
         app.buttons["session-alpha-local"].tap()
-        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        XCTAssertTrue(app.waitForTerminalInput())
         app.tapTerminalKey("Number keys")
         XCTAssertTrue(app.navigationBars["Number keys"].waitForExistence(timeout: 5))
         app.buttons["7"].tap()
@@ -149,7 +149,7 @@ final class CompactTerminalUITests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", base]; app.launch()
         XCTAssertTrue(app.buttons["session-alpha-local"].waitForExistence(timeout: 15))
         app.buttons["session-alpha-local"].tap()
-        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        XCTAssertTrue(app.waitForTerminalInput())
         app.buttons["Session actions"].tap()
         XCTAssertTrue(app.collectionViews.firstMatch.waitForExistence(timeout: 5))
         let menu = app.collectionViews.allElementsBoundByIndex.last!

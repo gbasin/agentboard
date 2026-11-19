@@ -125,7 +125,7 @@ final class NativeGlassUITests: XCTestCase {
         if !row.isHittable { app.collectionViews.firstMatch.swipeDown() }
         row.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        XCTAssertTrue(app.waitForTerminalInput())
         let output = app.webViews.firstMatch.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Deterministic capability fixture")).firstMatch
         XCTAssertTrue(output.waitForExistence(timeout: 10))
         app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()

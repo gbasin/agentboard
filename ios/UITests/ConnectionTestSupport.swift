@@ -1,8 +1,12 @@
 import XCTest
 
+/// Terminal attach spans a tmux client, the WebSocket, and WebKit. On hosted
+/// 3-CPU runners during Simulator boot it has taken longer than 20 seconds.
+let terminalAttachTimeout: TimeInterval = 60
+
 extension XCUIApplication {
     /// A WebView exists before WebKit and the server finish attaching the terminal.
-    func waitForTerminalInput(timeout: TimeInterval) -> Bool {
+    func waitForTerminalInput(timeout: TimeInterval = terminalAttachTimeout) -> Bool {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: buttons["Enter"])
         return XCTWaiter.wait(for: [ready], timeout: timeout) == .completed
     }

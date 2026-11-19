@@ -31,9 +31,7 @@ final class LiveUITests: XCTestCase {
         row.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Enter"].waitForExistence(timeout: 10))
-        let ready = NSPredicate(format: "enabled == true")
-        expectation(for: ready, evaluatedWith: app.buttons["Enter"])
-        waitForExpectations(timeout: 15)
+        XCTAssertTrue(app.waitForTerminalInput())
     }
     func type(_ command: String, app: XCUIApplication) {
         app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()
@@ -62,8 +60,7 @@ final class LiveUITests: XCTestCase {
         XCUIDevice.shared.press(.home)
         sleep(2)
         app.activate()
-        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: app.buttons["Enter"])
-        waitForExpectations(timeout: 15)
+        XCTAssertTrue(app.waitForTerminalInput())
         XCTAssertTrue(output("SWIFT_\(token)_OK", in: app).waitForExistence(timeout: 5))
         type("printf 'RESUME_%s_OK\\n' \(token)", app: app)
         XCTAssertTrue(output("RESUME_\(token)_OK", in: app).waitForExistence(timeout: 5))
@@ -166,7 +163,7 @@ final class LiveUITests: XCTestCase {
         flick()
         XCUIDevice.shared.press(.home)
         app.activate()
-        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        XCTAssertTrue(app.waitForTerminalInput())
         let returned = terminal.staticTexts.allElementsBoundByIndex.map(\.label).filter { $0.hasPrefix("PAUSE_\(token)_") }
         XCTAssertFalse(returned.isEmpty)
         // tmux's clock/header and xterm's live announcement are transient. A

@@ -19,8 +19,7 @@ final class TailnetSmokeTests: XCTestCase {
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
-        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: app.buttons["Enter"])
-        waitForExpectations(timeout: 20)
+        XCTAssertTrue(app.waitForTerminalInput())
         XCTAssertTrue(app.webViews.firstMatch.staticTexts.firstMatch.waitForExistence(timeout: 10))
         app.navigationBars.buttons.element(boundBy: 0).tap()
     }
