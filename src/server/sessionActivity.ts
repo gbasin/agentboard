@@ -151,7 +151,7 @@ export class SessionActivityTracker {
       const paths = [...new Set(getSubagentLogPaths(session.logFilePath!, kind, session.agentSessionId!))].filter(p => p !== session.logFilePath)
       const children: SubagentActivity[] = []
       // Sequential async reads keep filesystem fanout bounded.
-      for (const logPath of paths.slice(0, CHILD_READ_LIMIT)) children.push(await this.child(logPath, kind))
+      for (const logPath of await newestFirst(paths, CHILD_READ_LIMIT)) children.push(await this.child(logPath, kind))
       const running = children.filter(c => c.activity.phase === 'model' || c.activity.phase === 'tool').length
       const uncertain = children.filter(c => c.activity.phase === 'unknown').length + Math.max(0, paths.length - CHILD_READ_LIMIT)
       const blocked = children.filter(c => c.activity.phase === 'blocked').length
@@ -164,6 +164,21 @@ export class SessionActivityTracker {
     }
     return result
   }
+}
+
+// Long-lived sessions accumulate thousands of finished children. Only the
+// most recently written transcripts can be live, so the read cap keeps those
+// rather than whichever names sort first.
+async function newestFirst(paths: string[], limit: number): Promise<string[]> {
+  if (paths.length <= limit) return paths
+  const stamped: { logPath: string; mtime: number }[] = []
+  for (const logPath of paths) {
+    let mtime = -Infinity
+    try { mtime = (await fs.stat(logPath)).mtimeMs } catch { /* missing files sort last */ }
+    stamped.push({ logPath, mtime })
+  }
+  stamped.sort((a, b) => b.mtime - a.mtime || a.logPath.localeCompare(b.logPath))
+  return stamped.slice(0, limit).map(s => s.logPath)
 }
 
 function priority(activity: AgentActivity): number {

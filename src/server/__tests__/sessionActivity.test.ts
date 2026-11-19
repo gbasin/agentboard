@@ -292,3 +292,19 @@ test('stoppedByUser metadata ends a child only while strictly newer than its tra
     expect(s.activity?.running).toBe(1)
   }
 })
+
+test('read cap keeps the most recently written children, not the first names', async () => {
+  const log = path.join(dir, 'parent.jsonl'), childDir = path.join(dir, 'parent/subagents')
+  await fs.mkdir(childDir, { recursive: true }); await fs.writeFile(log, line({ type: 'api-request' }))
+  const old = new Date(Date.now() - 60 * 60 * 1000)
+  for (let i = 0; i < 260; i++) {
+    const p = path.join(childDir, `agent-a${String(i).padStart(3, '0')}.jsonl`)
+    await fs.writeFile(p, line({ type: 'assistant', message: { stop_reason: 'end_turn', content: [] } }))
+    await fs.utimes(p, old, old)
+  }
+  // Sorts after every finished child, so a name-ordered cap would skip it.
+  await fs.writeFile(path.join(childDir, 'agent-zzz-live.jsonl'), line(claudeTool('x', 'Bash')))
+  const [s] = await new SessionActivityTracker().enrich([session('claude', log)])
+  expect(s.activity).toMatchObject({ running: 1, total: 261, unknown: 5 })
+  expect(s.activity?.subagents[0].id).toBe('zzz-live')
+})
