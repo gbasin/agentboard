@@ -15,6 +15,16 @@ test_runs=("$products"/*.xctestrun)
 if [ "${#test_runs[@]}" -ne 1 ] || [ ! -f "${test_runs[0]}" ]; then
   echo "Expected one .xctestrun in $products" >&2; exit 2
 fi
+# Run from a trimmed copy beside the original so __TESTROOT__ still resolves.
+# Xcode's defaults record H.264 video of every UI test and inject the runtime
+# performance checker; both add CPU load on 3-CPU hosted runners. Failure
+# screenshots and UI snapshots remain in the result bundle.
+xctestrun="$(dirname "${test_runs[0]}")/.e2e-$(basename "${test_runs[0]}")"
+cp "${test_runs[0]}" "$xctestrun"
+for target in $(plutil -convert json -o - "$xctestrun" | bun -e 'console.log(Object.keys(await Bun.stdin.json()).filter(key => !key.startsWith("__")).join("\n"))'); do
+  plutil -replace "$target.PreferredScreenCaptureFormat" -string screenshots "$xctestrun"
+  plutil -replace "$target.UITargetAppPerformanceAntipatternCheckerEnabled" -bool NO "$xctestrun"
+done
 xcrun simctl bootstatus "$udid" -b
 mkdir -p ios/evidence
 restore() {
@@ -31,6 +41,9 @@ for appearance in light dark; do
   selection=$(bun ios/scripts/e2e-selection.ts "$appearance" "$shard")
   args=()
   while IFS= read -r test; do args+=("-only-testing:$test"); done <<< "$selection"
-  xcodebuild test-without-building -parallel-testing-enabled NO -xctestrun "${test_runs[0]}" \
+  # One retry is a backstop for hosted-runner timing; the result bundle still
+  # records the first failure, so retried tests stay visible.
+  xcodebuild test-without-building -parallel-testing-enabled NO -xctestrun "$xctestrun" \
+    -retry-tests-on-failure -test-iterations 2 -collect-test-diagnostics never \
     -destination "id=$udid" -resultBundlePath "ios/evidence/e2e-$run_id-$appearance-$shard.xcresult" "${args[@]}"
 done

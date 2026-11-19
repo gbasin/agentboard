@@ -13,14 +13,10 @@ ci_diagnostics_start "$mode-$shard"
 trap ci_diagnostics_stop EXIT
 if [ -z "${IOS_TEST_PRODUCTS_DIR:-}" ]; then ci_phase build ./ios/scripts/build-for-testing.sh; fi
 export IOS_TEST_PRODUCTS_DIR=${IOS_TEST_PRODUCTS_DIR:-ios/.build/Build/Products}
+source ios/scripts/ci-simulator.sh
 # Finish cold Simulator boot before fixture services compete for CPU and process slots.
-discover_simulator() {
-  xcrun simctl list devices available -j | bun ios/scripts/ci-simulator.ts
-}
-udid=${IOS_SIMULATOR_UDID:-}
-ci_phase simulator-cache xcrun simctl runtime dyld_shared_cache update --all
-if [ -z "$udid" ]; then udid=$(ci_phase simulator-discovery discover_simulator); fi
-ci_phase simulator-boot xcrun simctl boot "$udid" || true
+# The workflow starts the boot before dependency setup and passes IOS_SIMULATOR_UDID.
+udid=$(ci_phase simulator-start ci_start_simulator)
 ci_phase simulator-ready xcrun simctl bootstatus "$udid" -b
 fixture_root=/tmp/ab-ios-parity
 fixture_archive="/tmp/ab-ios-fixture-logs/$mode-$shard-$$"
@@ -29,7 +25,7 @@ chmod 700 "$fixture_root"
 pids=()
 cleanup() {
   local status=$? archive_status=0
-  for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+  for pid in "${pids[@]}" ${photos_pid:-}; do kill "$pid" 2>/dev/null || true; done
   local socket="$fixture_root/tmux-$(id -u)/default"
   env -u TMUX tmux -S "$socket" list-windows -a -F '#{window_id}' 2>/dev/null | sort -u | while read -r window; do
     env -u TMUX tmux -S "$socket" kill-window -t "$window" || true
@@ -46,11 +42,21 @@ export CLAUDE_RESUME_CMD="/bin/zsh -f -c 'exec /bin/zsh -f' {sessionId}"
 unset TMUX
 if needs backend; then
   ci_phase tmux-ready bun ios/scripts/tmux-ready.ts
-  bun src/server/index.ts > "$fixture_root/backend.log" 2>&1 & backend_pid=$!
+  # Hosted Simulator boots keep the 3-CPU runner saturated for many minutes;
+  # `tmux -V` alone has taken 3.7s. Raise only this backend's tmux budget and
+  # keep the stall watchdog from spawning `sample` into the same overload.
+  AGENTBOARD_TMUX_TIMEOUT_MS=15000 AGENTBOARD_STALL_WATCHDOG=0 \
+    bun src/server/index.ts > "$fixture_root/backend.log" 2>&1 & backend_pid=$!
   pids+=("$backend_pid")
-  ci_phase backend-ready wait_backend_ready "$backend_pid" 60
+  ci_phase backend-ready wait_backend_ready "$backend_pid" 180
   if needs live; then ci_phase seed-live bun ios/scripts/seed-live.ts; fi
   if needs parity; then ci_phase seed-parity bun ios/scripts/seed-parity.ts; fi
+fi
+# Photos library setup can take minutes on a fresh Simulator. Overlap it with
+# fixture startup and app installation, then join it before tests.
+photos_pid=
+if needs photos; then
+  ci_phase photos-import xcrun simctl addmedia "$udid" "$fixture_root/photo.png" & photos_pid=$!
 fi
 export NATIVE_PARITY_SHELL_RESUME=1
 if needs warm; then
@@ -75,7 +81,8 @@ fi
 # Each batch gets fresh app preferences and Documents, even on a warm Simulator.
 ci_phase app-uninstall xcrun simctl uninstall "$udid" dev.agentboard.ios-spike 2>/dev/null || true
 ci_phase app-install xcrun simctl install "$udid" "$IOS_TEST_PRODUCTS_DIR/Debug-iphonesimulator/AgentboardSpike.app"
-if needs photos; then ci_phase photos-import xcrun simctl addmedia "$udid" "$fixture_root/photo.png"; fi
+# `wait` must run in this shell, which owns the import job; its status fails the batch.
+if [ -n "$photos_pid" ]; then wait "$photos_pid"; fi
 if needs files; then
   ci_phase files-import bash ios/scripts/seed-file.sh "$udid" "$fixture_root/upload.txt"
 fi
@@ -86,6 +93,6 @@ for pid in "${pids[@]}"; do
     exit 1
   fi
 done
-if needs backend; then ci_phase backend-pre-tests wait_backend_ready "$backend_pid" 30; fi
+if needs backend; then ci_phase backend-pre-tests wait_backend_ready "$backend_pid" 90; fi
 ci_phase tests ./ios/scripts/test-e2e.sh "$udid" "$mode" "$shard"
 if needs files; then ci_phase files-export-verify bash ios/scripts/verify-file-export.sh "$udid" "$fixture_root/export-expected.pdf"; fi

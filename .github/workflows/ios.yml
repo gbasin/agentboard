@@ -61,7 +61,8 @@ jobs:
       # Keep five warm simulators; balance measured appearance batches across them.
       matrix: ${{ fromJSON(needs.build.outputs.workers) }}
     runs-on: xcode-27
-    timeout-minutes: 40
+    # Two batches plus at most one retry of each failed UI test.
+    timeout-minutes: 60
     env:
       IOS_TEST_PRODUCTS_DIR: ${{ github.workspace }}/ios/.build/Build/Products
     steps:
@@ -69,6 +70,13 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: .bun-version
+      - name: Stop host Spotlight indexing
+        # mds_stores and mdworker_shared index the checkout and the new
+        # Simulator's data while the cold boot already saturates the runner.
+        run: sudo mdutil -a -i off || true
+      - name: Start Simulator boot before dependency setup
+        # ci-e2e.sh waits for bootstatus; the boot overlaps tmux, Bun and artifact setup.
+        run: echo "IOS_SIMULATOR_UDID=$(ios/scripts/ci-simulator.sh)" >> "$GITHUB_ENV"
       - run: brew install tmux
       - run: bun install --frozen-lockfile
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
