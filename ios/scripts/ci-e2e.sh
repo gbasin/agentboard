@@ -106,6 +106,6 @@ for pid in "${pids[@]}"; do
     exit 1
   fi
 done
-if needs backend; then ci_phase backend-pre-tests wait_backend_ready "$backend_pid" 90; fi
+if needs backend; then ci_phase backend-pre-tests wait_backend_ready "$backend_pid" 180; fi
 ci_phase tests ./ios/scripts/test-e2e.sh "$udid" "$mode" "$shard"
 if needs files; then ci_phase files-export-verify bash ios/scripts/verify-file-export.sh "$udid" "$fixture_root/export-expected.pdf"; fi
