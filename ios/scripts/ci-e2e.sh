@@ -66,11 +66,18 @@ fi
 for fixture in shell-server pr-fixture parity-gap-fixture media-activity-fixture; do
   if ! needs "$fixture"; then continue; fi
   bun "ios/scripts/$fixture.ts" > "$fixture_root/$fixture.log" 2>&1 & pids+=("$!")
+  if [ "$fixture" = media-activity-fixture ]; then media_pid=$!; fi
 done
 if needs media-activity-fixture; then
-  # The control endpoint starts only after the fixture session has been created.
+  # The control endpoint starts only after the fixture wakes its session, which
+  # can take over a minute while the Simulator boot saturates the runner.
   wait_media() {
-    for attempt in {1..60}; do
+    local deadline=$((SECONDS + 150))
+    while [ "$SECONDS" -lt "$deadline" ]; do
+      if ! kill -0 "$media_pid" 2>/dev/null; then
+        echo "Media activity fixture exited before its controls started; inspect archived fixture logs." >&2
+        return 1
+      fi
       if curl --max-time 10 -fsS -X POST http://127.0.0.1:4193/activity/running >/dev/null; then return; fi
       sleep 1
     done

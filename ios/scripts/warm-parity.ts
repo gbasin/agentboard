@@ -2,7 +2,8 @@
 if(process.env.NATIVE_PARITY_SHELL_RESUME !== '1') throw new Error('Start the private backend with a shell resume template, then set NATIVE_PARITY_SHELL_RESUME=1.')
 const ws = new WebSocket('ws://127.0.0.1:4151/ws?catalog=2')
 const id = '11111111-2222-4333-8444-555555555555'
-const timer = setTimeout(() => { throw new Error('Fixture lifecycle timed out') }, 20000)
+// Session creation spawns tmux windows; hosted Simulator boots can delay that past a minute.
+const timer = setTimeout(() => { throw new Error('Fixture lifecycle timed out') }, 120_000)
 let started = false
 ws.onmessage = async event => {
  const message = JSON.parse(String(event.data))
