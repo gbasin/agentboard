@@ -187,7 +187,7 @@ test('launcher uses a pinned binary and escapes shell and XML paths', t => {
   assert.ok(launcher.includes("'\\''"))
   // mkdtemp's random suffix can itself spell npm or npx; check only the rest.
   assert.ok(!/npm|npx|latest/.test(launcher.split(base).join('')))
-  assert.ok(launcher.includes(`exec '${base}/quote'\\''`))
+  assert.ok(launcher.includes(`\nexec '${base}/quote'\\'' & space/bin/agentboard'\n`))
   assert.ok(plist.includes('&lt;value&gt;&amp;'))
   assert.ok(!plist.includes('<key>TMUX</key>'))
   assert.ok(plist.includes('AGENTBOARD_STATIC_DIR'))

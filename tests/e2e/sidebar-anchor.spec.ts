@@ -108,7 +108,7 @@ test('Settings switches the anchor to Bottom and it persists across reload and d
   }
 })
 
-test('Bottom: first row lowest, rows above the filter bar, bars stacked at the bottom, gap on top', async ({
+test('Bottom: first row lowest, rows above the filter bar, filter bar flush with the bottom, gap on top', async ({
   page,
 }) => {
   const prefix = uniquePrefix('geo')
@@ -400,6 +400,8 @@ test('Top (default) keeps the original order and stacking', async ({ page }) => 
   await expect(sidebar.getByTestId('session-card')).toHaveCount(3, DISCOVERY)
   await expect.poll(() => namesTopToBottom(sidebar, prefix)).toEqual(names)
 
+  const vh = await viewportHeight(page)
+  const side = await box(sidebar)
   const bar = await box(filterBar(sidebar))
   const first = await box(cardByName(sidebar, names[0]))
   const activeLabel = await box(sidebar.getByText('Active', { exact: true }))
@@ -412,6 +414,8 @@ test('Top (default) keeps the original order and stacking', async ({ page }) => 
   expect(first.top).toBeGreaterThan(activeLabel.top)
   expect(hibernatingToggle.top).toBeGreaterThan(first.top)
   expect(historyToggle.top).toBeGreaterThan(hibernatingToggle.top)
+  // The column still fills the window with no strip below it.
+  expect(Math.abs(side.bottom - vh)).toBeLessThanOrEqual(1)
 })
 
 test.describe('mobile', () => {
