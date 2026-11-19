@@ -31,7 +31,7 @@ final class DocumentExportUITests: XCTestCase {
         let history = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Conversation history")).firstMatch
         XCTAssertTrue(history.waitForExistence(timeout: 10)); reveal(history, app: app); history.tap()
         let search = app.searchFields["Search"]
-        XCTAssertTrue(search.waitForExistence(timeout: 10)); search.tap(); search.typeText("parity-saved-transcript\n")
+        XCTAssertTrue(search.waitForExistence(timeout: 10)); search.typeIntoField("parity-saved-transcript\n")
         reveal(app.buttons["Media and links"], app: app); app.buttons["Media and links"].tap()
         let pdf = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "application/pdf")).firstMatch
         for _ in 0..<8 where !pdf.exists || !pdf.isHittable { app.collectionViews.firstMatch.swipeUp() }

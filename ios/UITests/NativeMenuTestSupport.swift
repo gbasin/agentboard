@@ -75,11 +75,14 @@ extension XCUIApplication {
         XCTFail("Menu action is unreachable: \(title)", file: file, line: line)
     }
 
-    func tapVisibleConfirmation(_ identifier: String, file: StaticString = #filePath, line: UInt = #line) {
+    func tapVisibleConfirmation(_ identifier: String, inSheet sheet: String, file: StaticString = #filePath, line: UInt = #line) {
         let button = self.buttons[identifier]
-        guard button.waitForExistence(timeout: 15) else {
+        // At accessibility text sizes the confirmation row starts below the
+        // fold, and the lazy list does not create it until it scrolls into view.
+        // Wait for the sheet, not the button, before scrolling toward it.
+        guard button.exists || self.navigationBars[sheet].waitForExistence(timeout: 15) else {
             attachNavigationFailure("confirmation-" + identifier)
-            XCTFail("Confirmation did not appear: \(identifier)", file: file, line: line)
+            XCTFail("Confirmation sheet did not appear: \(sheet)", file: file, line: line)
             return
         }
         let deadline = Date().addingTimeInterval(30)

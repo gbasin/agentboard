@@ -43,7 +43,7 @@ final class SimulatorStateUITests: XCTestCase {
         app.buttons["connection-status"].tap()
         let address = app.textFields["server-address"]
         XCTAssertTrue(address.waitForExistence(timeout: 5))
-        address.tap(); address.typeText("http://example.test:4040")
+        address.typeIntoField("http://example.test:4040")
         XCTAssertTrue(app.buttons["Connect"].isEnabled)
         assertVisible(app.buttons["Connect"], in: app)
         capture("sim-connection")
@@ -65,7 +65,7 @@ final class SimulatorStateUITests: XCTestCase {
         XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
         capture("sim-catalog")
         let search = app.searchFields["Find a session"]
-        search.tap(); search.typeText("native-live-one\n")
+        search.typeIntoField("native-live-one\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-live-one")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
         let enter = app.buttons["Enter"]
@@ -109,7 +109,7 @@ final class SimulatorStateUITests: XCTestCase {
         let app = launch(server: "http://127.0.0.1:4151")
         XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
         let search = app.searchFields["Find a session"]
-        search.tap(); search.typeText("native-media-activity\n")
+        search.typeIntoField("native-media-activity\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-media-activity")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
         let terminal = app.webViews.firstMatch

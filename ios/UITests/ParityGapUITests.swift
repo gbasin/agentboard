@@ -90,7 +90,7 @@ final class ParityGapUITests: XCTestCase {
     }
     private func open(_ name: String, in app: XCUIApplication) {
         let search = app.searchFields["Find a session"]
-        search.tap(); search.typeText(name + "\n")
+        search.typeIntoField(name + "\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
         reveal(row, in: app)
         XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()

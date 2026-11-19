@@ -2,9 +2,49 @@ import XCTest
 
 /// Replace iPhone field text through the native edit menu, not hardware-key shortcuts.
 extension XCUIElement {
+    var hasKeyboardFocus: Bool { (value(forKey: "hasKeyboardFocus") as? Bool) ?? false }
+
+    /// Tap until this field owns keyboard focus, then let it finish moving.
+    /// Under CI load a single tap can land before the field accepts focus, and
+    /// typeText then fails with "Neither element nor any descendant has keyboard focus".
+    @discardableResult
+    func focusForTyping(timeout: TimeInterval = 15, file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if !hasKeyboardFocus {
+                guard waitForExistence(timeout: max(0.1, deadline.timeIntervalSinceNow)) else { break }
+                tap()
+            }
+            let focused = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in self.hasKeyboardFocus }, object: nil)
+            if XCTWaiter.wait(for: [focused], timeout: min(3, max(0.1, deadline.timeIntervalSinceNow))) == .completed {
+                waitForStableFrame(until: deadline)
+                return true
+            }
+        }
+        XCTFail("Field did not receive keyboard focus: \(debugDescription)", file: file, line: line)
+        return false
+    }
+
+    /// Focus the field, then type. Use for native text and search fields.
+    func typeIntoField(_ text: String, file: StaticString = #filePath, line: UInt = #line) {
+        guard focusForTyping(file: file, line: line) else { return }
+        typeText(text)
+    }
+
+    /// A focused field can still be scrolling above the keyboard; taps on a
+    /// moving frame miss. Wait for two equal samples instead of a fixed sleep.
+    private func waitForStableFrame(until deadline: Date) {
+        var previous = frame
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.25)
+            let current = frame
+            if current == previous { return }
+            previous = current
+        }
+    }
+
     func replaceNativeText(with value: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        tap()
-        sleep(1) // Let the field finish scrolling above the keyboard.
+        guard focusForTyping(file: file, line: line) else { return }
         let current = self.value as? String
         if current != "" && current != placeholderValue {
             // A second tap at the insertion point opens edit options; a hold

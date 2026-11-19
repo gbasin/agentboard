@@ -34,7 +34,7 @@ final class NativeClipboardUITests: XCTestCase {
         defer { UIPasteboard.general.items = [] }
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", "http://127.0.0.1:4151"]; app.launch()
         XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
-        let search = app.searchFields["Find a session"]; search.tap(); search.typeText("native-live-one\n")
+        let search = app.searchFields["Find a session"]; search.typeIntoField("native-live-one\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-live-one")).firstMatch
         reveal(row, in: app)
         XCTAssertTrue(row.waitForExistence(timeout: 10)); XCTAssertTrue(row.isHittable); row.tap()

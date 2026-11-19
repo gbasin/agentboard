@@ -22,7 +22,7 @@ final class NativeParityUITests: XCTestCase {
     }
     private func replace(_ field: XCUIElement, _ value: String) {
         if field.elementType == .searchField {
-            field.tap(); sleep(1)
+            guard field.focusForTyping() else { return }
             if field.buttons["Clear text"].exists { field.buttons["Clear text"].tap() }
             XCTAssertTrue((field.value as? String ?? "") == "" || (field.value as? String) == field.placeholderValue)
             field.typeText(value); return
@@ -106,7 +106,7 @@ final class NativeParityUITests: XCTestCase {
         app.buttons["child"].tap(); app.buttons["Parent directory"].tap(); capture("directories")
         app.buttons["Choose"].tap()
         let name = "parity-ui-" + String(UUID().uuidString.prefix(6))
-        app.textFields["session-name"].tap(); app.textFields["session-name"].typeText(name)
+        app.textFields["session-name"].typeIntoField(name)
         capture("create-presets")
         app.buttons["Create"].tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 15))
@@ -116,7 +116,7 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue((app.textFields["session-project"].value as? String ?? "").hasSuffix("/tmp/ab-ios-parity/project"))
         app.buttons["Cancel"].tap()
         app.buttons["Session actions"].tap(); tapMenu("Hibernate session", in: app)
-        app.tapVisibleConfirmation("confirm-end-session")
+        app.tapVisibleConfirmation("confirm-end-session", inSheet: "End session")
         XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 15))
         app.buttons["Library"].tap(); search(name, in: app)
         let row = app.buttons["saved-" + name]; XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
@@ -151,8 +151,8 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5)); capture("settings")
         tap("Command presets", in: app); tap("Add preset", in: app)
         let presetName = "Parity preset " + String(UUID().uuidString.prefix(6))
-        app.textFields["Label"].tap(); app.textFields["Label"].typeText(presetName)
-        app.textFields["Command"].tap(); app.textFields["Command"].typeText("/bin/zsh -f"); capture("preset-editor")
+        app.textFields["Label"].typeIntoField(presetName)
+        app.textFields["Command"].typeIntoField("/bin/zsh -f"); capture("preset-editor")
         app.buttons["Save"].tap()
         XCTAssertTrue(app.navigationBars["Command preset"].waitForNonExistence(timeout: 10))
         XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label CONTAINS %@", presetName)).firstMatch.waitForExistence(timeout: 10))
@@ -289,7 +289,7 @@ final class NativeParityUITests: XCTestCase {
             }
         }
         XCTAssertTrue(file.waitForExistence(timeout: 10))
-        file.tap()
+        tapPickerItem(file, below: picker, in: app)
         let open = app.buttons["Open"]
         if open.waitForExistence(timeout: 3) {
             // Files exposes Open before the selected provider item is ready.
@@ -313,6 +313,31 @@ final class NativeParityUITests: XCTestCase {
         app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap(); app.tapTerminalKey("Control"); app.typeText("u")
     }
 
+    /// At accessibility text sizes the Files grid places the fixture cell under
+    /// the floating browse tab bar. A plain tap() then lands on the tab bar,
+    /// selects nothing, and the picker never dismisses. Scroll the cell into the
+    /// band between the picker's navigation bar and its tab bar, then tap there.
+    private func tapPickerItem(_ item: XCUIElement, below navigationBar: XCUIElement, in app: XCUIApplication) {
+        let grid = app.collectionViews["File View"]
+        let tabBar = app.tabBars["DOC.browsingModeTabBar"]
+        for _ in 0..<8 {
+            let top = navigationBar.frame.maxY
+            let bottom = tabBar.exists ? tabBar.frame.minY : app.frame.maxY
+            let visibleTop = max(item.frame.minY, top), visibleBottom = min(item.frame.maxY, bottom)
+            if visibleBottom - visibleTop >= min(80, item.frame.height) {
+                app.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(CGVector(dx: item.frame.midX, dy: (visibleTop + visibleBottom) / 2)).tap()
+                return
+            }
+            guard grid.exists, bottom - top > 40 else { break }
+            // Drag within the visible band; a swipe can fling past the last row.
+            let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: grid.frame.midX, dy: bottom - 20))
+            let end = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: grid.frame.midX, dy: top + 20))
+            start.press(forDuration: 0.05, thenDragTo: end)
+        }
+        XCTFail("Files item stayed outside the visible picker area.\n" + app.debugDescription)
+    }
+
     func testCatalogSearchAndPreferencePersistence() {
         let app = app(); capture("catalog")
         let search = app.searchFields["Find a session"]
@@ -326,8 +351,9 @@ final class NativeParityUITests: XCTestCase {
         let toggle = app.switches["Session ID prefix"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         let before = toggle.value as? String
-        toggle.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap(); sleep(1)
-        XCTAssertNotEqual(toggle.value as? String, before)
+        toggle.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap()
+        let toggled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in toggle.value as? String != before }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [toggled], timeout: 5), .completed, "Session ID prefix did not toggle.")
         if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
         if app.buttons["Done"].exists { app.buttons["Done"].tap() }
         else { app.buttons["Close"].firstMatch.tap() }

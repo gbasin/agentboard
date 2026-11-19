@@ -15,7 +15,7 @@ final class TailnetSmokeTests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.waitForBoardConnection(timeout: 20))
         let search = app.searchFields.firstMatch
-        search.tap(); search.typeText(name)
+        search.typeIntoField(name)
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
@@ -37,7 +37,7 @@ final class TailnetSmokeTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", url]; app.launch()
         XCTAssertTrue(app.waitForBoardConnection(timeout: 20))
         let search = app.searchFields["Find a session"]
-        search.tap(); search.typeText(name + "\n")
+        search.typeIntoField(name + "\n")
         let requests = app.buttons["pull-requests-" + sessionID]
         XCTAssertTrue(requests.waitForExistence(timeout: 15)); requests.tap()
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "#" + number)).firstMatch
