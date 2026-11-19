@@ -44,7 +44,7 @@ db.close()
 const sessions = await (await fetch('http://127.0.0.1:4151/api/sessions')).json() as { agentSessionId?: string }[]
 if (!sessions.some(session => session.agentSessionId === id)) await new Promise<void>((resolve, reject) => {
   const ws = new WebSocket('ws://127.0.0.1:4151/ws?catalog=2')
-  // Session creation spawns tmux windows; hosted Simulator boots can delay that past a minute.
+  // Session creation spawns tmux windows, which is slow while the Simulator boot loads the runner.
   const timer = setTimeout(() => { ws.close(); reject(new Error('Wake timeout')) }, 90_000)
   ws.onopen = () => ws.send(JSON.stringify({ type: 'session-wake', sessionId: id }))
   ws.onmessage = event => {

@@ -94,10 +94,15 @@ for (const scenario of [
       }
       expect(calls).not.toContain('dyld_shared_cache update --all')
       const cache = calls.indexOf('xcrun simctl runtime dyld_shared_cache update mock-runtime')
-      expect(cache).toBeGreaterThanOrEqual(0)
-      expect(cache).toBeLessThan(calls.indexOf('xcrun simctl boot '))
+      if (udidOverride) {
+        // An explicit UDID can name another runtime; never prepare the pinned one.
+        expect(calls).not.toContain('dyld_shared_cache')
+      } else {
+        expect(cache).toBeGreaterThanOrEqual(0)
+        expect(cache).toBeLessThan(calls.indexOf('xcrun simctl boot '))
+      }
       if (plan.includes('backend')) {
-        expect(cache).toBeLessThan(calls.indexOf('bun src/server/index.ts'))
+        if (!udidOverride) expect(cache).toBeLessThan(calls.indexOf('bun src/server/index.ts'))
         expect(calls.indexOf('phase tmux-ready')).toBeLessThan(calls.indexOf('bun src/server/index.ts'))
         expect(calls.indexOf('phase backend-pre-tests')).toBeGreaterThan(calls.indexOf('xcrun simctl install '))
         expect(calls.indexOf('phase backend-pre-tests')).toBeLessThan(calls.indexOf('\ntests\n'))

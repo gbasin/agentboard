@@ -4,11 +4,14 @@
 # tvOS, watchOS and visionOS runtime on the image.
 ci_start_simulator() {
   local runtime udid=${IOS_SIMULATOR_UDID:-}
+  # An explicit UDID may name a Simulator on any runtime: skip the pinned
+  # runtime's preparation and discovery. The workflow's early step prepares
+  # the pinned runtime once, then exports the UDID for later batches.
   # Explicit returns keep failures fatal inside command substitution, where
   # Bash ignores errexit.
-  runtime=$(bun ios/scripts/ci-simulator.ts runtime) || return
-  xcrun simctl runtime dyld_shared_cache update "$runtime" >&2 || return
   if [ -z "$udid" ]; then
+    runtime=$(bun ios/scripts/ci-simulator.ts runtime) || return
+    xcrun simctl runtime dyld_shared_cache update "$runtime" >&2 || return
     udid=$(xcrun simctl list devices available -j | bun ios/scripts/ci-simulator.ts) || return
   fi
   # 149 means already booted, which an early-start workflow step makes the normal case.

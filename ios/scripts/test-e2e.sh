@@ -17,7 +17,7 @@ if [ "${#test_runs[@]}" -ne 1 ] || [ ! -f "${test_runs[0]}" ]; then
 fi
 # Run from a trimmed copy beside the original so __TESTROOT__ still resolves.
 # Xcode's defaults record H.264 video of every UI test and inject the runtime
-# performance checker; both add CPU load on 3-CPU hosted runners. Failure
+# performance checker; both add CPU load on hosted runners. Failure
 # screenshots and UI snapshots remain in the result bundle.
 xctestrun="$(dirname "${test_runs[0]}")/.e2e-$(basename "${test_runs[0]}")"
 cp "${test_runs[0]}" "$xctestrun"

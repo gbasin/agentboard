@@ -23,14 +23,21 @@ fixture_archive="/tmp/ab-ios-fixture-logs/$mode-$shard-$$"
 mkdir "$fixture_root"
 chmod 700 "$fixture_root"
 pids=()
+# A backgrounded ci_phase is a subshell whose command is its child, and fixtures
+# can spawn their own children. Signal descendants before parents so none is orphaned.
+kill_tree() {
+  local child
+  for child in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$child"; done
+  kill "$1" 2>/dev/null || true
+}
 cleanup() {
   local status=$? archive_status=0
-  for pid in "${pids[@]}" ${photos_pid:-}; do kill "$pid" 2>/dev/null || true; done
+  for pid in "${pids[@]}" ${photos_pid:-}; do kill_tree "$pid"; done
   local socket="$fixture_root/tmux-$(id -u)/default"
   env -u TMUX tmux -S "$socket" list-windows -a -F '#{window_id}' 2>/dev/null | sort -u | while read -r window; do
     env -u TMUX tmux -S "$socket" kill-window -t "$window" || true
   done || true
-  for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null || true; done
+  for pid in "${pids[@]}" ${photos_pid:-}; do wait "$pid" 2>/dev/null || true; done
   mkdir -p /tmp/ab-ios-fixture-logs && mv "$fixture_root" "$fixture_archive" || archive_status=$?
   ci_diagnostics_stop
   if [ "$status" -ne 0 ]; then return "$status"; fi
@@ -42,9 +49,8 @@ export CLAUDE_RESUME_CMD="/bin/zsh -f -c 'exec /bin/zsh -f' {sessionId}"
 unset TMUX
 if needs backend; then
   ci_phase tmux-ready bun ios/scripts/tmux-ready.ts
-  # Hosted Simulator boots keep the 3-CPU runner saturated for many minutes;
-  # `tmux -V` alone has taken 3.7s. Raise only this backend's tmux budget and
-  # keep the stall watchdog from spawning `sample` into the same overload.
+  # The Simulator boot keeps the runner loaded. Raise only this backend's tmux
+  # budget, and keep the stall watchdog from spawning `sample` into that load.
   AGENTBOARD_TMUX_TIMEOUT_MS=15000 AGENTBOARD_STALL_WATCHDOG=0 \
     bun src/server/index.ts > "$fixture_root/backend.log" 2>&1 & backend_pid=$!
   pids+=("$backend_pid")
@@ -52,8 +58,8 @@ if needs backend; then
   if needs live; then ci_phase seed-live bun ios/scripts/seed-live.ts; fi
   if needs parity; then ci_phase seed-parity bun ios/scripts/seed-parity.ts; fi
 fi
-# Photos library setup can take minutes on a fresh Simulator. Overlap it with
-# fixture startup and app installation, then join it before tests.
+# Photos library setup is slow on a fresh Simulator. Overlap it with fixture
+# startup and app installation, then join it before tests.
 photos_pid=
 if needs photos; then
   ci_phase photos-import xcrun simctl addmedia "$udid" "$fixture_root/photo.png" & photos_pid=$!
@@ -69,8 +75,8 @@ for fixture in shell-server pr-fixture parity-gap-fixture media-activity-fixture
   if [ "$fixture" = media-activity-fixture ]; then media_pid=$!; fi
 done
 if needs media-activity-fixture; then
-  # The control endpoint starts only after the fixture wakes its session, which
-  # can take over a minute while the Simulator boot saturates the runner.
+  # The control endpoint starts only after the fixture wakes its session,
+  # which is slow while the Simulator boot loads the runner.
   wait_media() {
     local deadline=$((SECONDS + 150))
     while [ "$SECONDS" -lt "$deadline" ]; do

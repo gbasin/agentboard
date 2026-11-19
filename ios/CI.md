@@ -14,7 +14,7 @@ Both jobs use the standard `xcode-27` runner, [generally available](https://gith
 
 Each simulator job turns off host Spotlight indexing and starts the Simulator boot before tmux, Bun and artifact setup. The boot prepares only the pinned iOS 27.2 runtime's dyld shared cache. `ci-e2e.sh` waits for `bootstatus` before it starts fixture services. The Photos import runs in the background during fixture startup and app installation, and the batch waits for it before tests.
 
-Hosted `xcode-27` runners have 3 CPUs, and a cold iOS 27 Simulator keeps them saturated for many minutes. The CI backend therefore runs with `AGENTBOARD_TMUX_TIMEOUT_MS=15000` and `AGENTBOARD_STALL_WATCHDOG=0`. These settings apply only to the fixture backend. Readiness waits allow 180 seconds before fixtures and 90 seconds before tests.
+A cold Simulator boot keeps the hosted runner loaded, so the CI backend runs with `AGENTBOARD_TMUX_TIMEOUT_MS=15000` and `AGENTBOARD_STALL_WATCHDOG=0`. These settings apply only to the fixture backend. Readiness waits allow 180 seconds before fixtures and 90 seconds before tests.
 
 `test-e2e.sh` runs a trimmed copy of the `.xctestrun`. The copy captures screenshots instead of screen recordings and disables the performance anti-pattern checker. `xcodebuild` collects no failure diagnostics and retries each failed test once. The result bundle keeps the first failure, so a retried test stays visible.
 
@@ -49,7 +49,7 @@ IOS_TEST_PRODUCTS_DIR="$PWD/ios/.build/Build/Products" \
 
 Use `all` as the final argument to select every workflow. Omit `IOS_TEST_PRODUCTS_DIR` to build once before testing. Use `ci-e2e.sh` only on a disposable fixture host; it refuses to reuse `/tmp/ab-ios-parity` and archives its owned fixture directory after cleanup.
 
-Set `IOS_SIMULATOR_UDID` to select a different local Simulator when using `ci-e2e.sh`. An explicit UDID bypasses CI's pinned discovery. Local build and test scripts use the selected Xcode and the supplied UDID.
+Set `IOS_SIMULATOR_UDID` to select a different local Simulator when using `ci-e2e.sh`. An explicit UDID bypasses CI's pinned discovery and the pinned runtime's dyld cache preparation. Local build and test scripts use the selected Xcode and the supplied UDID.
 
 ## Results
 
