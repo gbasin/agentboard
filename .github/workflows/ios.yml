@@ -61,8 +61,9 @@ jobs:
       # Keep five warm simulators; balance measured appearance batches across them.
       matrix: ${{ fromJSON(needs.build.outputs.workers) }}
     runs-on: xcode-27
-    # Two batches plus at most one retry of each failed UI test.
-    timeout-minutes: 60
+    # Two batches plus at most one retry of each failed UI test. The terminal
+    # worker took 57 minutes in run 44583027059 with no retries.
+    timeout-minutes: 90
     env:
       IOS_TEST_PRODUCTS_DIR: ${{ github.workspace }}/ios/.build/Build/Products
     steps:
