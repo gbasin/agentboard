@@ -2,7 +2,17 @@ import XCTest
 
 /// Replace iPhone field text through the native edit menu, not hardware-key shortcuts.
 extension XCUIElement {
-    var hasKeyboardFocus: Bool { (value(forKey: "hasKeyboardFocus") as? Bool) ?? false }
+    /// Whether this element or a descendant owns keyboard focus, read from a
+    /// fresh snapshot. The private `hasKeyboardFocus` KVC key reported false on
+    /// Xcode 27.2 while the same element's description said "Keyboard Focused".
+    /// typeText accepts focus on a descendant, so check the whole subtree.
+    var hasKeyboardFocus: Bool {
+        guard exists else { return false }
+        let description = debugDescription
+        guard let start = description.range(of: "Element subtree:") else { return false }
+        let end = description.range(of: "Path to element:", range: start.upperBound..<description.endIndex)?.lowerBound ?? description.endIndex
+        return description[start.upperBound..<end].contains("Keyboard Focused")
+    }
 
     /// Tap until this field owns keyboard focus, then let it finish moving.
     /// Under CI load a single tap can land before the field accepts focus, and
