@@ -1,7 +1,7 @@
 import XCTest
 
-/// Terminal attach spans a tmux client, the WebSocket, and WebKit. On hosted
-/// 3-CPU runners during Simulator boot it has taken longer than 20 seconds.
+/// Terminal attach spans a tmux client, the WebSocket, and WebKit, and is
+/// slow on a loaded CI runner. Use one budget for every attach wait.
 let terminalAttachTimeout: TimeInterval = 60
 
 extension XCUIApplication {
@@ -12,8 +12,10 @@ extension XCUIApplication {
     }
 
     /// Tap until the software keyboard appears. Under CI load the first tap can
-    /// reach WebKit or a text view before it accepts focus, and a fixed
-    /// five-second wait then fails. Re-tap only after ten quiet seconds.
+    /// reach WebKit before it accepts focus, and a fixed short wait then fails.
+    /// Re-tap only after ten quiet seconds. Use for WebView coordinate taps only;
+    /// a re-tap on a native text view can open its edit menu, so native fields
+    /// use focusForTyping().
     func showKeyboard(timeout: TimeInterval = 30, by tap: () -> Void) -> Bool {
         let keyboard = keyboards.firstMatch
         let deadline = Date().addingTimeInterval(timeout)

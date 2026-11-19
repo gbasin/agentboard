@@ -49,7 +49,7 @@ final class LiveUITests: XCTestCase {
         app.tapTerminalKey("Paste text")
         let editor = app.textViews["Text to paste"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        editor.tap(); editor.typeText("printf 'LIVE_%s_OK\\n' \(token)")
+        editor.typeIntoField("printf 'LIVE_%s_OK\\n' \(token)")
         app.buttons["Insert"].tap()
         XCTAssertTrue(app.buttons["Hide keyboard"].waitForExistence(timeout: 5))
         XCTAssertFalse(output("LIVE_\(token)_OK", in: app).exists)
@@ -221,7 +221,8 @@ final class LiveUITests: XCTestCase {
         let token = String(UUID().uuidString.prefix(8))
         app.tapTerminalKey("Paste text")
         let editor = app.expandedPasteEditor()
-        XCTAssertTrue(app.showKeyboard { editor.tap() })
+        XCTAssertTrue(editor.focusForTyping())
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         editor.typeText("printf 'MULTI_A_%s_OK\\n' \(token)\nprintf 'MULTI_B_%s_OK\\n' \(token)")
         app.insertPasteDraft()
         XCTAssertFalse(output("MULTI_A_\(token)_OK", in: app).exists)

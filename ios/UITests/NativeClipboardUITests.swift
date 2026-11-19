@@ -40,7 +40,7 @@ final class NativeClipboardUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 10)); XCTAssertTrue(row.isHittable); row.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.waitForTerminalInput(), app.debugDescription)
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap()
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap() })
         app.tapTerminalKey("Control"); app.typeText("u")
         app.tapTerminalKey("Paste text")
         app.buttons["Paste from clipboard"].tap()
@@ -73,7 +73,7 @@ final class NativeClipboardUITests: XCTestCase {
         // An executed bare marker would fail in zsh; insertion must leave it in the prompt.
         let output = app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().filter { !$0.isWhitespace }
         XCTAssertFalse(output.contains("commandnotfound:" + marker))
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap()
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap() })
         app.tapTerminalKey("Control"); app.typeText("u")
     }
 }

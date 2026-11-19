@@ -98,8 +98,7 @@ final class SpikeUITests: XCTestCase {
         app.tapTerminalKey("Paste text")
         let editor = app.textViews["Text to paste"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        editor.tap()
-        editor.typeText("printf 'PASTE_%s_OK\\n' SAFE")
+        editor.typeIntoField("printf 'PASTE_%s_OK\\n' SAFE")
         app.buttons["Insert"].tap()
         XCTAssertTrue(app.buttons["Hide keyboard"].waitForExistence(timeout: 5))
         XCTAssertFalse(output("PASTE_SAFE_OK", in: app).exists)

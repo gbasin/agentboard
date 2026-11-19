@@ -115,7 +115,7 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue((app.textFields["session-project"].value as? String ?? "").hasSuffix("/tmp/ab-ios-parity/project"))
         app.buttons["Cancel"].tap()
         app.buttons["Session actions"].tap(); tapMenu("Hibernate session", in: app)
-        app.tapVisibleConfirmation("confirm-end-session", inSheet: "End session")
+        app.tapVisibleConfirmation("confirm-end-session", inSheet: "Hibernate session")
         XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 15))
         app.buttons["Library"].tap(); search(name, in: app)
         let row = app.buttons["saved-" + name]; XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
@@ -174,7 +174,8 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(attachmentSheet.waitForNonExistence(timeout: 10))
         app.tapTerminalKey("Paste text")
         let editor = app.expandedPasteEditor()
-        XCTAssertTrue(app.showKeyboard { editor.tap() })
+        XCTAssertTrue(editor.focusForTyping())
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         editor.typeText("printf 'NUM_%s_OK\\n' ")
         app.insertPasteDraft()
         let actions = app.buttons["Session actions"]
@@ -246,7 +247,7 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Attach to session"].waitForNonExistence(timeout: 15)); capture("inserted-photo")
         XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("/tmp/paste-") }, object: nil)], timeout: 10) == .completed)
         // Clear the unexecuted path; insertion must not execute a command.
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap(); app.tapTerminalKey("Control"); app.typeText("u")
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap() }); app.tapTerminalKey("Control"); app.typeText("u")
     }
 
     private func chooseFirstPhoto(in app: XCUIApplication) {
@@ -308,7 +309,7 @@ final class NativeParityUITests: XCTestCase {
         app.buttons["confirm-attachments"].tap()
         XCTAssertTrue(app.navigationBars["Attach to session"].waitForNonExistence(timeout: 15)); capture("inserted-file")
         XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("parity-upload.txt") }, object: nil)], timeout: 10) == .completed)
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap(); app.tapTerminalKey("Control"); app.typeText("u")
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap() }); app.tapTerminalKey("Control"); app.typeText("u")
     }
 
     /// At accessibility text sizes the Files grid places the fixture cell under
@@ -328,9 +329,12 @@ final class NativeParityUITests: XCTestCase {
                 return
             }
             guard grid.exists, bottom - top > 40 else { break }
-            // Drag within the visible band; a swipe can fling past the last row.
-            let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: grid.frame.midX, dy: bottom - 20))
-            let end = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: grid.frame.midX, dy: top + 20))
+            // Drag within the visible band; a swipe can fling past the item.
+            // Pull content down when the item is above the band, up otherwise.
+            let revealAbove = item.frame.midY < top
+            let low = bottom - 20, high = top + 20
+            let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: grid.frame.midX, dy: revealAbove ? high : low))
+            let end = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: grid.frame.midX, dy: revealAbove ? low : high))
             start.press(forDuration: 0.05, thenDragTo: end)
         }
         XCTFail("Files item stayed outside the visible picker area.\n" + app.debugDescription)

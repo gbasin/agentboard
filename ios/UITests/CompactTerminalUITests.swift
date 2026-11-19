@@ -52,7 +52,8 @@ final class CompactTerminalUITests: XCTestCase {
         let editor = app.textViews["Text to paste"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Insert"].isEnabled)
-        XCTAssertTrue(app.showKeyboard { editor.tap() })
+        XCTAssertTrue(editor.focusForTyping())
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         // Tap software keys: typeText does not exercise the keyboard's correction pipeline.
         for letter in "recieve" {
             app.keyboards.keys.matching(NSPredicate(format: "label ==[c] %@", String(letter))).firstMatch.tap()
