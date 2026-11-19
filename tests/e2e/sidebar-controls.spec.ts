@@ -35,10 +35,6 @@ function filterBar(scope: Locator): Locator {
     .locator('xpath=ancestor::div[contains(concat(" ", @class, " "), " sticky ")][1]')
 }
 
-function hintBar(scope: Locator): Locator {
-  return scope.getByText(/\[ \] nav/).locator('xpath=../..')
-}
-
 const dotButton = (scope: Locator) =>
   scope.getByRole('button', { name: /^Connection: .*Tailscale remote access$/ })
 const plainDot = (scope: Locator) => scope.getByRole('img', { name: /^Connection: / })
@@ -102,15 +98,13 @@ for (const anchor of ANCHORS) {
     await expect(page.locator('header')).toHaveCount(0)
 
     const bar = await box(filterBar(sidebar))
-    const hint = await box(hintBar(sidebar))
     const vh = await page.evaluate(() => window.innerHeight)
     if (anchor === 'top') {
       // The filter bar is the first row of the window.
       expect(bar.top).toBeLessThanOrEqual(1)
     } else {
-      // Filter bar sits directly on the hint bar at the window's bottom.
-      expect(Math.abs(bar.bottom - hint.top)).toBeLessThanOrEqual(1)
-      expect(Math.abs(hint.bottom - vh)).toBeLessThanOrEqual(1)
+      // The filter bar is the last row of the window.
+      expect(Math.abs(bar.bottom - vh)).toBeLessThanOrEqual(1)
     }
     for (const control of [
       sidebar.getByRole('button', { name: 'Filter', exact: true }),
@@ -381,7 +375,6 @@ for (const anchor of ANCHORS) {
   test(`${anchor} @180px: the right-hand controls neither wrap nor clip`, async ({ page }) => {
     const { sidebar } = await openBoard(page, { anchor, tailscaleIp: IP, width: 180 })
     const bar = await box(filterBar(sidebar))
-    const hint = await box(hintBar(sidebar))
     const gear = await box(sidebar.getByRole('button', { name: 'Settings', exact: true }))
     const side = await box(sidebar)
     const filter = await box(sidebar.getByRole('button', { name: 'Filter', exact: true }))
@@ -390,8 +383,8 @@ for (const anchor of ANCHORS) {
       await box(sidebar.getByRole('button', { name: 'New session', exact: true })),
       await box(sidebar.getByRole('button', { name: 'Settings', exact: true })),
     ]
-    // The bar keeps its single-row height (same h-10 as the hint bar).
-    expect(Math.abs(bar.height - hint.height)).toBeLessThanOrEqual(0.5)
+    // The bar keeps its single-row 40px height.
+    expect(Math.abs(bar.height - 40)).toBeLessThanOrEqual(0.5)
     for (const control of controls) {
       expect(Math.abs(control.height - gear.height)).toBeLessThanOrEqual(0.5)
       expect(inside(control, bar)).toBe(true)
