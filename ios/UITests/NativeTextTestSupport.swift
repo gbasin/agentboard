@@ -17,20 +17,24 @@ extension XCUIElement {
     /// Tap until this field owns keyboard focus, then let it finish moving.
     /// Under CI load a single tap can land before the field accepts focus, and
     /// typeText then fails with "Neither element nor any descendant has keyboard focus".
+    /// Poll directly: each focus check takes a full accessibility snapshot, which
+    /// can outlast a short XCTWaiter window on a saturated runner.
     @discardableResult
-    func focusForTyping(timeout: TimeInterval = 15, file: StaticString = #filePath, line: UInt = #line) -> Bool {
+    func focusForTyping(timeout: TimeInterval = 30, file: StaticString = #filePath, line: UInt = #line) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if !hasKeyboardFocus {
-                guard waitForExistence(timeout: max(0.1, deadline.timeIntervalSinceNow)) else { break }
-                tap()
-            }
-            let focused = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in self.hasKeyboardFocus }, object: nil)
-            if XCTWaiter.wait(for: [focused], timeout: min(3, max(0.1, deadline.timeIntervalSinceNow))) == .completed {
-                waitForStableFrame(until: deadline)
-                return true
-            }
+        guard waitForExistence(timeout: timeout) else {
+            XCTFail("Field does not exist: \(debugDescription)", file: file, line: line); return false
         }
+        if !hasKeyboardFocus { tap() }
+        var lastTap = Date()
+        while Date() < deadline {
+            if hasKeyboardFocus { waitForStableFrame(until: deadline); return true }
+            // Re-tap only after a long quiet period; a tap on a field that is
+            // gaining focus can open the edit menu instead.
+            if Date().timeIntervalSince(lastTap) > 8 { tap(); lastTap = Date() }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        if hasKeyboardFocus { return true }
         XCTFail("Field did not receive keyboard focus: \(debugDescription)", file: file, line: line)
         return false
     }
