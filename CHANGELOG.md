@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.10](https://github.com/gbasin/agentboard/compare/v0.46.9...v0.46.10) (2026-11-19)
+
+
+### Bug Fixes
+
+* count live subagents in sessions with many children ([#595](https://github.com/gbasin/agentboard/issues/595)) ([52f424d](https://github.com/gbasin/agentboard/commit/52f424dec4bc7ba76cc726bf6937a58389224738))
+
 ## [0.46.9](https://github.com/gbasin/agentboard/compare/v0.46.8...v0.46.9) (2026-11-16)
 
 
