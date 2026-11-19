@@ -185,7 +185,9 @@ test('launcher uses a pinned binary and escapes shell and XML paths', t => {
   const plist = renderService(base, base, release, { PATH: '/usr/bin:/bin', TMUX: 'live', CUSTOM: '<value>&' })
   const launcher = fs.readFileSync(path.join(stage, 'run.sh'), 'utf8')
   assert.ok(launcher.includes("'\\''"))
-  assert.ok(!/npm|npx|latest/.test(launcher))
+  // mkdtemp's random suffix can itself spell npm or npx; check only the rest.
+  assert.ok(!/npm|npx|latest/.test(launcher.split(base).join('')))
+  assert.ok(launcher.includes(`\nexec '${base}/quote'\\'' & space/bin/agentboard'\n`))
   assert.ok(plist.includes('&lt;value&gt;&amp;'))
   assert.ok(!plist.includes('<key>TMUX</key>'))
   assert.ok(plist.includes('AGENTBOARD_STATIC_DIR'))

@@ -42,10 +42,6 @@ function filterBar(scope: Locator): Locator {
     .locator('xpath=ancestor::div[contains(concat(" ", @class, " "), " sticky ")][1]')
 }
 
-function hintBar(scope: Locator): Locator {
-  return scope.getByText(/\[ \] nav/).locator('xpath=../..')
-}
-
 function scroller(sidebar: Locator): Locator {
   return sidebar.locator('.overflow-y-auto')
 }
@@ -112,7 +108,7 @@ test('Settings switches the anchor to Bottom and it persists across reload and d
   }
 })
 
-test('Bottom: first row lowest, rows above the filter bar, bars stacked at the bottom, gap on top', async ({
+test('Bottom: first row lowest, rows above the filter bar, filter bar flush with the bottom, gap on top', async ({
   page,
 }) => {
   const prefix = uniquePrefix('geo')
@@ -131,12 +127,10 @@ test('Bottom: first row lowest, rows above the filter bar, bars stacked at the b
 
   const vh = await viewportHeight(page)
   const bar = await box(filterBar(sidebar))
-  const hint = await box(hintBar(sidebar))
 
-  // Bottom stack: filter bar directly on the hint bar, which is flush with
-  // the window's bottom edge (no header row between them).
-  expect(Math.abs(hint.bottom - vh)).toBeLessThanOrEqual(1)
-  expect(Math.abs(bar.bottom - hint.top)).toBeLessThanOrEqual(1)
+  // Bottom stack: the filter bar is flush with the window's bottom edge
+  // (no header row or hint strip below it).
+  expect(Math.abs(bar.bottom - vh)).toBeLessThanOrEqual(1)
 
   // Every row sits above the filter bar; the first session is lowest and
   // touches the bar.
@@ -407,8 +401,8 @@ test('Top (default) keeps the original order and stacking', async ({ page }) => 
   await expect.poll(() => namesTopToBottom(sidebar, prefix)).toEqual(names)
 
   const vh = await viewportHeight(page)
+  const side = await box(sidebar)
   const bar = await box(filterBar(sidebar))
-  const hint = await box(hintBar(sidebar))
   const first = await box(cardByName(sidebar, names[0]))
   const activeLabel = await box(sidebar.getByText('Active', { exact: true }))
   const hibernatingToggle = await box(sidebar.getByRole('button', { name: /^Hibernating/ }))
@@ -420,7 +414,8 @@ test('Top (default) keeps the original order and stacking', async ({ page }) => 
   expect(first.top).toBeGreaterThan(activeLabel.top)
   expect(hibernatingToggle.top).toBeGreaterThan(first.top)
   expect(historyToggle.top).toBeGreaterThan(hibernatingToggle.top)
-  expect(Math.abs(hint.bottom - vh)).toBeLessThanOrEqual(1)
+  // The column still fills the window with no strip below it.
+  expect(Math.abs(side.bottom - vh)).toBeLessThanOrEqual(1)
 })
 
 test.describe('mobile', () => {
