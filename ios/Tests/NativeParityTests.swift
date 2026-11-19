@@ -3,8 +3,7 @@ import UIKit
 @testable import AgentboardSpike
 
 /// The app's 20-second action budget is for interactive use. These tests drive
-/// the real fixture backend while a cold Simulator saturates the CI runner,
-/// where wake and hibernate confirmations have taken longer.
+/// the real fixture backend on a loaded CI runner, so they allow longer.
 private let integrationActionTimeout: Duration = .seconds(90)
 
 @MainActor
@@ -65,10 +64,19 @@ final class NativeParityTests: XCTestCase {
     }
     func testConversationRenameWakeHibernateAndHistory() async throws {
         let id = "11111111-2222-4333-8444-555555555555"
-        // An unconfirmed rename must not leave the shared fixture renamed for
-        // later tests or for this test's retry.
+        // An unconfirmed action must not leave the shared fixture renamed or awake
+        // for later tests or for this test's retry. The server answers each step
+        // immediately, rejecting a step that does not apply (an inactive session
+        // cannot hibernate); log those and every other teardown error.
         addTeardownBlock { @MainActor [api] in
-            do { let _: SavedSession = try await api.request("api/library/parity-saved-transcript", method: "PATCH", body: ["name": "parity-saved-transcript"]) } catch {}
+            for step in ["session-hibernate", "session-move-to-history"] {
+                do {
+                    _ = try await SessionActions(timeout: integrationActionTimeout).perform(.lifecycle(type: step, id: id), at: api.address)
+                } catch { print("NativeParityTests teardown: \(step): \(error)") }
+            }
+            do {
+                let _: SavedSession = try await api.request("api/library/parity-saved-transcript", method: "PATCH", body: ["name": "parity-saved-transcript"])
+            } catch { print("NativeParityTests teardown: restore name: \(error)") }
         }
         _ = try await SessionActions(timeout: integrationActionTimeout).perform(.renameConversation(id: id, name: "parity-renamed"), at: api.address)
         _ = try await SessionActions(timeout: integrationActionTimeout).perform(.renameConversation(id: id, name: "parity-saved-transcript"), at: api.address)
