@@ -1,6 +1,7 @@
 /** Disposable native E2E fixtures. Refuses to write outside its private /tmp tree. */
 import { mkdir, writeFile } from 'node:fs/promises'
 import { nativePDFFixture } from './pdf-fixture'
+import { photoFixturePNG } from './photo-fixture'
 import { initDatabase } from '../../src/server/db'
 const root = '/tmp/ab-ios-parity'
 const db = initDatabase({path: `${root}/data/agentboard.db`})
@@ -9,7 +10,7 @@ const id = '11111111-2222-4333-8444-555555555555'
 await mkdir(`${root}/project/child`, {recursive:true})
 const lines = Array.from({length: 240}, (_, i) => JSON.stringify({type:i % 2 ? 'assistant':'user', timestamp:now, sessionId:id,
  message:{role:i % 2 ? 'assistant':'user', content:`Parity transcript message ${i} — **native** rendering.`}}))
-const image = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKklEQVR4nGPgSvlAU8QwasGoBaMWjFowasGoBaMWjFowasGoBaMWDBULAOVLeEwhyp0SAAAAAElFTkSuQmCC'
+const image = photoFixturePNG.toString('base64')
 lines.push(JSON.stringify({type:'user', timestamp:now, sessionId:id, message:{role:'user', content:[{type:'image', source:{type:'base64',media_type:'image/png',data:image}}]}}))
 const document = Buffer.from('<!doctype html><html><body><h1>Native document fixture</h1><p>Loaded from the real session-media endpoint.</p></body></html>').toString('base64')
 lines.push(JSON.stringify({type:'user', timestamp:now, sessionId:id, message:{role:'user', content:[
@@ -21,7 +22,7 @@ lines.push(JSON.stringify({type:'user', timestamp:now, sessionId:id, message:{ro
 lines.push(JSON.stringify({type:'assistant', timestamp:now, sessionId:id, message:{role:'assistant', content:[{type:'tool_use',id:'parity-pr',name:'Bash',input:{command:'gh pr create --title test --body test'}}]}}))
 lines.push(JSON.stringify({type:'user', timestamp:now, sessionId:id, message:{role:'user', content:[{type:'tool_result',tool_use_id:'parity-pr',content:'https://github.com/gbasin/agentboard/pull/1'}]}}))
 await writeFile(`${root}/export-expected.pdf`, nativePDFFixture())
-await writeFile(`${root}/photo.png`, Buffer.from(image, 'base64'))
+await writeFile(`${root}/photo.png`, photoFixturePNG)
 const log = `${root}/${id}.jsonl`
 await writeFile(log, lines.join('\n')+'\n')
 if (!db.getSessionById(id)) db.insertSession({sessionId:id, logFilePath:log, projectPath:`${root}/project`, slug:null, agentType:'claude', displayName:'parity-saved-transcript', createdAt:now, lastActivityAt:now, lastUserMessage:'Parity transcript fixture', currentWindow:null, isHibernating:false, lastResumeError:null, lastKnownLogSize:null, isCodexExec:false, launchCommand:'/bin/zsh -f'})

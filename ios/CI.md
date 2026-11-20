@@ -13,7 +13,7 @@ Both jobs use the standard `xcode-27` runner, [generally available](https://gith
 | media | Media/activity, document previews, clipboard, file and photo insertion |
 | settings | Settings, presets, device preferences, catalog preferences and PR checks |
 
-Each simulator job turns off host Spotlight indexing and starts the Simulator boot before tmux, Bun and artifact setup. The boot prepares only the pinned iOS 27.2 runtime's dyld shared cache. `ci-e2e.sh` waits for `bootstatus` before it starts fixture services. The Photos import runs in the background during fixture startup and app installation, and the batch waits for it before tests.
+Each simulator job turns off host Spotlight indexing and starts the Simulator boot before tmux, Bun and artifact setup. The boot prepares only the pinned iOS 27.2 runtime's dyld shared cache. `ci-e2e.sh` waits for `bootstatus` before it starts fixture services. The Photos import runs in the background during fixture startup and app installation, and the batch waits for it before tests. The first import on a fresh Simulator waits for the Photos library to start, and other `simctl` calls queue behind it. A worker that runs a photo batch therefore starts one import of the same fixture image during dependency setup (`ci-prime-photos.sh`).
 
 A cold Simulator boot keeps the hosted runner loaded, so the CI backend runs with `AGENTBOARD_TMUX_TIMEOUT_MS=15000` and `AGENTBOARD_STALL_WATCHDOG=0`. These settings apply only to the fixture backend. Readiness waits allow 180 seconds before fixtures and again before tests.
 

@@ -43,7 +43,7 @@ jobs:
           matrix=$(bun ios/scripts/ci-workers.ts "$SHARD" "$APPEARANCE")
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
       - name: Verify shard coverage and publishing logic
-        run: bun test ./ios/scripts/terminal-scroll.test.ts ./ios/scripts/e2e-selection.test.ts ./ios/scripts/ci-diagnostics.test.ts ./ios/scripts/ci-e2e.test.ts ./ios/scripts/ci-workers.test.ts ./ios/scripts/parity-media-ready.test.ts ./ios/scripts/tmux-ready.test.ts ./ios/scripts/release-metadata.test.ts ./ios/scripts/testflight-status.test.ts ./ios/scripts/app-store-connect.test.ts
+        run: bun test ./ios/scripts/terminal-scroll.test.ts ./ios/scripts/e2e-selection.test.ts ./ios/scripts/ci-diagnostics.test.ts ./ios/scripts/ci-e2e.test.ts ./ios/scripts/ci-workers.test.ts ./ios/scripts/ci-prime-photos.test.ts ./ios/scripts/parity-media-ready.test.ts ./ios/scripts/tmux-ready.test.ts ./ios/scripts/release-metadata.test.ts ./ios/scripts/testflight-status.test.ts ./ios/scripts/app-store-connect.test.ts
       - name: Build test products once
         run: ios/scripts/build-for-testing.sh
       - name: Archive test products with executable permissions and symlinks
@@ -79,11 +79,13 @@ jobs:
         run: |
           udid=$(ios/scripts/ci-simulator.sh)
           echo "IOS_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+      - name: Start the first Photos import in the background
+        run: >-
+          ios/scripts/ci-prime-photos.sh "$IOS_SIMULATOR_UDID"
+          "${{ matrix.firstMode }}:${{ matrix.firstShard }}"
+          "${{ matrix.secondMode }}:${{ matrix.secondShard }}"
+          "${{ matrix.thirdMode }}:${{ matrix.thirdShard }}"
       - run: brew install tmux
-        env:
-          # The auto-update competes with the Simulator boot for this small VM.
-          HOMEBREW_NO_AUTO_UPDATE: '1'
-          HOMEBREW_NO_INSTALL_CLEANUP: '1'
       - run: bun install --frozen-lockfile
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
