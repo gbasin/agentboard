@@ -1,10 +1,19 @@
 import { spawnSync } from 'node:child_process'
-import { rmSync } from 'node:fs'
+import { readdirSync, rmSync } from 'node:fs'
+import { stopE2eServer } from './stopServer'
 import { reapPrivateTmuxServer, socketPath } from './tmuxReap'
 
 export default async function teardown() {
   const dir = process.env.E2E_TMUX_TMPDIR
   if (dir) {
+    // Playwright stops config.webServer only after this function returns.
+    // Stop the agentboard server first: while it runs it writes into `dir`
+    // and recreates the tmux server we are about to kill (see stopServer.ts).
+    const server = await stopE2eServer(dir)
+    if (server === 'killed' || server === 'survived') {
+      console.warn(`[e2e teardown] agentboard server ignored SIGTERM (${server})`)
+    }
+
     // The suite ran on a private tmux server (see playwright.config.ts), so
     // cleanup is kill-server plus killing any pane process that outlived it
     // (see tmuxReap.ts). Address it with an explicit -S socket path: unlike
@@ -14,7 +23,22 @@ export default async function teardown() {
     if (survivors > 0) {
       console.log(`[e2e teardown] killed ${survivors} process(es) that outlived the tmux server`)
     }
-    rmSync(dir, { recursive: true, force: true })
+    // With every writer stopped this succeeds. If it does not, something
+    // outlived teardown: report it rather than fail a run whose tests passed.
+    try {
+      rmSync(dir, { recursive: true, force: true })
+    } catch (error) {
+      let left: string[] = []
+      try {
+        left = readdirSync(dir)
+      } catch {
+        // Gone after all
+      }
+      console.warn(
+        `[e2e teardown] could not remove ${dir}: ${(error as Error).message}; ` +
+          `remaining: ${left.join(', ') || '(none)'} — a process is still writing there`
+      )
+    }
     return
   }
 
