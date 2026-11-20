@@ -64,14 +64,12 @@ final class NativeClipboardUITests: XCTestCase {
         let review = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); review.name = "clipboard-attachment-review"; review.lifetime = .keepAlways; add(review)
         app.buttons["confirm-attachments"].tap()
         let pair = marker + "/tmp/paste-"
-        let inserted = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            let text = app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined()
-            return text.filter { !$0.isWhitespace }.contains(pair)
-        }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [inserted], timeout: 15), .completed)
+        XCTAssertTrue(waitUntil(timeout: 15) {
+            app.webViews.firstMatch.staticTextLabels.joined().filter { !$0.isWhitespace }.contains(pair)
+        })
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = "clipboard-image-and-text"; attachment.lifetime = .keepAlways; add(attachment)
         // An executed bare marker would fail in zsh; insertion must leave it in the prompt.
-        let output = app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().filter { !$0.isWhitespace }
+        let output = app.webViews.firstMatch.staticTextLabels.joined().filter { !$0.isWhitespace }
         XCTAssertFalse(output.contains("commandnotfound:" + marker))
         XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap() })
         app.tapTerminalKey("Control"); app.typeText("u")

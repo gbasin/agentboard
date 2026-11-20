@@ -1,5 +1,35 @@
 import XCTest
 
+/// Poll until `condition` holds. XCTWaiter evaluates a block predicate on its
+/// own schedule and discards a check that returns true after its deadline; on a
+/// loaded runner one accessibility snapshot of a remote sheet or menu can take
+/// longer than the whole window. Here a check that started in time still counts.
+@discardableResult
+func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while true {
+        if condition() { return true }
+        if Date() >= deadline { return false }
+        Thread.sleep(forTimeInterval: 0.25)
+    }
+}
+
+extension XCUIElement {
+    /// Static text labels below this element, read from one accessibility
+    /// snapshot. `staticTexts.allElementsBoundByIndex` resolves every element
+    /// with its own query, which repeats the snapshot once per text.
+    var staticTextLabels: [String] {
+        guard let root = try? snapshot() else { return [] }
+        var labels: [String] = []
+        func collect(_ node: XCUIElementSnapshot) {
+            if node.elementType == .staticText { labels.append(node.label) }
+            node.children.forEach(collect)
+        }
+        collect(root)
+        return labels
+    }
+}
+
 /// Terminal attach spans a tmux client, the WebSocket, and WebKit, and is
 /// slow on a loaded CI runner. Use one budget for every attach wait.
 let terminalAttachTimeout: TimeInterval = 60

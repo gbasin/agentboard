@@ -144,13 +144,21 @@ final class ParityGapUITests: XCTestCase {
         XCTAssertLessThan(targetY, destination.frame.midY)
         let target = app.coordinate(withNormalizedOffset: .zero)
             .withOffset(.init(dx: destination.frame.midX - app.frame.minX, dy: targetY - app.frame.minY))
-        source.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5))
-            .press(forDuration: 1, thenDragTo: target, withVelocity: .slow, thenHoldForDuration: 0.5)
+        let remoteHandle = handles.matching(NSPredicate(format: "label CONTAINS %@", "Alpha remote")).firstMatch
+        let localHandle = handles.matching(NSPredicate(format: "label CONTAINS %@", "Alpha local")).firstMatch
+        let remoteFirst = { remoteHandle.exists && localHandle.exists && remoteHandle.frame.midY < localHandle.frame.midY }
+        let drag = {
+            remoteHandle.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5))
+                .press(forDuration: 1, thenDragTo: target, withVelocity: .slow, thenHoldForDuration: 0.5)
+        }
+        drag()
+        // A starved runner can deliver the synthesized drag without moving the
+        // row. Check the edit list before leaving it. The drag follows the remote
+        // row, so repeating it after a late move leaves that row first.
+        if !waitUntil(timeout: 5, remoteFirst) { drag() }
+        XCTAssertTrue(waitUntil(timeout: 5, remoteFirst), "The native drag did not move the row: " + app.debugDescription)
         app.buttons["Done"].tap()
-        let moved = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            second.exists && first.exists && second.frame.midY < first.frame.midY
-        }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [moved], timeout: 5), .completed)
+        XCTAssertTrue(waitUntil(timeout: 5) { second.exists && first.exists && second.frame.midY < first.frame.midY })
         capture("manual-reordered")
         let persisted = readSharedSettings()
         XCTAssertEqual(persisted["sessionSortMode"] as? String, "manual")

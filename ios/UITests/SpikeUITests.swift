@@ -10,6 +10,13 @@ final class SpikeUITests: XCTestCase {
         app.webViews.firstMatch.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", value)).firstMatch
     }
 
+    /// The shell fixture's prompt proves the socket is open. Tapping before it
+    /// arrives races the connection, which can take the keyboard back.
+    func waitForShell(_ app: XCUIApplication) {
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(output("spike", in: app).waitForExistence(timeout: terminalAttachTimeout))
+    }
+
     func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
@@ -46,16 +53,13 @@ final class SpikeUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-terminal", "-spikeEndpoint", "ws://127.0.0.1:4149"]
         app.launch()
-        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
-        sleep(2)
+        waitForShell(app)
         openKeyboard(app)
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         app.typeText("printf 'NATIVE_%s_OK\\n' INPUT")
         app.tapTerminalKey("Enter")
-        sleep(2)
+        XCTAssertTrue(output("NATIVE_INPUT_OK", in: app).waitForExistence(timeout: 5))
         capture("live-shell-keyboard")
-        let text = app.webViews.firstMatch.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "NATIVE_INPUT_OK"))
-        XCTAssertTrue(text.firstMatch.waitForExistence(timeout: 5))
         app.tapTerminalKey("Hide keyboard")
         capture("live-shell")
     }
@@ -64,8 +68,7 @@ final class SpikeUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-terminal", "-spikeEndpoint", "ws://127.0.0.1:4149"]
         app.launch()
-        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
-        sleep(2)
+        waitForShell(app)
         openKeyboard(app)
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         let command = "python3 -u -c \"import sys,tty,termios; old=termios.tcgetattr(0); tty.setraw(0); print('RAW_'+'READY',flush=True); data=sys.stdin.buffer.read(10); termios.tcsetattr(0,termios.TCSADRAIN,old); print('KEY_'+'BYTES:'+data.hex())\""
@@ -91,8 +94,7 @@ final class SpikeUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-terminal", "-spikeEndpoint", "ws://127.0.0.1:4149"]
         app.launch()
-        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
-        sleep(2)
+        waitForShell(app)
         openKeyboard(app)
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         app.tapTerminalKey("Paste text")
