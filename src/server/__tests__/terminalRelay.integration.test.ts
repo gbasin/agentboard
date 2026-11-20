@@ -7,8 +7,7 @@ import type { ClientMessage, ServerMessage, Session } from '../../shared/types'
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 // A lease with no client progress for this long is reclaimed. Attach time
-// counts against it, so a short window expires healthy attaches when the
-// machine is loaded (seen at 2s with load average > 100).
+// counts against it, so the window leaves room for a slow attach.
 const PROGRESS_MS = 5000
 type Frame = ServerMessage
 class Peer {
@@ -58,6 +57,13 @@ describe('isolated terminal relay with real tmux', () => {
     const result = Bun.spawnSync(['tmux', ...args], { env, stdout: 'pipe', stderr: 'pipe' })
     if (result.exitCode) throw new Error(result.stderr.toString())
     return result.stdout.toString().trim()
+  }
+  // Grouped-session disposal after a lease ends is asynchronous. Poll for it
+  // instead of checking after a fixed wait; a real leak still fails.
+  async function expectOnlyAgentSession() {
+    const deadline = Date.now() + 3000
+    while (tmux('list-sessions', '-F', '#{session_name}') !== 'relay-test' && Date.now() < deadline) await wait(20)
+    expect(tmux('list-sessions', '-F', '#{session_name}')).toBe('relay-test')
   }
   async function entered(file: string) {
     const deadline = Date.now() + 5000
@@ -183,11 +189,7 @@ describe('isolated terminal relay with real tmux', () => {
       peer.ws.close()
       await wait(100)
     }
-    // Disposal of the last client's grouped session is asynchronous; a slow
-    // runner can still list it 100ms after close.
-    const deadline = Date.now() + 3000
-    while (tmux('list-sessions', '-F', '#{session_name}') !== 'relay-test' && Date.now() < deadline) await wait(20)
-    expect(tmux('list-sessions', '-F', '#{session_name}')).toBe('relay-test')
+    await expectOnlyAgentSession()
   }, 15000)
 
   test('server reclaims silent OPEN and disconnected leases without killing agents', async () => {
@@ -198,6 +200,6 @@ describe('isolated terminal relay with real tmux', () => {
     const second = await connect(first.token, 2); await second.attach(sessions[0], 2)
     expect(second.token).not.toBe(first.token)
     second.ws.close(); await wait(1100)
-    expect(tmux('list-sessions', '-F', '#{session_name}')).toBe('relay-test')
+    await expectOnlyAgentSession()
   }, PROGRESS_MS + 10_000)
 })
