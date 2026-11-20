@@ -154,7 +154,13 @@ describe('hydrateSessionsWithAgentSessions — missing windows', () => {
       `../index?test=hydrate-empty-guard-${Date.now()}-${Math.random().toString(36).slice(2)}`
     )
     hydrate = (mod as { hydrateSessionsWithAgentSessions: typeof hydrate }).hydrateSessionsWithAgentSessions
-  })
+    // Importing index.ts starts the server's async startup, which goes on to
+    // read the database (e.g. logPoller.start -> getActiveSessions). Let it
+    // settle now: left running, it can reach the database after afterAll has
+    // deleted it, and the SQLITE_IOERR rejection fails the file as an
+    // "Unhandled error between tests" with no failing test.
+    await (mod as { startupReady: Promise<void> }).startupReady
+  }, 30_000)
 
   afterAll(() => {
     // Restore globals first so subsequent tests in this process see the real
@@ -174,7 +180,13 @@ describe('hydrateSessionsWithAgentSessions — missing windows', () => {
       }
     }
 
-    try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch { /* ignore */ }
+    // The imported server keeps this database open and its background work
+    // (log poller, refresh worker) can still touch it after the last test.
+    // Remove the directory only when the process exits.
+    const dir = tempDir
+    process.once('exit', () => {
+      try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    })
   })
 
   beforeEach(() => {

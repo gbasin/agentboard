@@ -6,6 +6,10 @@ import { reapPrivateTmuxServer, socketPath } from '../../../tests/e2e/tmuxReap'
 import type { ClientMessage, ServerMessage, Session } from '../../shared/types'
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+// A lease with no client progress for this long is reclaimed. Attach time
+// counts against it, so a short window expires healthy attaches when the
+// machine is loaded (seen at 2s with load average > 100).
+const PROGRESS_MS = 5000
 type Frame = ServerMessage
 class Peer {
   readonly ws: WebSocket
@@ -73,7 +77,7 @@ describe('isolated terminal relay with real tmux', () => {
     dir = mkdtempSync(path.join(tmpdir(), 'ab-relay-'))
     env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined))
     delete env.TMUX; delete env.TMUX_PANE
-    Object.assign(env, { TMUX_TMPDIR: dir, TMUX_SESSION: 'relay-test', AGENTBOARD_DATA_DIR: dir, LOG_FILE: path.join(dir, 'relay.log'), LOG_LEVEL: 'error', NODE_ENV: 'production', AGENTBOARD_TMUX_SET_CLIPBOARD: '0', AGENTBOARD_RELAY_GRACE_MS: '500', AGENTBOARD_RELAY_PROGRESS_MS: '2000' })
+    Object.assign(env, { TMUX_TMPDIR: dir, TMUX_SESSION: 'relay-test', AGENTBOARD_DATA_DIR: dir, LOG_FILE: path.join(dir, 'relay.log'), LOG_LEVEL: 'error', NODE_ENV: 'production', AGENTBOARD_TMUX_SET_CLIPBOARD: '0', AGENTBOARD_RELAY_GRACE_MS: '500', AGENTBOARD_RELAY_PROGRESS_MS: String(PROGRESS_MS) })
     const a = tmux('-f', '/dev/null', 'new-session', '-d', '-s', 'relay-test', '-P', '-F', '#{window_id}', 'stty -echo; exec /bin/cat')
     const b = tmux('new-window', '-t', 'relay-test', '-P', '-F', '#{window_id}', 'stty -echo; exec /bin/cat')
     sessions = [a, b].map((window, i) => ({ id: `relay-test:${window}`, tmuxWindow: `relay-test:${window}`, name: `Target ${i}`, projectPath: dir, status: 'unknown', lastActivity: new Date().toISOString(), createdAt: new Date().toISOString(), source: 'managed' }))
@@ -184,12 +188,12 @@ describe('isolated terminal relay with real tmux', () => {
 
   test('server reclaims silent OPEN and disconnected leases without killing agents', async () => {
     const first = await connect(); await first.attach(sessions[0], 1)
-    await wait(2600)
+    await wait(PROGRESS_MS + 600)
     expect(first.closed).toBe(true)
     expect(tmux('list-windows', '-t', 'relay-test')).toContain('cat')
     const second = await connect(first.token, 2); await second.attach(sessions[0], 2)
     expect(second.token).not.toBe(first.token)
     second.ws.close(); await wait(1100)
     expect(tmux('list-sessions', '-F', '#{session_name}')).toBe('relay-test')
-  }, 10000)
+  }, PROGRESS_MS + 10_000)
 })

@@ -637,6 +637,7 @@ describe('LogPoller', () => {
     }
   })
 
+  // Seeds 10,000 rows; a loaded machine can take longer than bun's 5s default.
   test('skips startup orphan rematch when every live window is already claimed', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
@@ -713,7 +714,7 @@ describe('LogPoller', () => {
 
     poller.stop()
     db.close()
-  })
+  }, 30_000)
 
   test('skips file content reads for already-known sessions', async () => {
     const db = initDatabase({ path: ':memory:' })

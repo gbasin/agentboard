@@ -170,7 +170,10 @@ describe('dormant PR scan of subagent logs', () => {
     })
     try {
       scanner.queue([parent])
-      await Bun.sleep(80)
+      // Wait for the scan to finish (it notifies once, after the last slice)
+      // rather than for a fixed time a loaded machine can overrun.
+      const deadline = Date.now() + 10_000
+      while (notified === 0 && Date.now() < deadline) await Bun.sleep(5)
     } finally {
       clearInterval(marker)
       opens.mockRestore()
