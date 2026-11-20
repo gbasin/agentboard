@@ -183,6 +183,10 @@ describe('isolated terminal relay with real tmux', () => {
       peer.ws.close()
       await wait(100)
     }
+    // Disposal of the last client's grouped session is asynchronous; a slow
+    // runner can still list it 100ms after close.
+    const deadline = Date.now() + 3000
+    while (tmux('list-sessions', '-F', '#{session_name}') !== 'relay-test' && Date.now() < deadline) await wait(20)
     expect(tmux('list-sessions', '-F', '#{session_name}')).toBe('relay-test')
   }, 15000)
 
