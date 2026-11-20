@@ -24,6 +24,8 @@ export class OutputScanner {
   private readonly tailLines: string[] = []
   private readonly partial: Record<StreamName, string> = { stdout: '', stderr: '' }
   private currentFile: string | null = null
+  // True between bun's " N pass" line and "Ran N tests", the final summary.
+  private inBunSummary = false
 
   push(stream: StreamName, chunk: string): void {
     const text = this.partial[stream] + chunk
@@ -68,10 +70,13 @@ export class OutputScanner {
       if (name !== 'failing tests:') record(this.failedTests, name)
       return
     }
+    if (/^\((pass|skip|todo)\) /.test(line)) return
+    if (/^ \d+ pass$/.test(line)) this.inBunSummary = true
+    else if (/^Ran \d+ tests? across /.test(line)) this.inBunSummary = false
     if (
-      /Unhandled (error|rejection)/i.test(line) ||
-      /^\s*[1-9]\d* errors?$/.test(line) ||
-      /^(panic|Segmentation fault|Bun has crashed|oh no: Bun has crashed)/i.test(line)
+      line === '# Unhandled error between tests' ||
+      (this.inBunSummary && /^ [1-9]\d* errors?$/.test(line)) ||
+      /^(panic\(|oh no: Bun has crashed)/.test(line)
     ) {
       record(this.errorLines, line.trim())
     }
@@ -92,11 +97,23 @@ export interface CommandResult {
   errorLines: string[]
   tail: string[]
   spawnError?: string
+  /** Reading the child's output failed (e.g. EPIPE); the child was killed. */
+  streamError?: string
+  /** A descendant held the pipe after the child exited; reading was cancelled. */
+  outputTruncated?: boolean
 }
 
 export function commandFailed(result: CommandResult): boolean {
-  return result.spawnError !== undefined || result.signal !== null || result.exitCode !== 0
+  return (
+    result.spawnError !== undefined ||
+    result.streamError !== undefined ||
+    result.signal !== null ||
+    result.exitCode !== 0
+  )
 }
+
+const TRUNCATED_NOTE =
+  'output truncated: a process the child started still held its stdout/stderr after the child exited'
 
 export function describeEnding(result: CommandResult): string {
   const seconds = `${(result.durationMs / 1000).toFixed(1)}s`
@@ -113,6 +130,8 @@ export interface LoadInfo {
 export function formatRunSummary(results: CommandResult[], load?: LoadInfo): string {
   const failed = results.filter(commandFailed)
   const out: string[] = ['', '==== test-runner summary ====']
+  const truncatedPassing = results.filter((result) => result.outputTruncated && !commandFailed(result))
+  for (const result of truncatedPassing) out.push(`NOTE ${result.label}: ${TRUNCATED_NOTE}`)
   if (failed.length === 0) {
     out.push(`All ${results.length} test commands passed.`)
     return out.join('\n')
@@ -121,6 +140,8 @@ export function formatRunSummary(results: CommandResult[], load?: LoadInfo): str
   for (const result of failed) {
     out.push('', `FAILED ${result.label} (${describeEnding(result)})`)
     out.push(`  command: ${abbreviate(result.cmd)}`)
+    if (result.streamError !== undefined) out.push(`  reading output failed (${result.streamError}); the child was killed`)
+    if (result.outputTruncated) out.push(`  ${TRUNCATED_NOTE}`)
     if (result.failedTests.length > 0) {
       out.push(`  failing tests (${result.failedTests.length}):`)
       for (const name of result.failedTests) out.push(`    - ${name}`)

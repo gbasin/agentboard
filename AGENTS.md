@@ -36,6 +36,7 @@ A failing child does not stop the run. The runner ends with a summary that
 names each failed command, how it ended (exit code or signal), and its failing
 tests. When a child fails without a failing test, such as an unhandled error
 between tests or a crash, the summary shows the last lines of its output.
+Children write to a pipe, so bun prints only failing tests and summaries, not `(pass)` lines; colors stay on when the runner is on a TTY.
 
 ## FAD Parity Fixtures
 

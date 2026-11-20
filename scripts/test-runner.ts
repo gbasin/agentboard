@@ -2,13 +2,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { testProcessEnv } from './test-process-env'
+import { runChild } from './test-runner-child'
 import {
   type CommandResult,
   commandFailed,
   describeEnding,
   formatRunSummary,
-  OutputScanner,
-  type StreamName,
 } from './test-runner-report'
 
 const args = process.argv.slice(2)
@@ -29,56 +28,13 @@ function createTempLogDirs() {
 
 const results: CommandResult[] = []
 
-async function forward(
-  stream: ReadableStream<Uint8Array>,
-  name: StreamName,
-  scanner: OutputScanner
-) {
-  const sink = name === 'stdout' ? process.stdout : process.stderr
-  const decoder = new TextDecoder()
-  const reader = stream.getReader()
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    sink.write(value)
-    scanner.push(name, decoder.decode(value, { stream: true }))
-  }
-  scanner.push(name, decoder.decode())
-}
-
 /**
- * Runs one test child, streaming its output through while recording how it
- * ended. A failure does not stop the run: every child runs, and the summary at
- * the end names each one that failed, so a failure cannot hide in the noise.
+ * Runs one test child (see runChild). A failure does not stop the run: every
+ * child runs, and the summary at the end names each one that failed, so a
+ * failure cannot hide in the noise.
  */
 async function runCommand(label: string, cmd: string[], env: NodeJS.ProcessEnv) {
-  const scanner = new OutputScanner()
-  const startedAt = performance.now()
-  const result: CommandResult = {
-    label,
-    cmd,
-    exitCode: null,
-    signal: null,
-    durationMs: 0,
-    failedTests: scanner.failedTests,
-    errorLines: scanner.errorLines,
-    tail: [],
-  }
-  try {
-    const proc = Bun.spawn({ cmd, env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' })
-    await Promise.all([
-      forward(proc.stdout, 'stdout', scanner),
-      forward(proc.stderr, 'stderr', scanner),
-      proc.exited,
-    ])
-    result.exitCode = proc.exitCode
-    result.signal = proc.signalCode ?? null
-  } catch (error) {
-    result.spawnError = error instanceof Error ? error.message : String(error)
-  }
-  scanner.finish()
-  result.tail = scanner.tail
-  result.durationMs = performance.now() - startedAt
+  const result = await runChild({ label, cmd, env })
   results.push(result)
   if (commandFailed(result)) {
     console.error(`\n[test-runner] FAILED ${label}: ${describeEnding(result)}\n`)
@@ -122,10 +78,15 @@ async function main() {
   // A shell LOG_LEVEL (e.g. debug) changes logger defaults that tests assert
   // on. Tests that need a level set it themselves.
   delete env.LOG_LEVEL
+  // Children write to a pipe, not the terminal; keep bun's colors when the
+  // runner itself is on a TTY.
+  if (process.stdout.isTTY && env.FORCE_COLOR === undefined && env.NO_COLOR === undefined) {
+    env.FORCE_COLOR = '1'
+  }
 
   try {
     await runCommand('node launchd/systemd tests', ['node', '--test', 'launchd/release.test.mjs', 'launchd/scripts.test.mjs', 'systemd/install.test.mjs'], env)
-    await runCommand('script tests', ['bun', 'test', './scripts/verify-platform-lock.test.ts', './scripts/test-process-env.test.ts', './scripts/test-runner-report.test.ts'], env)
+    await runCommand('script tests', ['bun', 'test', './scripts/verify-platform-lock.test.ts', './scripts/test-process-env.test.ts', './scripts/test-runner-report.test.ts', './scripts/test-runner-child.test.ts'], env)
 
     // Tests that either mutate globals or are sensitive to global mutations
     // must run in a separate process so they don't race with other test files.
@@ -313,16 +274,17 @@ async function main() {
   }
 }
 
+function finish(code: number, error?: unknown) {
+  let text = formatRunSummary(results, { loadAverage: os.loadavg()[0], cpus: os.cpus().length })
+  if (error !== undefined) text += `\n[test-runner] runner error: ${error instanceof Error ? error.stack : String(error)}`
+  // Exit only after the summary is flushed; a piped stderr (CI) would
+  // otherwise drop queued writes.
+  process.stderr.write(`${text}\n`, () => process.exit(code))
+}
+
 main().then(
-  () => {
-    console.error(formatRunSummary(results, { loadAverage: os.loadavg()[0], cpus: os.cpus().length }))
-    process.exit(results.some(commandFailed) ? 1 : 0)
-  },
-  (error) => {
-    console.error(formatRunSummary(results, { loadAverage: os.loadavg()[0], cpus: os.cpus().length }))
-    console.error('[test-runner] runner error:', error)
-    process.exit(1)
-  }
+  () => finish(results.some(commandFailed) ? 1 : 0),
+  (error) => finish(1, error)
 )
 
 function stripCoverageArgs(args: string[]) {

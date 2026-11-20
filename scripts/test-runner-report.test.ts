@@ -36,7 +36,8 @@ test('attributes bun (fail) lines to the file header that precedes them, across 
 test('records node test failures, unhandled errors and crashes, and flushes the last partial line', () => {
   const scanner = new OutputScanner()
   scanner.push('stdout', '✖ failing tests:\n✖ release script rejects bad tags (3.2ms)\nnot ok 4 - install unit\n')
-  scanner.push('stderr', '# Unhandled error between tests\n 2 errors\n 0 errors\npanic(main thread): Segmentation fault')
+  scanner.push('stderr', '# Unhandled error between tests\n 2 errors\n 4 pass\n 0 fail\n 2 errors\n 0 errors\nRan 4 tests across 1 file.\n 3 errors\n')
+  scanner.push('stderr', 'panic(main thread): Segmentation fault')
   scanner.finish()
   expect(scanner.failedTests).toEqual(['release script rejects bad tags (3.2ms)', 'install unit'])
   expect(scanner.errorLines).toEqual([
@@ -88,4 +89,23 @@ test('long commands are abbreviated', () => {
   expect(abbreviate(['bun', 'test', 'a'])).toBe('bun test a')
   expect(abbreviate(['bun', 'test', ...Array.from({ length: 20 }, (_, i) => `f${i}`)], 3)).toBe('bun test f0 … (+19 more args)')
   expect(stripAnsi('\x1b[31mred\x1b[0m')).toBe('red')
+})
+
+test('ignores error-like text in test names and logs', () => {
+  const scanner = new OutputScanner()
+  scanner.push('stderr', '(pass) reports Unhandled error between tests [1ms]\n(skip) panic( handling\n    message: "Unhandled rejection"\n 1 error\n')
+  scanner.finish()
+  expect(scanner.errorLines).toEqual([])
+})
+
+test('the summary reports stream errors and truncated output', () => {
+  const summary = formatRunSummary([
+    result({ label: 'leaky', outputTruncated: true }),
+    result({ label: 'epipe', exitCode: null, signal: 'SIGTERM', streamError: 'EPIPE', failedTests: ['x'] }),
+    result({ label: 'leaky fail', exitCode: 1, outputTruncated: true, failedTests: ['y'] }),
+  ])
+  expect(summary).toContain('NOTE leaky: output truncated')
+  expect(summary).toContain('reading output failed (EPIPE); the child was killed')
+  expect(summary).toMatch(/FAILED leaky fail[^\n]*\n[^\n]*\n  output truncated/)
+  expect(commandFailed(result({ streamError: 'EPIPE' }))).toBe(true)
 })
