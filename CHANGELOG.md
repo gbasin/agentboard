@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.11](https://github.com/gbasin/agentboard/compare/v0.46.10...v0.46.11) (2026-11-20)
+
+
+### Bug Fixes
+
+* **e2e:** stop the agentboard server before teardown removes the run dir ([#601](https://github.com/gbasin/agentboard/issues/601)) ([7d16340](https://github.com/gbasin/agentboard/commit/7d16340c0c290e84b14e4e468598bfacb338a1eb))
+
 ## [0.46.10](https://github.com/gbasin/agentboard/compare/v0.46.9...v0.46.10) (2026-11-19)
 
 
