@@ -123,6 +123,8 @@ async function main() {
       // fixture tree; isolation keeps that env from leaking into
       // concurrently-loaded files.
       'fadParity.test.ts',
+      // Stubs Bun.spawnSync to script tmux option races.
+      'tmuxIdentityEpoch.test.ts',
     ])
 
     // These spawn real servers, PTYs, and tmux clients. They still need process
