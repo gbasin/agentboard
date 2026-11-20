@@ -357,7 +357,10 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         let before = toggle.value as? String
         toggle.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap()
-        XCTAssertTrue(waitUntil(timeout: 5) { toggle.value as? String != before }, "Session ID prefix did not toggle.")
+        // The switch changes after the backend saves the synced setting; the
+        // sheet shows "Saving…" meanwhile, and the backend event loop has
+        // lagged up to 28 s on a loaded runner.
+        XCTAssertTrue(waitUntil(timeout: 45) { toggle.value as? String != before }, "Session ID prefix did not toggle.")
         if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
         if app.buttons["Done"].exists { app.buttons["Done"].tap() }
         else { app.buttons["Close"].firstMatch.tap() }
