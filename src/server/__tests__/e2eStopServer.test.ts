@@ -27,9 +27,16 @@ function runDir(name: string, lock?: unknown): string {
 }
 
 // A stand-in server: `trap` decides how it reacts to SIGTERM. It prints once
-// the trap is installed so the test never signals it before then.
-async function standIn(trap: string): Promise<Bun.Subprocess<'ignore', 'pipe', 'inherit'>> {
-  const proc = Bun.spawn(['sh', '-c', `${trap}; echo ready; while :; do sleep 0.05; done`], {
+// the trap is installed so the test never signals it before then. Unless
+// `asServer` is false, its command line ends in the server entry point, as
+// the real webServer's `bun src/server/index.ts` does.
+async function standIn(
+  trap: string,
+  asServer = true
+): Promise<Bun.Subprocess<'ignore', 'pipe', 'inherit'>> {
+  const script = `${trap}; echo ready; while :; do sleep 0.05; done`
+  const argv = asServer ? ['sh', '-c', script, 'sh', 'src/server/index.ts'] : ['sh', '-c', script]
+  const proc = Bun.spawn(argv, {
     stdin: 'ignore',
     stdout: 'pipe',
     env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
@@ -63,6 +70,13 @@ describe('stopE2eServer', () => {
     const deadPid = Number.parseInt(exited.stdout.toString(), 10)
     expect(await stopE2eServer(runDir('dead', { pid: deadPid }))).toBe('not-running')
     expect(await stopE2eServer(runDir('self', { pid: process.pid }))).toBe('not-running')
+  })
+
+  test('never signals a reused pid that is not an agentboard server', async () => {
+    const proc = await standIn("trap 'exit 0' TERM", false)
+    expect(await stopE2eServer(runDir('reused', { pid: proc.pid }), 200)).toBe('not-running')
+    expect(proc.exitCode).toBeNull()
+    expect(proc.signalCode).toBeNull()
   })
 
   test('waits for a server that exits on SIGTERM', async () => {

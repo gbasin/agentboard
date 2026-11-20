@@ -12,8 +12,11 @@
 // The server records its pid in <dataDir>/server.lock (see
 // src/server/instanceLock.ts); the e2e data dir is the run's temp dir. A
 // server reused from outside the run (reuseExistingServer) uses a different
-// data dir, so it has no lock here and is never signalled.
+// data dir, so it has no lock here and is never signalled. If the run's
+// server died early, its pid may since belong to an unrelated process, so the
+// pid is signalled only while its command line is still an agentboard server.
 
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -41,6 +44,17 @@ function isAlive(pid: number): boolean {
   }
 }
 
+// `bun src/server/index.ts` (the webServer command) or a compiled binary.
+const SERVER_COMMAND = /(^|\/|\s)(src\/server\/index\.ts|agentboard)(\s|$)/
+
+export function isAgentboardServer(pid: number): boolean {
+  const ps = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], {
+    encoding: 'utf-8',
+    env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+  })
+  return ps.status === 0 && SERVER_COMMAND.test(ps.stdout.trim())
+}
+
 async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (isAlive(pid)) {
@@ -62,7 +76,9 @@ export async function stopE2eServer(
   graceMs = SERVER_EXIT_GRACE_MS
 ): Promise<StopResult> {
   const pid = readLockPid(dir)
-  if (pid === null || pid === process.pid || !isAlive(pid)) return 'not-running'
+  if (pid === null || pid === process.pid || !isAlive(pid) || !isAgentboardServer(pid)) {
+    return 'not-running'
+  }
   try {
     process.kill(pid, 'SIGTERM')
   } catch {
