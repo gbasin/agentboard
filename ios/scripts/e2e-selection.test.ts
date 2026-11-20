@@ -61,6 +61,7 @@ test('setup keeps media dependencies on terminal and restricts simulator imports
   expect(e2eFixtures('light', 'catalog')).toEqual(['parity-gap-fixture'])
   expect(e2eFixtures('light', 'terminal')).toEqual(['backend', 'live', 'parity', 'warm', 'shell-server', 'parity-gap-fixture', 'media-activity-fixture'])
   expect(e2eFixtures('dark', 'terminal')).toEqual(['backend', 'live', 'shell-server', 'parity-gap-fixture', 'media-activity-fixture'])
+  expect(e2eFixtures('all', 'live')).toEqual(['backend', 'live'])
   expect(e2eFixtures('all', 'lifecycle')).toEqual(['backend', 'parity', 'warm'])
   expect(e2eFixtures('all', 'media')).toEqual(['backend', 'live', 'parity', 'warm', 'media-activity-fixture', 'photos', 'files'])
   expect(e2eFixtures('all', 'settings')).toEqual(['backend', 'live', 'parity', 'warm', 'pr-fixture'])
@@ -107,14 +108,13 @@ test('selected native test target provisions the fixture identities its Swift te
 
 // These exercise real terminal input and must cover the accessibility-size sheet transition.
 test('both appearances run real-shell paste and recovery regressions', () => {
-  const required = [
-    'LiveUITests/testLiveShellPasteAndBackgroundRecovery',
-    'LiveUITests/testMultilinePasteWaitsForExplicitEnter',
-    'SpikeUITests/testPasteWaitsForEnterAndRestoresKeyboard',
-  ].map(name => `AgentboardSpikeUITests/${name}`)
-  for (const appearance of ['light', 'dark']) {
-    const selected = expand(e2eSelection(appearance, 'terminal'))
-    for (const test of required) expect(selected).toContain(test)
+  const required = {
+    live: ['LiveUITests/testLiveShellPasteAndBackgroundRecovery', 'LiveUITests/testMultilinePasteWaitsForExplicitEnter'],
+    terminal: ['SpikeUITests/testPasteWaitsForEnterAndRestoresKeyboard'],
+  }
+  for (const appearance of ['light', 'dark']) for (const [shard, names] of Object.entries(required)) {
+    const selected = expand(e2eSelection(appearance, shard))
+    for (const name of names) expect(selected).toContain(`AgentboardSpikeUITests/${name}`)
   }
 })
 

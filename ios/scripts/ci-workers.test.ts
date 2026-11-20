@@ -1,15 +1,12 @@
 import { expect, test } from 'bun:test'
-import { ciWorkers } from './ci-workers'
+import { batchSlots, ciWorkers } from './ci-workers'
 import { shards } from './e2e-selection'
 
 for (const shard of ['all', ...shards]) {
   for (const appearance of ['all', 'light', 'dark']) {
     test(`balanced workers preserve ${shard}/${appearance} batches exactly once`, () => {
       const { include } = ciWorkers(shard, appearance)
-      const actual = include.flatMap(w => [
-        `${w.firstShard}/${w.firstMode}`,
-        ...(w.secondShard ? [`${w.secondShard}/${w.secondMode}`] : []),
-      ])
+      const actual = include.flatMap(w => batchSlots.filter(slot => w[`${slot}Shard`]).map(slot => `${w[`${slot}Shard`]}/${w[`${slot}Mode`]}`))
       const expected = shards.filter(s => shard === 'all' || s === shard)
         .flatMap(s => ['light', 'dark'].filter(mode => appearance === 'all' || mode === appearance).map(mode => `${s}/${mode}`))
       expect(actual.sort()).toEqual(expected.sort())
@@ -43,11 +40,15 @@ test('workflow keeps batch failures and uploads diagnostics before continuing', 
   expect(job.strategy['max-parallel']).toBe(5)
   expect(job.strategy['fail-fast']).toBe(false)
   const batches = job.steps.filter(step => step.run?.includes('ios/scripts/ci-e2e.sh'))
-  expect(batches).toHaveLength(2)
+  expect(batches).toHaveLength(batchSlots.length)
   for (const batch of batches) expect(batch['continue-on-error']).toBeUndefined()
   // An explicit !cancelled() bypasses GitHub's implicit success() condition,
-  // while requiring successfully restored products and a nonempty second slot.
-  expect(batches[1]!.if).toBe("${{ !cancelled() && steps.products.outcome == 'success' && matrix.secondShard != '' }}")
+  // while requiring successfully restored products and a nonempty later slot.
+  for (const [index, slot] of batchSlots.entries()) {
+    expect(batches[index]!.run).toBe('ios/scripts/ci-e2e.sh')
+    if (index === 0) continue
+    expect(batches[index]!.if).toBe(`\${{ !cancelled() && steps.products.outcome == 'success' && matrix.${slot}Shard != '' }}`)
+  }
   for (const batch of batches) {
     const upload = job.steps[job.steps.indexOf(batch) + 1]!
     expect(upload.uses).toContain('actions/upload-artifact@')

@@ -6,7 +6,8 @@ Both jobs use the standard `xcode-27` runner, [generally available](https://gith
 
 | Shard | Workflows |
 |---|---|
-| terminal | Native unit/integration tests, terminal input, selection, rotation and connection states |
+| terminal | Native unit/integration tests, compact terminal input, keyboard, rotation and connection states |
+| live | Real-shell paste, scrollback, flick momentum, selection and background recovery |
 | catalog | Glass catalog, filters, ordering, capability gates and recovery notices |
 | lifecycle | Create, duplicate, rename, end, hibernate, Library transcript and pin |
 | media | Media/activity, document previews, clipboard, file and photo insertion |
@@ -18,7 +19,7 @@ A cold Simulator boot keeps the hosted runner loaded, so the CI backend runs wit
 
 `test-e2e.sh` runs a trimmed copy of the `.xctestrun`. The copy captures screenshots instead of screen recordings and disables the performance anti-pattern checker. `xcodebuild` collects no failure diagnostics and retries each failed test once. The result bundle keeps the first failure, so a retried test stays visible.
 
-Pull requests run every shard in light/standard text and dark/maximum text. Manual dispatch accepts `shard` and `appearance` choices for a targeted development run; both default to `all`. A targeted run does not replace the full PR check. Simulator boot completes before fixture services start. Each appearance starts fresh private fixture data and an app container. Shards start only the backend and fixture services that their tests consume. Each worker runs its second batch even if its first batch fails. The failed step still fails the job. Test execution stays serial inside each fixture host because workflows mutate shared sessions and settings. The wrapper checks every fixture process and backend health before starting tests. A dead fixture fails the job immediately. Catalog tests use their fixture proxy without starting the backend.
+Pull requests run every shard in light/standard text and dark/maximum text. Manual dispatch accepts `shard` and `appearance` choices for a targeted development run; both default to `all`. A targeted run does not replace the full PR check. Simulator boot completes before fixture services start. Each appearance starts fresh private fixture data and an app container. Shards start only the backend and fixture services that their tests consume. Each worker runs its later batches even if an earlier batch fails. The failed step still fails the job. Test execution stays serial inside each fixture host because workflows mutate shared sessions and settings. The wrapper checks every fixture process and backend health before starting tests. A dead fixture fails the job immediately. Catalog tests use their fixture proxy without starting the backend.
 
 `e2e-selection.test.ts` compares shard selections with the Swift test methods. It rejects duplicate, missing and empty selections. The existing light-only tests remain light-only. External-service acceptance tests remain opt-in. The native test target runs once in the light terminal shard. It includes real-backend integration tests and requires parity seeding, lifecycle warming, and the media/activity fixture.
 
@@ -75,13 +76,15 @@ The run exposed omitted parity dependencies in the native test target and a medi
 
 The workflow keeps five workers and assigns whole shard/appearance batches as follows:
 
-| Worker | First batch | Second batch |
-|---|---|---|
-| 1 | terminal light | terminal dark |
-| 2 | media light | catalog dark |
-| 3 | catalog light | lifecycle dark |
-| 4 | lifecycle light | media dark |
-| 5 | settings light | settings dark |
+| Worker | First batch | Second batch | Third batch |
+|---|---|---|---|
+| 1 | terminal light | catalog dark | |
+| 2 | live light | live dark | settings dark |
+| 3 | media light | terminal dark | |
+| 4 | lifecycle light | media dark | |
+| 5 | catalog light | lifecycle dark | settings light |
+
+The assignment balances median XCTest seconds per batch. The simulator job timeout leaves room for a few retried UI tests above the balanced duration.
 
 `ci-workers.ts` filters these assignments for manual runs and drops empty workers. Each selected batch runs once. Whole-batch assignments preserve the existing test selections and fixture plans. Each invocation of `ci-e2e.sh` removes the app container, creates fresh fixture data, checks readiness, archives fixture logs, and records phase/resource diagnostics. The simulator remains booted between batches. Results upload after each batch. No test executes concurrently against the same fixture host.
 
