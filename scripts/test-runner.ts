@@ -2,6 +2,14 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { testProcessEnv } from './test-process-env'
+import {
+  type CommandResult,
+  commandFailed,
+  describeEnding,
+  formatRunSummary,
+  OutputScanner,
+  type StreamName,
+} from './test-runner-report'
 
 const args = process.argv.slice(2)
 const skipIsolated = args.includes('--skip-isolated')
@@ -19,17 +27,66 @@ function createTempLogDirs() {
   return { tempRoot, claudeDir, codexDir }
 }
 
-async function runCommand(cmd: string[], env: NodeJS.ProcessEnv) {
-  const proc = Bun.spawn({
-    cmd,
-    env,
-    stdout: 'inherit',
-    stderr: 'inherit',
-  })
-  const exitCode = await proc.exited
-  if (exitCode !== 0) {
-    throw new Error(`Command failed (${exitCode}): ${cmd.join(' ')}`)
+const results: CommandResult[] = []
+
+async function forward(
+  stream: ReadableStream<Uint8Array>,
+  name: StreamName,
+  scanner: OutputScanner
+) {
+  const sink = name === 'stdout' ? process.stdout : process.stderr
+  const decoder = new TextDecoder()
+  const reader = stream.getReader()
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    sink.write(value)
+    scanner.push(name, decoder.decode(value, { stream: true }))
   }
+  scanner.push(name, decoder.decode())
+}
+
+/**
+ * Runs one test child, streaming its output through while recording how it
+ * ended. A failure does not stop the run: every child runs, and the summary at
+ * the end names each one that failed, so a failure cannot hide in the noise.
+ */
+async function runCommand(label: string, cmd: string[], env: NodeJS.ProcessEnv) {
+  const scanner = new OutputScanner()
+  const startedAt = performance.now()
+  const result: CommandResult = {
+    label,
+    cmd,
+    exitCode: null,
+    signal: null,
+    durationMs: 0,
+    failedTests: scanner.failedTests,
+    errorLines: scanner.errorLines,
+    tail: [],
+  }
+  try {
+    const proc = Bun.spawn({ cmd, env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' })
+    await Promise.all([
+      forward(proc.stdout, 'stdout', scanner),
+      forward(proc.stderr, 'stderr', scanner),
+      proc.exited,
+    ])
+    result.exitCode = proc.exitCode
+    result.signal = proc.signalCode ?? null
+  } catch (error) {
+    result.spawnError = error instanceof Error ? error.message : String(error)
+  }
+  scanner.finish()
+  result.tail = scanner.tail
+  result.durationMs = performance.now() - startedAt
+  results.push(result)
+  if (commandFailed(result)) {
+    console.error(`\n[test-runner] FAILED ${label}: ${describeEnding(result)}\n`)
+  }
+}
+
+function testFileLabel(file: string) {
+  return `isolated ${file}`
 }
 
 async function main() {
@@ -39,7 +96,7 @@ async function main() {
   // A mocked spawn can be restored while async server startup is still running.
   // Isolate at process creation, before imports/Workers can retain the parent env.
   const socketRoot = fs.mkdtempSync(path.join(fs.existsSync('/tmp') ? '/tmp' : os.tmpdir(), 'ab-tests-tmux-'))
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...testProcessEnv(process.env, socketRoot),
     // React's act() requires the development build; force NODE_ENV=test
     // so tests pass even when the shell has NODE_ENV=production.
@@ -62,10 +119,13 @@ async function main() {
     // behavior pass patterns explicitly via the matcher API.
     AGENTBOARD_SKIP_MATCHING_PATTERNS: '',
   }
+  // A shell LOG_LEVEL (e.g. debug) changes logger defaults that tests assert
+  // on. Tests that need a level set it themselves.
+  delete env.LOG_LEVEL
 
   try {
-    await runCommand(['node', '--test', 'launchd/release.test.mjs', 'launchd/scripts.test.mjs', 'systemd/install.test.mjs'], env)
-    await runCommand(['bun', 'test', './scripts/verify-platform-lock.test.ts', './scripts/test-process-env.test.ts'], env)
+    await runCommand('node launchd/systemd tests', ['node', '--test', 'launchd/release.test.mjs', 'launchd/scripts.test.mjs', 'systemd/install.test.mjs'], env)
+    await runCommand('script tests', ['bun', 'test', './scripts/verify-platform-lock.test.ts', './scripts/test-process-env.test.ts', './scripts/test-runner-report.test.ts'], env)
 
     // Tests that either mutate globals or are sensitive to global mutations
     // must run in a separate process so they don't race with other test files.
@@ -181,6 +241,7 @@ async function main() {
     const sharedTestsDir = 'src/shared/__tests__'
 
     await runCommand(
+      `main batch (${serverTests.length + clientTests.length} files + src/shared)`,
       ['bun', 'test', ...passthroughArgs, ...serverTests, sharedTestsDir, ...clientTests],
       env
     )
@@ -193,6 +254,7 @@ async function main() {
     // orderings where it loads first (Linux ext4).
     for (const file of ISOLATED_FILES) {
       await runCommand(
+        testFileLabel(`src/server/__tests__/${file}`),
         ['bun', 'test', ...passthroughArgs, `src/server/__tests__/${file}`],
         env
       )
@@ -202,6 +264,7 @@ async function main() {
       const argsWithoutCoverage = stripCoverageArgs(passthroughArgs)
       for (const file of ISOLATED_REAL_TMUX_FILES) {
         await runCommand(
+          testFileLabel(`src/server/__tests__/${file}`),
           ['bun', 'test', ...argsWithoutCoverage, `src/server/__tests__/${file}`],
           env
         )
@@ -210,6 +273,7 @@ async function main() {
 
     for (const file of ISOLATED_CLIENT_FILES) {
       await runCommand(
+        testFileLabel(`src/client/__tests__/${file}`),
         ['bun', 'test', ...passthroughArgs, `src/client/__tests__/${file}`],
         env
       )
@@ -229,7 +293,7 @@ async function main() {
       }
       isolatedTests.sort()
       for (const file of isolatedTests) {
-        await runCommand(['bun', 'test', ...passthroughArgs, file], env)
+        await runCommand(testFileLabel(file), ['bun', 'test', ...passthroughArgs, file], env)
       }
     }
   } finally {
@@ -249,10 +313,17 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+main().then(
+  () => {
+    console.error(formatRunSummary(results, { loadAverage: os.loadavg()[0], cpus: os.cpus().length }))
+    process.exit(results.some(commandFailed) ? 1 : 0)
+  },
+  (error) => {
+    console.error(formatRunSummary(results, { loadAverage: os.loadavg()[0], cpus: os.cpus().length }))
+    console.error('[test-runner] runner error:', error)
+    process.exit(1)
+  }
+)
 
 function stripCoverageArgs(args: string[]) {
   const stripped: string[] = []

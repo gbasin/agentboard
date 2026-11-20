@@ -24,13 +24,18 @@ at a temp directory. It also allocates a private tmux socket directory and
 removes `TMUX`/`TMUX_PANE` before launching any child process or Worker.
 Test-server startup rejects inherited tmux identity or a missing private socket
 directory; mocks are not an isolation boundary. It sets `NODE_ENV=test` when `NODE_ENV` is unset or
-`production`, and keeps any other value. It runs each file named on its
+`production`, and keeps any other value. It removes `LOG_LEVEL`. It runs each file named on its
 isolation lists (`ISOLATED_FILES`, `ISOLATED_REAL_TMUX_FILES`,
 `ISOLATED_CLIENT_FILES`) and each file in `src/server/__tests__/isolated/` in
 its own process. Bare `bun test` runs everything in one process against your
 real environment. A new test that mocks modules or globals, or that starts real
 tmux, must be registered there; see
 [docs/architecture.md](docs/architecture.md#when-you-add-x-also-change-y).
+
+A failing child does not stop the run. The runner ends with a summary that
+names each failed command, how it ended (exit code or signal), and its failing
+tests. When a child fails without a failing test, such as an unhandled error
+between tests or a crash, the summary shows the last lines of its output.
 
 ## FAD Parity Fixtures
 
