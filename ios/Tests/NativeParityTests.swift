@@ -2,6 +2,10 @@ import XCTest
 import UIKit
 @testable import AgentboardSpike
 
+/// The app's 20-second action budget is for interactive use. These tests drive
+/// the real fixture backend on a loaded CI runner, so they allow longer.
+private let integrationActionTimeout: Duration = .seconds(90)
+
 @MainActor
 final class NativeParityTests: XCTestCase {
     let api = try! BoardAPI("http://127.0.0.1:4151")
@@ -42,7 +46,7 @@ final class NativeParityTests: XCTestCase {
     }
     func testLibraryHibernateResumeAndArchiveActualShell() async throws {
         let name = "parity-api-" + String(UUID().uuidString.prefix(6))
-        let session = try await SessionActions().perform(.create(project: "/tmp/ab-ios-parity/project", name: name, command: "/bin/zsh -f", host: ""), at: api.address)
+        let session = try await SessionActions(timeout: integrationActionTimeout).perform(.create(project: "/tmp/ab-ios-parity/project", name: name, command: "/bin/zsh -f", host: ""), at: api.address)
         let id = try XCTUnwrap(session?.boardID)
         let asleep: SavedSession = try await api.request("api/library/\(id)", method: "PATCH", body: ["state": "hibernating"])
         XCTAssertEqual(asleep.state, "hibernating")
@@ -60,12 +64,26 @@ final class NativeParityTests: XCTestCase {
     }
     func testConversationRenameWakeHibernateAndHistory() async throws {
         let id = "11111111-2222-4333-8444-555555555555"
-        _ = try await SessionActions().perform(.renameConversation(id: id, name: "parity-renamed"), at: api.address)
-        _ = try await SessionActions().perform(.renameConversation(id: id, name: "parity-saved-transcript"), at: api.address)
-        let awake = try await SessionActions().perform(.lifecycle(type: "session-wake", id: id), at: api.address)
+        // An unconfirmed action must not leave the shared fixture renamed or awake
+        // for later tests or for this test's retry. The server answers each step
+        // immediately, rejecting a step that does not apply (an inactive session
+        // cannot hibernate); log those and every other teardown error.
+        addTeardownBlock { @MainActor [api] in
+            for step in ["session-hibernate", "session-move-to-history"] {
+                do {
+                    _ = try await SessionActions(timeout: integrationActionTimeout).perform(.lifecycle(type: step, id: id), at: api.address)
+                } catch { print("NativeParityTests teardown: \(step): \(error)") }
+            }
+            do {
+                let _: SavedSession = try await api.request("api/library/parity-saved-transcript", method: "PATCH", body: ["name": "parity-saved-transcript"])
+            } catch { print("NativeParityTests teardown: restore name: \(error)") }
+        }
+        _ = try await SessionActions(timeout: integrationActionTimeout).perform(.renameConversation(id: id, name: "parity-renamed"), at: api.address)
+        _ = try await SessionActions(timeout: integrationActionTimeout).perform(.renameConversation(id: id, name: "parity-saved-transcript"), at: api.address)
+        let awake = try await SessionActions(timeout: integrationActionTimeout).perform(.lifecycle(type: "session-wake", id: id), at: api.address)
         XCTAssertNotNil(awake)
-        _ = try await SessionActions().perform(.lifecycle(type: "session-hibernate", id: id), at: api.address)
-        _ = try await SessionActions().perform(.lifecycle(type: "session-move-to-history", id: id), at: api.address)
+        _ = try await SessionActions(timeout: integrationActionTimeout).perform(.lifecycle(type: "session-hibernate", id: id), at: api.address)
+        _ = try await SessionActions(timeout: integrationActionTimeout).perform(.lifecycle(type: "session-move-to-history", id: id), at: api.address)
         let _: SavedSession = try await api.request("api/library/parity-saved-transcript", method: "PATCH", body: ["name": "parity-saved-transcript"])
     }
     func testMediaBytesAndServerSettingsRoundTrip() async throws {

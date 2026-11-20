@@ -31,10 +31,10 @@ final class ExternalAcceptanceUITests: XCTestCase {
         defer { UIPasteboard.general.items = [] }
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", "http://127.0.0.1:4151"]; app.launch()
         XCTAssertTrue(app.waitForBoardConnection(timeout: 20))
-        let search = app.searchFields["Find a session"]; search.tap(); search.typeText("native-image-acceptance\n")
+        let search = app.searchFields["Find a session"]; search.typeIntoField("native-image-acceptance\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-image-acceptance")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
-        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        XCTAssertTrue(app.waitForTerminalInput())
         app.tapTerminalKey("Paste text"); app.buttons["Paste from clipboard"].tap()
         let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Paste"]
         if allow.waitForExistence(timeout: 2) { allow.tap() }
@@ -53,7 +53,7 @@ final class ExternalAcceptanceUITests: XCTestCase {
         let history = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Conversation history")).firstMatch
         XCTAssertTrue(history.waitForExistence(timeout: 10)); reveal(history, app: app); history.tap()
         let search = app.searchFields["Search"]
-        XCTAssertTrue(search.waitForExistence(timeout: 10)); search.tap(); search.typeText("native-slow-media\n")
+        XCTAssertTrue(search.waitForExistence(timeout: 10)); search.typeIntoField("native-slow-media\n")
         reveal(app.buttons["Media and links"], app: app); app.buttons["Media and links"].tap()
         let firstPage = app.buttons["Page 1"]
         let initialReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: firstPage)

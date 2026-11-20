@@ -43,7 +43,7 @@ final class SimulatorStateUITests: XCTestCase {
         app.buttons["connection-status"].tap()
         let address = app.textFields["server-address"]
         XCTAssertTrue(address.waitForExistence(timeout: 5))
-        address.tap(); address.typeText("http://example.test:4040")
+        address.typeIntoField("http://example.test:4040")
         XCTAssertTrue(app.buttons["Connect"].isEnabled)
         assertVisible(app.buttons["Connect"], in: app)
         capture("sim-connection")
@@ -65,15 +65,13 @@ final class SimulatorStateUITests: XCTestCase {
         XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
         capture("sim-catalog")
         let search = app.searchFields["Find a session"]
-        search.tap(); search.typeText("native-live-one\n")
+        search.typeIntoField("native-live-one\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-live-one")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
         let enter = app.buttons["Enter"]
         XCTAssertTrue(enter.waitForExistence(timeout: 10))
-        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: enter)
-        waitForExpectations(timeout: 15)
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.waitForTerminalInput())
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap() })
         for name in ["Enter", "Escape", "Tab", "Arrow keys", "Control", "Paste text", "Hide keyboard"] {
             let key = app.revealTerminalKey(name)
             assertVisible(key, in: app)
@@ -109,16 +107,15 @@ final class SimulatorStateUITests: XCTestCase {
         let app = launch(server: "http://127.0.0.1:4151")
         XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
         let search = app.searchFields["Find a session"]
-        search.tap(); search.typeText("native-media-activity\n")
+        search.typeIntoField("native-media-activity\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-media-activity")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
         let terminal = app.webViews.firstMatch
         XCTAssertTrue(terminal.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        XCTAssertTrue(app.waitForTerminalInput())
         assertVisible(app.buttons["available-media"], in: app)
         capture("sim-portrait-media-controls")
-        terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.showKeyboard { terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap() })
         XCUIDevice.shared.orientation = .landscapeLeft
         sleep(1)
         assertVisible(app.buttons["session-overview"], in: app)

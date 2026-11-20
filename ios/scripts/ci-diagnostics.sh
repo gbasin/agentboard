@@ -4,7 +4,11 @@ ci_snapshot() {
   {
     printf '\n=== %s phase=%s ===\n' "$(date -u +%FT%TZ)" "${1:-periodic}"
     uptime
+    printf 'processes=%s\n' "$(ps -A -o pid= | wc -l | tr -d ' ')"
     ps -Ao pid,ppid,%cpu,%mem,rss,etime,comm | sort -k3 -nr | head -25
+    printf -- '--- by resident memory ---\n'
+    ps -Ao pid,ppid,%cpu,%mem,rss,etime,comm | sort -k5 -nr | head -10
+    df -h / | tail -1
     if command -v vm_stat >/dev/null 2>&1; then vm_stat; fi
   } >> "$CI_DIAGNOSTICS_PATH/resources.log" 2>&1 || true
 }
@@ -15,6 +19,7 @@ ci_diagnostics_start() {
   mkdir -p "$CI_DIAGNOSTICS_PATH"
   {
     printf 'ImageOS=%s\nImageVersion=%s\nDEVELOPER_DIR=%s\n' "${ImageOS:-unknown}" "${ImageVersion:-unknown}" "${DEVELOPER_DIR:-}"
+    printf 'CPUs=%s\nMemoryBytes=%s\n' "$(sysctl -n hw.ncpu 2>/dev/null || echo unknown)" "$(sysctl -n hw.memsize 2>/dev/null || echo unknown)"
     printf 'CoreSimulatorVersion='
     /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/Resources/Info.plist 2>/dev/null || printf 'unknown\n'
   } > "$CI_DIAGNOSTICS_PATH/environment.txt"

@@ -1,5 +1,6 @@
 const ws = new WebSocket('ws://127.0.0.1:4151/ws?catalog=2')
-const timer = setTimeout(() => { console.error('Seed timeout'); process.exit(1) }, 15000)
+// Session creation spawns tmux windows, which is slow while the Simulator boot loads the runner.
+const timer = setTimeout(() => { console.error('Seed timeout'); process.exit(1) }, 90_000)
 const names = ['native-live-one', 'native-live-two']
 let requested = false
 const found = new Map<string, string>()

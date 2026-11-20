@@ -2,9 +2,63 @@ import XCTest
 
 /// Replace iPhone field text through the native edit menu, not hardware-key shortcuts.
 extension XCUIElement {
+    /// Whether this element or a descendant owns keyboard focus, read from the
+    /// "Keyboard Focused" attribute of a fresh snapshot. Do not use the private
+    /// `hasKeyboardFocus` KVC key; it is unreliable on CI. typeText accepts
+    /// focus on a descendant, so check the whole subtree.
+    var hasKeyboardFocus: Bool {
+        guard exists else { return false }
+        let description = debugDescription
+        guard let start = description.range(of: "Element subtree:") else { return false }
+        let end = description.range(of: "Path to element:", range: start.upperBound..<description.endIndex)?.lowerBound ?? description.endIndex
+        return description[start.upperBound..<end].contains("Keyboard Focused")
+    }
+
+    /// Tap until this field owns keyboard focus, then let it finish moving.
+    /// Under CI load a single tap can land before the field accepts focus, and
+    /// typeText then fails with "Neither element nor any descendant has keyboard focus".
+    /// Poll directly: each focus check takes a full accessibility snapshot, which
+    /// can outlast a short XCTWaiter window on a loaded runner.
+    @discardableResult
+    func focusForTyping(timeout: TimeInterval = 30, file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        guard waitForExistence(timeout: timeout) else {
+            XCTFail("Field does not exist: \(debugDescription)", file: file, line: line); return false
+        }
+        if !hasKeyboardFocus { tap() }
+        var lastTap = Date()
+        while Date() < deadline {
+            if hasKeyboardFocus { waitForStableFrame(until: deadline); return true }
+            // Re-tap only after a long quiet period; a tap on a field that is
+            // gaining focus can open the edit menu instead.
+            if Date().timeIntervalSince(lastTap) > 8 { tap(); lastTap = Date() }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        if hasKeyboardFocus { return true }
+        XCTFail("Field did not receive keyboard focus: \(debugDescription)", file: file, line: line)
+        return false
+    }
+
+    /// Focus the field, then type. Use for native text and search fields.
+    func typeIntoField(_ text: String, file: StaticString = #filePath, line: UInt = #line) {
+        guard focusForTyping(file: file, line: line) else { return }
+        typeText(text)
+    }
+
+    /// A focused field can still be scrolling above the keyboard; taps on a
+    /// moving frame miss. Wait for two equal samples instead of a fixed sleep.
+    private func waitForStableFrame(until deadline: Date) {
+        var previous = frame
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.25)
+            let current = frame
+            if current == previous { return }
+            previous = current
+        }
+    }
+
     func replaceNativeText(with value: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        tap()
-        sleep(1) // Let the field finish scrolling above the keyboard.
+        guard focusForTyping(file: file, line: line) else { return }
         let current = self.value as? String
         if current != "" && current != placeholderValue {
             // A second tap at the insertion point opens edit options; a hold

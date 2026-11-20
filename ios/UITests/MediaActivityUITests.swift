@@ -44,7 +44,7 @@ final class MediaActivityUITests: XCTestCase {
         XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
         let search = app.searchFields["Find a session"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
-        search.tap(); search.typeText("native-media-activity\n")
+        search.typeIntoField("native-media-activity\n")
         return app
     }
     func testRealActivityUpdatesWhileSheetRemainsOpen() throws {
@@ -92,7 +92,7 @@ final class MediaActivityUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Page 2"].waitForExistence(timeout: 10))
         capture("second-page")
         let search = app.searchFields.firstMatch
-        XCTAssertTrue(search.exists); search.tap(); search.typeText("native-042")
+        XCTAssertTrue(search.exists); search.typeIntoField("native-042")
         let match = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Catalog reference 042")).firstMatch
         XCTAssertTrue(match.waitForExistence(timeout: 15))
         search.typeText("\n")

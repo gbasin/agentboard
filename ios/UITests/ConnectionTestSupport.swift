@@ -1,10 +1,29 @@
 import XCTest
 
+/// Terminal attach spans a tmux client, the WebSocket, and WebKit, and is
+/// slow on a loaded CI runner. Use one budget for every attach wait.
+let terminalAttachTimeout: TimeInterval = 60
+
 extension XCUIApplication {
     /// A WebView exists before WebKit and the server finish attaching the terminal.
-    func waitForTerminalInput(timeout: TimeInterval) -> Bool {
+    func waitForTerminalInput(timeout: TimeInterval = terminalAttachTimeout) -> Bool {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: buttons["Enter"])
         return XCTWaiter.wait(for: [ready], timeout: timeout) == .completed
+    }
+
+    /// Tap until the software keyboard appears. Under CI load the first tap can
+    /// reach WebKit before it accepts focus, and a fixed short wait then fails.
+    /// Re-tap only after ten quiet seconds. Use for WebView coordinate taps only;
+    /// a re-tap on a native text view can open its edit menu, so native fields
+    /// use focusForTyping().
+    func showKeyboard(timeout: TimeInterval = 30, by tap: () -> Void) -> Bool {
+        let keyboard = keyboards.firstMatch
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            tap()
+            if keyboard.waitForExistence(timeout: min(10, max(1, deadline.timeIntervalSinceNow))) { return true }
+        } while Date() < deadline
+        return keyboard.exists
     }
 
     /// Allow each launch phase its own budget: toolbar registration, then connection.

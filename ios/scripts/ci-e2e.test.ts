@@ -45,15 +45,17 @@ for (const scenario of [
       writeFileSync(join(scripts, 'seed-file.sh'), readFileSync(new URL('./seed-file.sh', import.meta.url), 'utf8'))
       writeFileSync(join(scripts, 'verify-file-export.sh'), readFileSync(new URL('./verify-file-export.sh', import.meta.url), 'utf8'))
       mkdirSync(join(root, 'app'))
+      writeFileSync(join(scripts, 'ci-simulator.sh'), readFileSync(new URL('./ci-simulator.sh', import.meta.url), 'utf8'))
       writeFileSync(join(scripts, 'ci-readiness.sh'), readFileSync(new URL('./ci-readiness.sh', import.meta.url), 'utf8'))
       writeFileSync(join(scripts, 'ci-diagnostics.sh'), 'ci_diagnostics_start() { :; }; ci_diagnostics_stop() { echo stopped >> "$CALL_LOG"; }; ci_phase() { echo "phase $1" >> "$CALL_LOG"; shift; "$@"; }\n')
       writeFileSync(join(scripts, 'test-e2e.sh'), '#!/bin/bash\necho tests >> "$CALL_LOG"\nif [ -f "$TMUX_TMPDIR/export-expected.pdf" ] && [ -d "$APP_DATA/File Provider Storage/Agentboard E2E Exports" ]; then cp "$TMUX_TMPDIR/export-expected.pdf" "$APP_DATA/File Provider Storage/Agentboard E2E Exports/Document.pdf"; fi\n' + (exportFailure ? 'printf corrupt > "$APP_DATA/File Provider Storage/Agentboard E2E Exports/Document.pdf"\n' : '') + 'exit ' + testStatus + '\n', { mode: 0o755 })
       const stub = (name: string, body: string) => writeFileSync(join(bin, name), '#!/bin/bash\necho "' + name + ' $*" >> "$CALL_LOG"\n' + body, { mode: 0o755 })
       stub('bun', `case "$1" in
         ios/scripts/e2e-fixtures.ts) printf '%s\\n' "$FIXTURES" ;;
-        ios/scripts/ci-simulator.ts) cat >/dev/null; echo mock-udid ;;
+        ios/scripts/ci-simulator.ts) if [ "$2" = runtime ]; then echo mock-runtime; else cat >/dev/null; echo mock-udid; fi ;;
         ios/scripts/seed-parity.ts) touch "$TMUX_TMPDIR/photo.png" "$TMUX_TMPDIR/upload.txt" "$TMUX_TMPDIR/export-expected.pdf" ;;
         ios/scripts/seed-live.ts|ios/scripts/warm-parity.ts|ios/scripts/parity-media-ready.ts|ios/scripts/tmux-ready.ts) ;;
+        src/server/index.ts) echo "backend-env tmux=$AGENTBOARD_TMUX_TIMEOUT_MS watchdog=$AGENTBOARD_STALL_WATCHDOG" >> "$CALL_LOG"; trap 'exit 0' TERM; while :; do /bin/sleep 0.05; done ;;
         *) trap 'exit 0' TERM; while :; do /bin/sleep 0.05; done ;;
       esac\n`)
       stub('xcrun', (cacheFailure ? 'if [[ "$*" == *dyld_shared_cache* ]]; then exit 75; fi\n' : '') + 'if [[ "$*" == *get_app_container* ]]; then printf "group.com.apple.FileProvider.LocalStorage\\t%s\\n" "$APP_DATA"; fi\n')
@@ -78,17 +80,29 @@ for (const scenario of [
       for (const [fixture, command] of Object.entries({ backend: 'bun src/server/index.ts', live: 'bun ios/scripts/seed-live.ts', parity: 'bun ios/scripts/seed-parity.ts', warm: 'bun ios/scripts/warm-parity.ts', 'shell-server': 'bun ios/scripts/shell-server.ts', 'pr-fixture': 'bun ios/scripts/pr-fixture.ts', 'parity-gap-fixture': 'bun ios/scripts/parity-gap-fixture.ts', 'media-activity-fixture': 'bun ios/scripts/media-activity-fixture.ts', photos: 'xcrun simctl addmedia', files: 'xcrun simctl get_app_container' })) {
         expect(calls.includes(command)).toBe(plan.includes(fixture as typeof plan[number]))
       }
+      if (plan.includes('photos')) {
+        // The import overlaps app installation but is joined before tests start.
+        expect(calls.indexOf('xcrun simctl addmedia')).toBeGreaterThan(calls.indexOf('bun ios/scripts/seed-parity.ts'))
+        expect(calls.indexOf('xcrun simctl addmedia')).toBeLessThan(calls.indexOf('\ntests\n'))
+      }
+      if (plan.includes('backend')) expect(calls).toContain('backend-env tmux=15000 watchdog=0')
       if (plan.includes('files')) expect(existsSync(join(root, 'app/File Provider Storage/parity-upload.txt'))).toBe(true)
       expect(calls.includes('phase parity-media-ready')).toBe(plan.includes('warm'))
       if (plan.includes('warm')) {
         expect(calls.indexOf('phase parity-media-ready')).toBeGreaterThan(calls.indexOf('bun ios/scripts/warm-parity.ts'))
         expect(calls.indexOf('phase parity-media-ready')).toBeLessThan(calls.indexOf('xcrun simctl install '))
       }
-      const cache = calls.indexOf('xcrun simctl runtime dyld_shared_cache update --all')
-      expect(cache).toBeGreaterThanOrEqual(0)
-      expect(cache).toBeLessThan(calls.indexOf('xcrun simctl boot '))
+      expect(calls).not.toContain('dyld_shared_cache update --all')
+      const cache = calls.indexOf('xcrun simctl runtime dyld_shared_cache update mock-runtime')
+      if (udidOverride) {
+        // An explicit UDID can name another runtime; never prepare the pinned one.
+        expect(calls).not.toContain('dyld_shared_cache')
+      } else {
+        expect(cache).toBeGreaterThanOrEqual(0)
+        expect(cache).toBeLessThan(calls.indexOf('xcrun simctl boot '))
+      }
       if (plan.includes('backend')) {
-        expect(cache).toBeLessThan(calls.indexOf('bun src/server/index.ts'))
+        if (!udidOverride) expect(cache).toBeLessThan(calls.indexOf('bun src/server/index.ts'))
         expect(calls.indexOf('phase tmux-ready')).toBeLessThan(calls.indexOf('bun src/server/index.ts'))
         expect(calls.indexOf('phase backend-pre-tests')).toBeGreaterThan(calls.indexOf('xcrun simctl install '))
         expect(calls.indexOf('phase backend-pre-tests')).toBeLessThan(calls.indexOf('\ntests\n'))

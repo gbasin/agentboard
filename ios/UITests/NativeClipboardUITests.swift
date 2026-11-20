@@ -34,14 +34,13 @@ final class NativeClipboardUITests: XCTestCase {
         defer { UIPasteboard.general.items = [] }
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", "http://127.0.0.1:4151"]; app.launch()
         XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
-        let search = app.searchFields["Find a session"]; search.tap(); search.typeText("native-live-one\n")
+        let search = app.searchFields["Find a session"]; search.typeIntoField("native-live-one\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-live-one")).firstMatch
         reveal(row, in: app)
         XCTAssertTrue(row.waitForExistence(timeout: 10)); XCTAssertTrue(row.isHittable); row.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["Enter"])
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, app.debugDescription)
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap()
+        XCTAssertTrue(app.waitForTerminalInput(), app.debugDescription)
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap() })
         app.tapTerminalKey("Control"); app.typeText("u")
         app.tapTerminalKey("Paste text")
         app.buttons["Paste from clipboard"].tap()
@@ -74,7 +73,7 @@ final class NativeClipboardUITests: XCTestCase {
         // An executed bare marker would fail in zsh; insertion must leave it in the prompt.
         let output = app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().filter { !$0.isWhitespace }
         XCTAssertFalse(output.contains("commandnotfound:" + marker))
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap()
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap() })
         app.tapTerminalKey("Control"); app.typeText("u")
     }
 }

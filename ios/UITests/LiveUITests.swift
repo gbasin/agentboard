@@ -22,7 +22,7 @@ final class LiveUITests: XCTestCase {
     }
     func open(_ name: String, app: XCUIApplication) {
         let search = app.searchFields["Find a session"]
-        search.tap()
+        search.focusForTyping()
         if search.buttons["Clear text"].exists { search.buttons["Clear text"].tap() }
         XCTAssertTrue((search.value as? String ?? "") == "" || (search.value as? String) == search.placeholderValue)
         search.typeText(name + "\n")
@@ -31,13 +31,10 @@ final class LiveUITests: XCTestCase {
         row.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Enter"].waitForExistence(timeout: 10))
-        let ready = NSPredicate(format: "enabled == true")
-        expectation(for: ready, evaluatedWith: app.buttons["Enter"])
-        waitForExpectations(timeout: 15)
+        XCTAssertTrue(app.waitForTerminalInput())
     }
     func type(_ command: String, app: XCUIApplication) {
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap() })
         app.typeText(command)
         app.tapTerminalKey("Enter")
     }
@@ -52,7 +49,7 @@ final class LiveUITests: XCTestCase {
         app.tapTerminalKey("Paste text")
         let editor = app.textViews["Text to paste"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        editor.tap(); editor.typeText("printf 'LIVE_%s_OK\\n' \(token)")
+        editor.typeIntoField("printf 'LIVE_%s_OK\\n' \(token)")
         app.buttons["Insert"].tap()
         XCTAssertTrue(app.buttons["Hide keyboard"].waitForExistence(timeout: 5))
         XCTAssertFalse(output("LIVE_\(token)_OK", in: app).exists)
@@ -62,8 +59,7 @@ final class LiveUITests: XCTestCase {
         XCUIDevice.shared.press(.home)
         sleep(2)
         app.activate()
-        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: app.buttons["Enter"])
-        waitForExpectations(timeout: 15)
+        XCTAssertTrue(app.waitForTerminalInput())
         XCTAssertTrue(output("SWIFT_\(token)_OK", in: app).waitForExistence(timeout: 5))
         type("printf 'RESUME_%s_OK\\n' \(token)", app: app)
         XCTAssertTrue(output("RESUME_\(token)_OK", in: app).waitForExistence(timeout: 5))
@@ -166,7 +162,7 @@ final class LiveUITests: XCTestCase {
         flick()
         XCUIDevice.shared.press(.home)
         app.activate()
-        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        XCTAssertTrue(app.waitForTerminalInput())
         let returned = terminal.staticTexts.allElementsBoundByIndex.map(\.label).filter { $0.hasPrefix("PAUSE_\(token)_") }
         XCTAssertFalse(returned.isEmpty)
         // tmux's clock/header and xterm's live announcement are transient. A
@@ -225,8 +221,8 @@ final class LiveUITests: XCTestCase {
         let token = String(UUID().uuidString.prefix(8))
         app.tapTerminalKey("Paste text")
         let editor = app.expandedPasteEditor()
-        editor.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(editor.focusForTyping())
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         editor.typeText("printf 'MULTI_A_%s_OK\\n' \(token)\nprintf 'MULTI_B_%s_OK\\n' \(token)")
         app.insertPasteDraft()
         XCTAssertFalse(output("MULTI_A_\(token)_OK", in: app).exists)

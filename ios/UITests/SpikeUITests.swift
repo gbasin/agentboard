@@ -3,7 +3,7 @@ import XCTest
 final class SpikeUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
     func openKeyboard(_ app: XCUIApplication) {
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65)).tap()
+        XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65)).tap() })
     }
 
     func output(_ value: String, in app: XCUIApplication) -> XCUIElement {
@@ -98,8 +98,7 @@ final class SpikeUITests: XCTestCase {
         app.tapTerminalKey("Paste text")
         let editor = app.textViews["Text to paste"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        editor.tap()
-        editor.typeText("printf 'PASTE_%s_OK\\n' SAFE")
+        editor.typeIntoField("printf 'PASTE_%s_OK\\n' SAFE")
         app.buttons["Insert"].tap()
         XCTAssertTrue(app.buttons["Hide keyboard"].waitForExistence(timeout: 5))
         XCTAssertFalse(output("PASTE_SAFE_OK", in: app).exists)
