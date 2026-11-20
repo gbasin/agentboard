@@ -6,9 +6,9 @@ import { shards } from './e2e-selection'
 type Batch = readonly [typeof shards[number], 'light' | 'dark']
 const workers: readonly (readonly Batch[])[] = [
   [['terminal', 'light'], ['catalog', 'dark']],
-  [['live', 'light'], ['live', 'dark'], ['settings', 'dark']],
+  [['live', 'light'], ['live', 'dark']],
   [['media', 'light'], ['terminal', 'dark']],
-  [['lifecycle', 'light'], ['media', 'dark']],
+  [['lifecycle', 'light'], ['media', 'dark'], ['settings', 'dark']],
   [['catalog', 'light'], ['lifecycle', 'dark'], ['settings', 'light']],
 ]
 export const batchSlots = ['first', 'second', 'third'] as const
