@@ -8,7 +8,7 @@ on:
         description: Shard to run (PRs always run all shards)
         type: choice
         default: all
-        options: [all, terminal, catalog, lifecycle, media, settings]
+        options: [all, terminal, live, catalog, lifecycle, media, settings]
       appearance:
         description: Appearance to run (PRs always run both)
         type: choice
@@ -43,7 +43,7 @@ jobs:
           matrix=$(bun ios/scripts/ci-workers.ts "$SHARD" "$APPEARANCE")
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
       - name: Verify shard coverage and publishing logic
-        run: bun test ./ios/scripts/terminal-scroll.test.ts ./ios/scripts/e2e-selection.test.ts ./ios/scripts/ci-diagnostics.test.ts ./ios/scripts/ci-e2e.test.ts ./ios/scripts/ci-workers.test.ts ./ios/scripts/parity-media-ready.test.ts ./ios/scripts/tmux-ready.test.ts ./ios/scripts/release-metadata.test.ts ./ios/scripts/testflight-status.test.ts ./ios/scripts/app-store-connect.test.ts
+        run: bun test ./ios/scripts/terminal-scroll.test.ts ./ios/scripts/e2e-selection.test.ts ./ios/scripts/ci-diagnostics.test.ts ./ios/scripts/ci-e2e.test.ts ./ios/scripts/ci-workers.test.ts ./ios/scripts/ci-prime-photos.test.ts ./ios/scripts/parity-media-ready.test.ts ./ios/scripts/tmux-ready.test.ts ./ios/scripts/release-metadata.test.ts ./ios/scripts/testflight-status.test.ts ./ios/scripts/app-store-connect.test.ts
       - name: Build test products once
         run: ios/scripts/build-for-testing.sh
       - name: Archive test products with executable permissions and symlinks
@@ -54,6 +54,7 @@ jobs:
           path: ios-test-products.tar.gz
           retention-days: 3
   simulator:
+    name: simulator ${{ matrix.worker }} (${{ matrix.label }})
     needs: build
     strategy:
       fail-fast: false
@@ -61,8 +62,8 @@ jobs:
       # Keep five warm simulators; balance measured appearance batches across them.
       matrix: ${{ fromJSON(needs.build.outputs.workers) }}
     runs-on: xcode-27
-    # Covers two batches plus one retry of each failed UI test.
-    timeout-minutes: 90
+    # Covers the balanced batches plus a few retried UI tests.
+    timeout-minutes: 60
     env:
       IOS_TEST_PRODUCTS_DIR: ${{ github.workspace }}/ios/.build/Build/Products
     steps:
@@ -78,6 +79,12 @@ jobs:
         run: |
           udid=$(ios/scripts/ci-simulator.sh)
           echo "IOS_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+      - name: Start the first Photos import in the background
+        run: >-
+          ios/scripts/ci-prime-photos.sh "$IOS_SIMULATOR_UDID"
+          "${{ matrix.firstMode }}:${{ matrix.firstShard }}"
+          "${{ matrix.secondMode }}:${{ matrix.secondShard }}"
+          "${{ matrix.thirdMode }}:${{ matrix.thirdShard }}"
       - run: brew install tmux
       - run: bun install --frozen-lockfile
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -117,5 +124,21 @@ jobs:
           path: |
             ios/evidence/*-${{ matrix.secondMode }}-${{ matrix.secondShard }}.xcresult
             /tmp/ab-ios-fixture-logs/${{ matrix.secondMode }}-${{ matrix.secondShard }}-*/*.log
+            /tmp/ab-ios-parity/*.log
+            /tmp/ab-ios-diagnostics/**
+      - name: Third batch (${{ matrix.thirdMode }} ${{ matrix.thirdShard }})
+        if: ${{ !cancelled() && steps.products.outcome == 'success' && matrix.thirdShard != '' }}
+        env:
+          IOS_E2E_MODE: ${{ matrix.thirdMode }}
+          IOS_E2E_SHARD: ${{ matrix.thirdShard }}
+        run: ios/scripts/ci-e2e.sh
+      - name: Preserve third batch
+        if: ${{ always() && matrix.thirdShard != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-ios-${{ matrix.thirdMode }}-${{ matrix.thirdShard }}
+          path: |
+            ios/evidence/*-${{ matrix.thirdMode }}-${{ matrix.thirdShard }}.xcresult
+            /tmp/ab-ios-fixture-logs/${{ matrix.thirdMode }}-${{ matrix.thirdShard }}-*/*.log
             /tmp/ab-ios-parity/*.log
             /tmp/ab-ios-diagnostics/**
