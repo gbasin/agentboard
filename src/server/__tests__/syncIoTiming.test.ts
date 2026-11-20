@@ -77,17 +77,22 @@ describe('wrapFs', () => {
   })
 
   test('sub-threshold calls accumulate and report once over the threshold', () => {
+    // A real 60ms wait can measure past the 100ms bar on a loaded machine, so
+    // this test drives the wrapper's clock: each call costs exactly 60ms.
+    let clock = 0
     const fakeFs = {
-      readFileSync: () => busyWait(60),
+      readFileSync: () => {
+        clock += 60
+      },
     }
-    wrapFs(fakeFs as never)
+    wrapFs(fakeFs as never, () => clock)
     fakeFs.readFileSync()
     expect(calls).toHaveLength(0) // 60ms alone is below the bar
     fakeFs.readFileSync()
     const hit = calls.find((c) => c.event === 'sync_fs_slow')
     expect(hit?.data?.accumulated).toBe(true)
     expect(hit?.data?.calls).toBe(2)
-    expect(hit?.data?.durationMs as number).toBeGreaterThanOrEqual(SLOW_SYNC_IO_MS)
+    expect(hit?.data?.durationMs).toBe(120)
   })
 
   test('distinct paths get separate suppression windows', () => {

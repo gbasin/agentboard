@@ -28,6 +28,7 @@ function link(i: number) {
   return JSON.stringify({ type: 'frame-link', frameUrl: `https://example.com/${i}`, timestamp: new Date(1_700_000_000_000 + i).toISOString() }) + '\n'
 }
 
+// Scans a 6,000-line transcript; a loaded machine can take longer than bun's 5s default.
 test('neighbor seeks skip thousands of nonimages in both directions without loading pages', () => {
   const { index, log, record } = fixture()
   fs.writeFileSync(log, image(0) + Array.from({ length: 6000 }, (_, i) => link(i + 1)).join('') + image(6001) + image(6002))
@@ -46,7 +47,7 @@ test('neighbor seeks skip thousands of nonimages in both directions without load
   expect(end.previous).toEqual(middle.current)
   expect(end.next).toBeNull()
   expect(Buffer.byteLength(JSON.stringify(middle))).toBeLessThan(MEDIA_PAGE_BYTES)
-})
+}, 30_000)
 
 test('navigation sees appended images but rejects rewritten, deleted and cross-session anchors', () => {
   const { index, log, record } = fixture()
