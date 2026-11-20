@@ -79,9 +79,9 @@ The workflow keeps five workers and assigns whole shard/appearance batches as fo
 | Worker | First batch | Second batch | Third batch |
 |---|---|---|---|
 | 1 | terminal light | catalog dark | |
-| 2 | live light | live dark | settings dark |
+| 2 | live light | live dark | |
 | 3 | media light | terminal dark | |
-| 4 | lifecycle light | media dark | |
+| 4 | lifecycle light | media dark | settings dark |
 | 5 | catalog light | lifecycle dark | settings light |
 
 The assignment balances median XCTest seconds per batch. The simulator job timeout leaves room for a few retried UI tests above the balanced duration.
