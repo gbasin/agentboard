@@ -17,13 +17,19 @@ if [ "${#test_runs[@]}" -ne 1 ] || [ ! -f "${test_runs[0]}" ]; then
 fi
 # Run from a trimmed copy beside the original so __TESTROOT__ still resolves.
 # Xcode's defaults record H.264 video of every UI test and inject the runtime
-# performance checker; both add CPU load on hosted runners. Failure
-# screenshots and UI snapshots remain in the result bundle.
+# performance checker; both add CPU load on hosted runners. XCTest also logs
+# every accessibility query inside the app and runner, and diagnosticd relays
+# those os_log messages; OS_ACTIVITY_MODE=disable drops them at the source.
+# Failure screenshots and UI snapshots remain in the result bundle.
 xctestrun="$(dirname "${test_runs[0]}")/.e2e-$(basename "${test_runs[0]}")"
 cp "${test_runs[0]}" "$xctestrun"
 for target in $(plutil -convert json -o - "$xctestrun" | bun -e 'console.log(Object.keys(await Bun.stdin.json()).filter(key => !key.startsWith("__")).join("\n"))'); do
   plutil -replace "$target.PreferredScreenCaptureFormat" -string screenshots "$xctestrun"
   plutil -replace "$target.UITargetAppPerformanceAntipatternCheckerEnabled" -bool NO "$xctestrun"
+  plutil -replace "$target.EnvironmentVariables.OS_ACTIVITY_MODE" -string disable "$xctestrun"
+  if plutil -extract "$target.UITargetAppEnvironmentVariables" xml1 -o /dev/null "$xctestrun" 2>/dev/null; then
+    plutil -replace "$target.UITargetAppEnvironmentVariables.OS_ACTIVITY_MODE" -string disable "$xctestrun"
+  fi
 done
 xcrun simctl bootstatus "$udid" -b
 mkdir -p ios/evidence
