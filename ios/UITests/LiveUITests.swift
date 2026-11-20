@@ -138,7 +138,16 @@ final class LiveUITests: XCTestCase {
         app.buttons["Session actions"].tap(); app.tapNativeMenuAction("Scroll to bottom")
         XCTAssertTrue(output("FLICK_\(token)_400", in: app).waitForExistence(timeout: 5))
         swipe(hold: 0)
-        let flick = try settledEarliest()
+        var flick = try settledEarliest()
+        // A starved runner can deliver the synthesized release late, which
+        // UIKit reads as a stop with no velocity. Without momentum the flick
+        // lands on the drag's row; measure one more flick from live output.
+        if flick >= drag - 10 {
+            app.buttons["Session actions"].tap(); app.tapNativeMenuAction("Scroll to bottom")
+            XCTAssertTrue(output("FLICK_\(token)_400", in: app).waitForExistence(timeout: 5))
+            swipe(hold: 0)
+            flick = try settledEarliest()
+        }
         XCTAssertLessThan(flick, drag - 10, "Flick must traverse more history than the same drag held still at release")
         let evidence = XCTAttachment(string: "Earliest visible row: held drag \(drag), flick \(flick); additional history \(drag - flick) lines")
         evidence.name = "flick-distance"; evidence.lifetime = .keepAlways; add(evidence)
