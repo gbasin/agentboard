@@ -31,7 +31,9 @@ final class SessionActionUITests: XCTestCase {
         app.textFields["session-name"].typeIntoField(name)
         capture("actions-create")
         app.buttons["Create"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["action-error"].firstMatch.waitForExistence(timeout: 10))
+        // One snapshot of this sheet and its keyboard has taken 5.6 s under load.
+        let actionError = app.staticTexts["action-error"]
+        XCTAssertTrue(waitUntil(timeout: 30) { actionError.exists })
         capture("actions-error")
         replace(project, with: "/tmp", in: app)
         app.buttons["Create"].tap()

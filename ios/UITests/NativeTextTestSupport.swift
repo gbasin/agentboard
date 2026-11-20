@@ -57,6 +57,17 @@ extension XCUIElement {
         }
     }
 
+    /// The compact menu shows Select All as a menu item; the paginated menu at
+    /// accessibility text sizes shows it as a button. Query both by type: an
+    /// untyped descendants query also matches their static-text children and
+    /// walks the whole keyboard tree.
+    private func hittableSelectAll(in app: XCUIApplication) -> XCUIElement? {
+        for candidate in [app.menuItems["Select All"], app.buttons["Select All"]] where candidate.exists && candidate.isHittable {
+            return candidate
+        }
+        return nil
+    }
+
     func replaceNativeText(with value: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         guard focusForTyping(file: file, line: line) else { return }
         let current = self.value as? String
@@ -64,31 +75,28 @@ extension XCUIElement {
             // A second tap at the insertion point opens edit options; a hold
             // moves the caret and can leave the edit menu closed.
             tap()
-            let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                let selectAll = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Select All")).firstMatch
-                let forward = app.buttons.matching(NSPredicate(format: "label IN %@", ["Forward", "Next Page"])).firstMatch
-                return (selectAll.exists && selectAll.isHittable)
-                    || (forward.exists && forward.isEnabled && forward.isHittable)
-            }, object: nil)
-            guard XCTWaiter.wait(for: [menuReady], timeout: 5) == .completed else {
+            // The menu appears after UIKit rules out a double tap. On a loaded
+            // runner the first snapshot while it animates in can take over four
+            // seconds, so allow several samples rather than one.
+            let forwardQuery = app.buttons.matching(NSPredicate(format: "label IN %@", ["Forward", "Next Page"])).firstMatch
+            guard waitUntil(timeout: 15, {
+                hittableSelectAll(in: app) != nil
+                    || (forwardQuery.exists && forwardQuery.isEnabled && forwardQuery.isHittable)
+            }) else {
                 XCTFail("The native edit menu did not appear.", file: file, line: line); return
             }
             var selection: XCUIElement?
             // Accessibility text sizes paginate the edit menu. Require each
             // Forward / Next Page action to reveal a different page before continuing.
             for _ in 0..<8 {
-                let selectAll = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Select All")).firstMatch
-                if selectAll.exists && selectAll.isHittable { selection = selectAll; break }
-                let forward = app.buttons.matching(NSPredicate(format: "label IN %@", ["Forward", "Next Page"])).firstMatch
-                guard forward.exists && forward.isEnabled && forward.isHittable else { break }
+                if let selectAll = hittableSelectAll(in: app) { selection = selectAll; break }
+                guard forwardQuery.exists && forwardQuery.isEnabled && forwardQuery.isHittable else { break }
                 let previous = app.menuItems.allElementsBoundByIndex.map(\.label)
-                forward.tap()
-                let changed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                forwardQuery.tap()
+                guard waitUntil(timeout: 15, {
                     let labels = app.menuItems.allElementsBoundByIndex.map(\.label)
-                    let expandedSelection = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Select All")).firstMatch
-                    return (expandedSelection.exists && expandedSelection.isHittable) || (!labels.isEmpty && labels != previous)
-                }, object: nil)
-                guard XCTWaiter.wait(for: [changed], timeout: 5) == .completed else {
+                    return hittableSelectAll(in: app) != nil || (!labels.isEmpty && labels != previous)
+                }) else {
                     XCTFail("The native edit menu did not advance.", file: file, line: line); return
                 }
             }
@@ -98,11 +106,10 @@ extension XCUIElement {
             selection.tap()
             typeText(XCUIKeyboardKey.delete.rawValue)
         }
-        let cleared = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+        guard waitUntil(timeout: 5, {
             guard let current = self.value as? String else { return false }
             return current.isEmpty || current == self.placeholderValue
-        }, object: nil)
-        guard XCTWaiter.wait(for: [cleared], timeout: 5) == .completed else {
+        }) else {
             XCTFail("The native field did not clear.", file: file, line: line); return
         }
         typeText(value)

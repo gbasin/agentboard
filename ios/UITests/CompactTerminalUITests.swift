@@ -100,7 +100,7 @@ final class CompactTerminalUITests: XCTestCase {
         app.tapTerminalKey("Delete word")
         app.tapTerminalKey("Shift modifier")
         app.tapTerminalKey("Tab")
-        app.tapTerminalKey("Control"); app.typeText("c")
+        app.tapTerminalKey("Control"); app.typeIntoTerminal("c")
         app.tapTerminalKey("Insert newline")
         let received = request("input")["input"] as? [String] ?? []
         XCTAssertEqual(Array(received.suffix(4)), ["\u{17}", "\u{1b}[Z", "\u{3}", "\n"])

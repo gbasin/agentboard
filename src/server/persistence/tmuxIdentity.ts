@@ -31,7 +31,13 @@ function runTmux(args: string[]): string {
 export function ensureTmuxServerEpoch(): string {
   let epoch = runTmux(['show-options', '-gqv', '@agentboard-server-id'])
   if (!epoch) {
-    runTmux(['set-option', '-g', '-o', '@agentboard-server-id', randomUUID()])
+    try {
+      runTmux(['set-option', '-g', '-o', '@agentboard-server-id', randomUUID()])
+    } catch (error) {
+      // -o refuses to overwrite: another caller created the epoch after our
+      // read. That epoch is the one to use, so read it back.
+      if (!String(error).includes('already set')) throw error
+    }
     epoch = runTmux(['show-options', '-gqv', '@agentboard-server-id'])
   }
   if (!epoch) throw new Error('tmux server identity unavailable')

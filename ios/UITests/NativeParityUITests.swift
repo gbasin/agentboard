@@ -245,7 +245,7 @@ final class NativeParityUITests: XCTestCase {
         capture("attachment-review")
         app.buttons["confirm-attachments"].tap()
         XCTAssertTrue(app.navigationBars["Attach to session"].waitForNonExistence(timeout: 15)); capture("inserted-photo")
-        XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("/tmp/paste-") }, object: nil)], timeout: 10) == .completed)
+        XCTAssertTrue(waitUntil(timeout: 10) { app.webViews.firstMatch.staticTextLabels.joined().contains("/tmp/paste-") })
         // Clear the unexecuted path; insertion must not execute a command.
         XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap() }); app.tapTerminalKey("Control"); app.typeText("u")
     }
@@ -254,10 +254,8 @@ final class NativeParityUITests: XCTestCase {
         tap("Choose photo", in: app)
         let notice = app.otherElements["PXGSingleViewContainerView_AX"].firstMatch
         let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
-        let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            notice.buttons["Close"].firstMatch.exists || photo.exists
-        }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: 30), .completed)
+        // PhotosUI runs out of process, so one snapshot of it can be slow.
+        XCTAssertTrue(waitUntil(timeout: 30) { notice.buttons["Close"].firstMatch.exists || photo.exists })
         if notice.buttons["Close"].firstMatch.exists { notice.buttons["Close"].firstMatch.tap() }
         XCTAssertTrue(photo.waitForExistence(timeout: 20)); capture("photo-picker")
         photo.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
@@ -294,10 +292,9 @@ final class NativeParityUITests: XCTestCase {
             // Files exposes Open before the selected provider item is ready.
             // Wait for its action to enable rather than tapping its disabled state.
             let confirmation = app.buttons["confirm-attachments"]
-            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            XCTAssertTrue(waitUntil(timeout: 15) {
                 confirmation.exists || (open.exists && open.isEnabled && open.isHittable)
-            }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed)
+            })
             if !confirmation.exists { open.tap() }
         }
         // Accepting Open starts system-provider work before our importer callback.
@@ -308,7 +305,7 @@ final class NativeParityUITests: XCTestCase {
         capture("attachment-review")
         app.buttons["confirm-attachments"].tap()
         XCTAssertTrue(app.navigationBars["Attach to session"].waitForNonExistence(timeout: 15)); capture("inserted-file")
-        XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("parity-upload.txt") }, object: nil)], timeout: 10) == .completed)
+        XCTAssertTrue(waitUntil(timeout: 10) { app.webViews.firstMatch.staticTextLabels.joined().contains("parity-upload.txt") })
         XCTAssertTrue(app.showKeyboard { app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap() }); app.tapTerminalKey("Control"); app.typeText("u")
     }
 
@@ -354,8 +351,7 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         let before = toggle.value as? String
         toggle.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap()
-        let toggled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in toggle.value as? String != before }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [toggled], timeout: 5), .completed, "Session ID prefix did not toggle.")
+        XCTAssertTrue(waitUntil(timeout: 5) { toggle.value as? String != before }, "Session ID prefix did not toggle.")
         if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
         if app.buttons["Done"].exists { app.buttons["Done"].tap() }
         else { app.buttons["Close"].firstMatch.tap() }

@@ -39,8 +39,9 @@ final class DocumentExportUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Share document"].waitForExistence(timeout: 20)); app.buttons["Share document"].tap()
         let save = app.cells["Save to Files"]
         let more = app.cells["View More"]
-        let actions = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in save.exists || more.exists }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [actions], timeout: 20), .completed)
+        // The share sheet runs out of process, so one snapshot of it can be slow.
+        let action = app.cells.matching(NSPredicate(format: "label IN %@", ["Save to Files", "View More"])).firstMatch
+        XCTAssertTrue(waitUntil(timeout: 20) { action.exists })
         if !save.exists { more.tap() }
         XCTAssertTrue(save.waitForExistence(timeout: 10)); save.tap()
         let folder = app.cells.containing(NSPredicate(format: "label BEGINSWITH %@", "Agentboard E2E Exports")).firstMatch

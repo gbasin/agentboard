@@ -108,7 +108,7 @@ final class LiveUITests: XCTestCase {
         XCTAssertTrue(output("FLICK_\(token)_400", in: app).waitForExistence(timeout: 10))
         let terminal = app.webViews.firstMatch
         func earliest() throws -> Int {
-            let text = terminal.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: "\n")
+            let text = terminal.staticTextLabels.joined(separator: "\n")
             let regex = try NSRegularExpression(pattern: "FLICK_\(token)_([0-9]{3})")
             let values = regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
                 Int((text as NSString).substring(with: $0.range(at: 1)))
@@ -163,7 +163,7 @@ final class LiveUITests: XCTestCase {
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertTrue(app.waitForTerminalInput())
-        let returned = terminal.staticTexts.allElementsBoundByIndex.map(\.label).filter { $0.hasPrefix("PAUSE_\(token)_") }
+        let returned = terminal.staticTextLabels.filter { $0.hasPrefix("PAUSE_\(token)_") }
         XCTAssertFalse(returned.isEmpty)
         // tmux's clock/header and xterm's live announcement are transient. A
         // middle history row must remain visible after the renderer settles.
