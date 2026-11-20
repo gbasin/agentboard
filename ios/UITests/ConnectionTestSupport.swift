@@ -31,8 +31,9 @@ extension XCUIElement {
 }
 
 /// Terminal attach spans a tmux client, the WebSocket, and WebKit, and is
-/// slow on a loaded CI runner. Use one budget for every attach wait.
-let terminalAttachTimeout: TimeInterval = 60
+/// slow on a loaded CI runner: a passing attach has taken 43 s while the
+/// backend event loop lagged up to 28 s. Use one budget for every attach wait.
+let terminalAttachTimeout: TimeInterval = 120
 
 extension XCUIApplication {
     /// A WebView exists before WebKit and the server finish attaching the terminal.

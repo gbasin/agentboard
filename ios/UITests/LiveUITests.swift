@@ -115,18 +115,30 @@ final class LiveUITests: XCTestCase {
             }
             return try XCTUnwrap(values.min(), "Expected seeded rows in terminal: " + text)
         }
+        // Momentum reaches tmux as a stream of scroll requests; under backend
+        // lag it is still arriving after a fixed pause. Measure once the
+        // earliest visible row stops changing.
+        func settledEarliest() throws -> Int {
+            var previous = try earliest()
+            for _ in 0..<20 {
+                Thread.sleep(forTimeInterval: 1)
+                let current = try earliest()
+                if current == previous { return current }
+                previous = current
+            }
+            return previous
+        }
         func swipe(hold: TimeInterval) {
             terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.2))
                 .press(forDuration: 0, thenDragTo: terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.8)),
                        withVelocity: XCUIGestureVelocity(rawValue: 1200), thenHoldForDuration: hold)
-            Thread.sleep(forTimeInterval: 1.5)
         }
         swipe(hold: 0.25)
-        let drag = try earliest()
+        let drag = try settledEarliest()
         app.buttons["Session actions"].tap(); app.tapNativeMenuAction("Scroll to bottom")
         XCTAssertTrue(output("FLICK_\(token)_400", in: app).waitForExistence(timeout: 5))
         swipe(hold: 0)
-        let flick = try earliest()
+        let flick = try settledEarliest()
         XCTAssertLessThan(flick, drag - 10, "Flick must traverse more history than the same drag held still at release")
         let evidence = XCTAttachment(string: "Earliest visible row: held drag \(drag), flick \(flick); additional history \(drag - flick) lines")
         evidence.name = "flick-distance"; evidence.lifetime = .keepAlways; add(evidence)

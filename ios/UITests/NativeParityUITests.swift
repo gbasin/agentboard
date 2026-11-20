@@ -102,7 +102,13 @@ final class NativeParityUITests: XCTestCase {
         replace(app.textFields["session-project"], "/tmp/ab-ios-parity/project")
         tap("Browse directories", in: app)
         XCTAssertTrue(app.navigationBars["Choose directory"].waitForExistence(timeout: 5))
-        app.buttons["child"].tap(); app.buttons["Parent directory"].tap(); capture("directories")
+        // The listing loads from the backend after the sheet appears; its event
+        // loop has lagged 17 s and more on a loaded runner.
+        let child = app.buttons["child"]
+        XCTAssertTrue(waitUntil(timeout: 45) { child.exists }); child.tap()
+        let parent = app.buttons["Parent directory"]
+        XCTAssertTrue(waitUntil(timeout: 45) { parent.exists && parent.isEnabled }); parent.tap()
+        XCTAssertTrue(waitUntil(timeout: 45) { child.exists }); capture("directories")
         app.buttons["Choose"].tap()
         let name = "parity-ui-" + String(UUID().uuidString.prefix(6))
         app.textFields["session-name"].typeIntoField(name)
