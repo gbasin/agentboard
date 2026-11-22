@@ -78,6 +78,37 @@ test('late replies cannot resurrect removed/rebound panes or a different tmux in
   expect(changes).toHaveLength(1)
 })
 
+test('closing the last supported session sends one empty scan to the existing worker', () => {
+  const { client, workers, changes } = fake()
+  const supported = session()
+  const remaining = [session({ source: 'external' })]
+  client.enrich([supported])
+  const worker = workers[0]
+
+  expect(client.enrich(remaining)).toEqual(remaining)
+  client.enrich([])
+  expect(worker.scans()).toHaveLength(1)
+  worker.reply(activity())
+  expect(changes).toHaveLength(0)
+  expect(worker.scans()).toHaveLength(2)
+  const cleanup = worker.scans()[1]
+  expect(cleanup.sessions).toEqual([])
+
+  client.enrich(remaining)
+  worker.onmessage!(new MessageEvent<ActivityResponse>('message', { data: { id: cleanup.id, patches: [] } }))
+  client.enrich([])
+  expect(worker.scans()).toHaveLength(2)
+  expect(workers).toEqual([worker])
+  expect(worker.terminated).toBe(false)
+
+  client.enrich([supported])
+  worker.reply(activity())
+  expect(changes).toHaveLength(1)
+  client.enrich([])
+  expect(worker.scans()).toHaveLength(4)
+  expect(worker.scans()[3].sessions).toEqual([])
+})
+
 test('unsupported and remote sessions never spawn a worker; disposal fences callbacks', () => {
   const { client, workers, changes } = fake()
   const unsupported = [session({ remote: true }), session({ source: 'external' }), session({ agentType: 'pi' }), session({ logFilePath: undefined }), session({ agentSessionId: undefined })]

@@ -109,7 +109,7 @@ export function reduceActivity(state: ActivityState, value: unknown, kind: 'clau
           }
         }
       }
-      if (e.type === 'assistant' && (m.stop_reason === 'end_turn' || m.stop_reason === 'stop_sequence')) {
+      if (e.type === 'assistant' && (m.stop_reason === 'end_turn' || m.stop_reason === 'stop_sequence' || m.stop_reason === 'refusal')) {
         state.phase = 'idle'
         state.tools.clear()
         relevant = true

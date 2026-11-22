@@ -97,6 +97,8 @@ async function main() {
     // overlapping with any other test that captures globals at module load.
     const ISOLATED_FILES = new Set([
       'sessionMetadataViews.test.ts',
+      // Activity scan tests spy on Date.now and file I/O.
+      'sessionActivity.test.ts',
       'terminalLeases.test.ts',
       'persistenceOwnership.test.ts',
       'persistenceRoutes.test.ts',

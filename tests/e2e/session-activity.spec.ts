@@ -1,6 +1,7 @@
 // Complete log -> private tmux association -> worker -> WS -> actual UI path.
 import { test, expect } from '@playwright/test'
 import fs from 'node:fs'
+import { dirname, join } from 'node:path'
 import { seedActivity, activityLine } from './helpers/activityFixture'
 
 // Real fixture processes have no harness ownership files. Exercise the existing
@@ -159,5 +160,50 @@ test('Claude parked continuation rebinds identity, prompt and children; unpark r
       contentType: 'application/json',
     })
     throw error
+  } finally { fixture.stop() }
+})
+
+test('Claude activity retains completed children outside the read cap and detects a resume', async ({ page, request }, info) => {
+  const fixture = seedActivity('claude')
+  const childDir = dirname(fixture.child)
+  const ended = { type: 'assistant', message: { stop_reason: 'end_turn', content: [] } }
+  const started = { type: 'api-request' }
+  const writeChild = (name: string, activity: object) => fs.writeFileSync(join(childDir, `agent-${name}.jsonl`), activityLine(activity))
+  try {
+    for (let index = 0; index < 255; index++) writeChild(`worker-${index}`, ended)
+    await page.goto('/')
+    const card = page.locator('[data-testid="session-card"]:visible').filter({ hasText: fixture.name }).first()
+    const counter = card.getByTestId('session-activity-counter')
+    const popover = page.getByTestId('session-activity-popover')
+    await expect.poll(async () => {
+      const sessions = await (await request.get('/api/sessions')).json()
+      const session = sessions.find((s: { name: string }) => s.name === fixture.name)
+      if (session?.agentSessionId !== fixture.sessionId) fixture.refreshPrompt()
+      return session?.activity?.total
+    }, { timeout: 30_000 }).toBe(256)
+    await expect(counter).toHaveText('+1')
+    await counter.click()
+    await expect(popover).toContainText('Review activity parser')
+
+    fixture.append(ended)
+    const oldTime = (Date.now() - 60_000) / 1000
+    fs.utimesSync(fixture.child, oldTime, oldTime)
+    await expect(counter).toHaveText('+0', { timeout: 20_000 })
+    await expect(popover).toContainText('Review activity parser')
+    // More than a hot set of fresh logs pushes the finished child to the slow scan.
+    for (let index = 0; index < 16; index++) writeChild(`recent-worker-${index}`, ended)
+    writeChild('new-worker', started)
+    await expect(counter).toHaveText('+1', { timeout: 20_000 })
+    await expect(counter).toHaveAttribute('aria-label', 'Show subagents: 1 running')
+    await expect(popover.getByRole('heading', { name: 'Subagents 273' })).toBeVisible()
+    await expect(popover.getByText('new-worker', { exact: true })).toBeVisible()
+
+    fixture.append(started)
+    await expect(counter).toHaveText('+2', { timeout: 45_000 })
+    await expect(counter).toHaveAttribute('aria-label', 'Show subagents: 2 running')
+    await expect(popover.getByText('Review activity parser', { exact: true })).toBeVisible()
+    await expect(popover.getByText('new-worker', { exact: true })).toBeVisible()
+    await expect(popover.getByText('2 running', { exact: true })).toBeVisible()
+    await info.attach('resumed-subagent', { body: await page.screenshot({ path: info.outputPath('resumed-subagent.png') }), contentType: 'image/png' })
   } finally { fixture.stop() }
 })
