@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.46.11](https://github.com/gbasin/agentboard/compare/v0.46.10...v0.46.11) (2026-11-22)
+
+
+### Bug Fixes
+
+* **e2e:** stop the agentboard server before teardown removes the run dir ([#601](https://github.com/gbasin/agentboard/issues/601)) ([7d16340](https://github.com/gbasin/agentboard/commit/7d16340c0c290e84b14e4e468598bfacb338a1eb))
+* retain completed Claude children across activity scans ([#605](https://github.com/gbasin/agentboard/issues/605)) ([b72f575](https://github.com/gbasin/agentboard/commit/b72f5753793afd2f6ab9dd2ace215f53d7153e6d))
+
 ## [0.46.10](https://github.com/gbasin/agentboard/compare/v0.46.9...v0.46.10) (2026-11-19)
 
 
