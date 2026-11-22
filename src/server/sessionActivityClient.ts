@@ -10,6 +10,7 @@ import { logger } from './logger'
 
 export class SessionActivityClient {
   private worker: Worker | null = null
+  private workerHasSessions = false
   private stopped = false
   private current: number | null = null
   private serial = 0
@@ -58,11 +59,14 @@ export class SessionActivityClient {
     if (this.stopped || this.current !== null || this.pending === null || this.now() < this.retryAt) return
     const sessions = this.pending
     this.pending = null
-    if (!sessions.length) return
+    // The empty scan releases per-parent observations after the last session
+    // closes. An already empty worker needs no idle refreshes.
+    if (!sessions.length && !this.workerHasSessions) return
     this.current = ++this.serial
     try {
       if (!this.worker) this.spawn()
       this.armTimer()
+      this.workerHasSessions = sessions.length > 0
       this.worker!.postMessage({ kind: 'scan', id: this.current, sessions } satisfies ActivityRequest)
     } catch { this.failed('Activity scan delivery failed') }
   }
@@ -121,6 +125,7 @@ export class SessionActivityClient {
     this.current = null
     const worker = this.worker
     this.worker = null
+    this.workerHasSessions = false
     if (worker) {
       worker.onmessage = null
       worker.onerror = null

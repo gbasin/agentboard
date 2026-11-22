@@ -51,7 +51,10 @@ describe('activity reduction', () => {
     expect(s.phase).toBe('idle')
     reduceActivity(s, { type: 'api-request' }, 'claude')
     expect(s.phase).toBe('model')
+    reduceActivity(s, claudeTool('c', 'Bash'), 'claude')
     expect(JSON.stringify(activitySnapshot(s))).not.toContain('secret')
+    reduceActivity(s, { type: 'assistant', message: { stop_reason: 'refusal' } }, 'claude')
+    expect(activitySnapshot(s)).toMatchObject({ phase: 'idle', label: 'Turn finished', tools: [] })
   })
 })
 
@@ -284,17 +287,45 @@ test('stoppedByUser metadata ends a child only while strictly newer than its tra
   await fs.utimes(child, stamp - 2, stamp - 2)
   await fs.utimes(meta, stamp, stamp)
   const tracker = new SessionActivityTracker()
-  let [s] = await tracker.enrich([session('claude', log)])
-  expect(s.activity).toMatchObject({ running: 0, unknown: 0 })
-  expect(s.activity?.subagents[0].activity.label).toBe('Stopped')
-  await fs.appendFile(child, line({ type: 'api-request' }))
-  for (const time of [stamp, stamp + 1]) {
-    await fs.utimes(child, time, time)
+  const now = Date.now()
+  const clock = spyOn(Date, 'now').mockReturnValue(now)
+  try {
+    let [s] = await tracker.enrich([session('claude', log)])
+    expect(s.activity).toMatchObject({ running: 0, unknown: 0 })
+    expect(s.activity?.subagents[0].activity.label).toBe('Stopped')
+    clock.mockReturnValue(now + FULL_RANK_FOR_TESTS)
+    await tracker.enrich([session('claude', log)])
+    await fs.writeFile(meta, JSON.stringify({ stoppedByUser: true, description: 'Review parser' }))
+    await fs.utimes(meta, stamp, stamp)
     ;[s] = await tracker.enrich([session('claude', log)])
-    expect(s.activity?.running).toBe(1)
-  }
+    expect(s.activity?.subagents[0].name).toBe('Review parser')
+    await fs.appendFile(child, line({ type: 'api-request' }))
+    for (const time of [stamp, stamp + 1]) {
+      await fs.utimes(child, time, time)
+      ;[s] = await tracker.enrich([session('claude', log)])
+      expect(s.activity?.running).toBe(1)
+    }
+  } finally { clock.mockRestore() }
 })
 
+test('a transient Claude sidecar read failure is retried without a file change', async () => {
+  const log = path.join(dir, 'parent.jsonl')
+  const childDir = await claudeChildren(1, 'a', new Date(Date.now() - 60 * 60 * 1000))
+  await fs.writeFile(log, line({ type: 'api-request' }))
+  const meta = path.join(childDir, 'agent-a000.meta.json')
+  await fs.writeFile(meta, JSON.stringify({ stoppedByUser: true, description: 'Review parser' }))
+
+  const read = spyOn(fs, 'readFile').mockImplementationOnce(async () => {
+    throw Object.assign(new Error('transient sidecar read failure'), { code: 'EIO' })
+  })
+  try {
+    const tracker = new SessionActivityTracker()
+    const [first] = await tracker.enrich([session('claude', log)])
+    expect(first.activity?.subagents[0]).toMatchObject({ name: 'a000', activity: { label: 'Turn finished' } })
+    const [retry] = await tracker.enrich([session('claude', log)])
+    expect(retry.activity?.subagents[0]).toMatchObject({ name: 'Review parser', activity: { label: 'Stopped' } })
+  } finally { read.mockRestore() }
+})
 const finished = line({ type: 'assistant', message: { stop_reason: 'end_turn', content: [] } })
 async function claudeChildren(count: number, prefix: string, mtime: Date): Promise<string> {
   const childDir = path.join(dir, 'parent/subagents')
@@ -343,7 +374,7 @@ test('a child last seen working keeps its read slot while newer siblings finish'
   } finally { clock.mockRestore() }
 })
 
-test('between full passes only the previous selection and new children are stat-ed', async () => {
+test('fast scans reuse idle children and see new children before the full sweep', async () => {
   const log = path.join(dir, 'parent.jsonl')
   await fs.writeFile(log, line({ type: 'api-request' }))
   const childDir = await claudeChildren(300, 'a', new Date(Date.now() - 60 * 60 * 1000))
@@ -351,22 +382,99 @@ test('between full passes only the previous selection and new children are stat-
   const start = Date.now()
   const clock = spyOn(Date, 'now').mockReturnValue(start)
   try {
-    await tracker.enrich([session('claude', log)])
-    // An old, unselected child resumes. The incremental pass does not see it yet.
+    const [initial] = await tracker.enrich([session('claude', log)])
+    const stat = spyOn(fs, 'stat')
+    const open = spyOn(fs, 'open')
+    try {
+      const [unchanged] = await tracker.enrich([session('claude', log)])
+      expect(unchanged.activity).toEqual(initial.activity)
+      expect(open.mock.calls.filter(([p]) => path.dirname(String(p)) === childDir)).toHaveLength(0)
+      expect(stat.mock.calls.filter(([p]) => path.dirname(String(p)) === childDir).length).toBeLessThan(64)
+    } finally {
+      open.mockRestore()
+      stat.mockRestore()
+    }
+
+    // This was outside the initial read budget, so only the full sweep notices its append.
     const resumed = path.join(childDir, 'agent-a299.jsonl')
     await fs.appendFile(resumed, line(claudeTool('y', 'Bash')))
-    const fresh = path.join(childDir, 'agent-new.jsonl')
-    await fs.writeFile(fresh, line(claudeTool('z', 'Bash')))
-    const stat = spyOn(fs, 'stat')
+    await fs.writeFile(path.join(childDir, 'agent-new.jsonl'), line(claudeTool('z', 'Bash')))
     const [mid] = await tracker.enrich([session('claude', log)])
-    const childStats = stat.mock.calls.filter(([p]) => String(p).endsWith('.jsonl')).length
-    stat.mockRestore()
-    expect(childStats).toBe(257)
     expect(mid.activity?.subagents.map(c => c.id)).toContain('new')
     expect(mid.activity?.running).toBe(1)
+
     clock.mockReturnValue(start + FULL_RANK_FOR_TESTS)
     const [full] = await tracker.enrich([session('claude', log)])
     expect(full.activity?.running).toBe(2)
+    expect(full.activity?.subagents.map(c => c.id)).toContain('a299')
+  } finally { clock.mockRestore() }
+})
+
+test('finished children remain known beyond the read cap as full sweeps cover the backlog', async () => {
+  const log = path.join(dir, 'parent.jsonl')
+  await fs.writeFile(log, line({ type: 'api-request' }))
+  const now = Date.now()
+  await claudeChildren(256, 'a', new Date(now - 2 * 60 * 60 * 1000))
+  const clock = spyOn(Date, 'now').mockReturnValue(now)
+  try {
+    const tracker = new SessionActivityTracker()
+    const [initial] = await tracker.enrich([session('claude', log)])
+    expect(initial.activity).toMatchObject({ total: 256, running: 0, unknown: 0 })
+    await claudeChildren(260, 'b', new Date(now - 60 * 60 * 1000))
+    clock.mockReturnValue(now + FULL_RANK_FOR_TESTS)
+    const [first] = await tracker.enrich([session('claude', log)])
+    expect(first.activity).toMatchObject({ total: 516, running: 0 })
+    expect(first.activity?.unknown).toBeLessThan(260)
+    expect(first.activity?.subagents[0]).toMatchObject({ id: 'a000', activity: { phase: 'idle' } })
+
+    clock.mockReturnValue(now + 2 * FULL_RANK_FOR_TESTS)
+    const [settled] = await tracker.enrich([session('claude', log)])
+    expect(settled.activity).toMatchObject({ total: 516, running: 0, unknown: 0 })
+    const oldChild = path.join(dir, 'parent/subagents/agent-a000.jsonl')
+    await fs.appendFile(oldChild, line(claudeTool('resume', 'Bash')))
+    expect((await tracker.enrich([session('claude', log)]))[0].activity?.running).toBe(0)
+    clock.mockReturnValue(now + 3 * FULL_RANK_FOR_TESTS)
+    const [resumed] = await tracker.enrich([session('claude', log)])
+    expect(resumed.activity).toMatchObject({ total: 516, running: 1, unknown: 0 })
+    expect(resumed.activity?.subagents[0]).toMatchObject({ id: 'a000', activity: { phase: 'tool' } })
+
+    expect(await tracker.enrich([])).toEqual([])
+    const [reopened] = await tracker.enrich([session('claude', log)])
+    expect(reopened.activity).toMatchObject({ total: 516, running: 1, unknown: 260 })
+  } finally { clock.mockRestore() }
+})
+
+test('a full sweep revalidates sidecar-only changes for a cold Claude child', async () => {
+  const log = path.join(dir, 'parent.jsonl')
+  await fs.writeFile(log, line({ type: 'api-request' }))
+  const now = Date.now()
+  const childDir = await claudeChildren(260, 'b', new Date(now - 60 * 60 * 1000))
+  const child = path.join(childDir, 'agent-a000.jsonl')
+  await fs.writeFile(child, finished)
+  const old = new Date(now - 2 * 60 * 60 * 1000)
+  await fs.utimes(child, old, old)
+  const meta = child.replace('.jsonl', '.meta.json')
+  const clock = spyOn(Date, 'now').mockReturnValue(now)
+  try {
+    const tracker = new SessionActivityTracker()
+    await tracker.enrich([session('claude', log)])
+    clock.mockReturnValue(now + FULL_RANK_FOR_TESTS)
+    const [initial] = await tracker.enrich([session('claude', log)])
+    expect(initial.activity?.subagents[0]).toMatchObject({ id: 'a000', name: 'a000' })
+
+    await fs.writeFile(meta, JSON.stringify({ stoppedByUser: true, description: 'Review parser' }))
+    clock.mockReturnValue(now + 2 * FULL_RANK_FOR_TESTS)
+    const [stopped] = await tracker.enrich([session('claude', log)])
+    expect(stopped.activity?.subagents[0]).toMatchObject({
+      id: 'a000', name: 'Review parser', activity: { label: 'Stopped' },
+    })
+
+    await fs.unlink(meta)
+    clock.mockReturnValue(now + 3 * FULL_RANK_FOR_TESTS)
+    const [removed] = await tracker.enrich([session('claude', log)])
+    expect(removed.activity?.subagents[0]).toMatchObject({
+      id: 'a000', name: 'a000', activity: { label: 'Turn finished' },
+    })
   } finally { clock.mockRestore() }
 })
 
