@@ -41,8 +41,8 @@ function pythonTokens(source: string): Token[] {
 function pythonRepos(command: string): string[] {
   // Only an executed Python heredoc is supported, not Python source supplied
   // to cat/echo or embedded in another command's quoted argument.
-  const match = /^\s*(?:\S*\/)?python3?\s+-\s*<<\s*(['"]?)(\w+)\1\s*\n([\s\S]*?)\n\2\s*$/.exec(command)
-  if (!match) return []
+  const match = /^[ \t]*(?:[\w./-]*\/)?python3?[ \t]+-[ \t]*<<[ \t]*(['"]?)(\w+)\1[ \t]*\n([\s\S]*?)\n\2(?:\n[ \t\n]*)?$/.exec(command)
+  if (!match || match[3].split('\n').includes(match[2])) return []
   const tokens = pythonTokens(match[3])
   // Comprehensions in unrelated expressions do not guard a top-level call.
   // Keep rejecting control flow outside brackets and only accept calls at
@@ -70,6 +70,21 @@ function pythonRepos(command: string): string[] {
   return repos
 }
 
+function chainedPythonRepos(script: string): string[] {
+  if (!script.includes('&&')) return []
+  // A final heredoc after successful Git setup commands is also in command
+  // position. Accept only literal Git segments joined by &&, so a skipped
+  // branch, quoted Python example or heredoc for another command cannot match.
+  const word = String.raw`(?:[^\s'"\x60#$\\;&|(){}<>]|'[^'\n]*'|"[^"\n\x60$\\]*")+`
+  const segment = new RegExp(
+    String.raw`[ \t]*(?:PATH=${word}(?::\$PATH)?[ \t]+)?git(?:[ \t]+${word}|[ \t]+>[ \t]*${word}|[ \t]+2>&1)*[ \t]*&&`,
+    'y',
+  )
+  let end = 0
+  while (segment.test(script)) end = segment.lastIndex
+  return end ? pythonRepos(script.slice(end)) : []
+}
+
 export function restPrCompletionUrls(entry: RecordValue, invokes: Matcher): string[] {
   if (entry.type !== 'event_msg') return []
   const payload = entry.payload as RecordValue | undefined
@@ -87,12 +102,26 @@ export function restPrCompletionUrls(entry: RecordValue, invokes: Matcher): stri
   })
   const script = Array.isArray(argv) && ['-lc', '-c'].includes(String(argv[1])) ? String(argv[2]) : command
   for (const repo of pythonRepos(script)) repos.add(repo)
+  const chainedRepos = new Set(chainedPythonRepos(script))
   const urls = new Set<string>()
+  const chainedUrls = new Set<string>()
   for (const key of ['stdout', 'aggregated_output', 'formatted_output']) {
-    if (typeof item[key] !== 'string') continue
-    for (const match of item[key].matchAll(/https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g)) {
+    const output = item[key]
+    if (typeof output !== 'string') continue
+    for (const match of output.matchAll(/https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g)) {
       if (repos.has(match[1])) urls.add(match[0])
+      if (chainedRepos.has(match[1])) chainedUrls.add(match[0])
     }
+  }
+  // Earlier Git commands share the completion's output. Require one distinct
+  // matching URL and a final output line containing only that URL.
+  if (chainedUrls.size === 1) {
+    const fullOutput = [item.aggregated_output, item.stdout, item.formatted_output]
+      .find(output => typeof output === 'string')
+    if (fullOutput === undefined) return [...urls]
+    const trimmed = fullOutput.trimEnd()
+    const lastLine = trimmed.slice(trimmed.lastIndexOf('\n') + 1).trimStart()
+    if (chainedUrls.has(lastLine)) urls.add(lastLine)
   }
   return [...urls]
 }
