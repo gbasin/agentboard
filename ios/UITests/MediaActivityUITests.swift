@@ -79,7 +79,10 @@ final class MediaActivityUITests: XCTestCase {
         let next = app.buttons["Next"]
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: next)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
-        next.tap(); XCTAssertTrue(app.buttons["Previous"].isEnabled)
+        next.tap()
+        // Previous enables once the neighbor image loads.
+        let previous = app.buttons["Previous"]
+        XCTAssertTrue(waitUntil(timeout: 15) { previous.exists && previous.isEnabled })
         capture("image-neighbor")
         let preview = app.navigationBars["Media"]
         preview.buttons["Done"].tap()

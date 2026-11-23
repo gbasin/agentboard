@@ -102,7 +102,13 @@ final class NativeParityUITests: XCTestCase {
         replace(app.textFields["session-project"], "/tmp/ab-ios-parity/project")
         tap("Browse directories", in: app)
         XCTAssertTrue(app.navigationBars["Choose directory"].waitForExistence(timeout: 5))
-        app.buttons["child"].tap(); app.buttons["Parent directory"].tap(); capture("directories")
+        // The listing loads from the backend after the sheet appears; its event
+        // loop has lagged 17 s and more on a loaded runner.
+        let child = app.buttons["child"]
+        XCTAssertTrue(waitUntil(timeout: 45) { child.exists }); child.tap()
+        let parent = app.buttons["Parent directory"]
+        XCTAssertTrue(waitUntil(timeout: 45) { parent.exists && parent.isEnabled }); parent.tap()
+        XCTAssertTrue(waitUntil(timeout: 45) { child.exists }); capture("directories")
         app.buttons["Choose"].tap()
         let name = "parity-ui-" + String(UUID().uuidString.prefix(6))
         app.textFields["session-name"].typeIntoField(name)
@@ -351,7 +357,10 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         let before = toggle.value as? String
         toggle.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap()
-        XCTAssertTrue(waitUntil(timeout: 5) { toggle.value as? String != before }, "Session ID prefix did not toggle.")
+        // The switch changes after the backend saves the synced setting; the
+        // sheet shows "Saving…" meanwhile, and the backend event loop has
+        // lagged up to 28 s on a loaded runner.
+        XCTAssertTrue(waitUntil(timeout: 45) { toggle.value as? String != before }, "Session ID prefix did not toggle.")
         if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
         if app.buttons["Done"].exists { app.buttons["Done"].tap() }
         else { app.buttons["Close"].firstMatch.tap() }
