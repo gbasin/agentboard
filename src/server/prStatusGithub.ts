@@ -27,7 +27,7 @@ export interface GithubPrTransport {
 }
 
 export class GithubPrCooldownError extends Error {
-  constructor(readonly retryAt: number) {
+  constructor(readonly retryAt: number, readonly bucket: 'core' | 'graphql' | 'shared' = 'shared') {
     super('GitHub rate limit cooldown')
   }
 }
@@ -167,7 +167,7 @@ export function createGithubPrTransport(run: RunGh = runGh, now = Date.now): Git
     const budget: Budget = operation === 'list' ? 'core' : 'graphql'
     const started = now()
     const blockedUntil = Math.max(cooldown[budget], cooldown.shared)
-    if (blockedUntil > started) throw new GithubPrCooldownError(blockedUntil)
+    if (blockedUntil > started) throw new GithubPrCooldownError(blockedUntil, cooldown.shared === blockedUntil ? 'shared' : budget)
     let response: ReturnType<typeof parseResponse>
     try {
       response = parseResponse(await run(args, input))
@@ -207,7 +207,7 @@ export function createGithubPrTransport(run: RunGh = runGh, now = Date.now): Git
       retryAt: retryAt > received ? retryAt : undefined,
     })
     if ((status !== 200 && status !== 304) || ((rateLimited || secondaryLimited) && !object(body)?.data)) {
-      if (retryAt > received) throw new GithubPrCooldownError(retryAt)
+      if (retryAt > received) throw new GithubPrCooldownError(retryAt, cooldown.shared === retryAt ? 'shared' : budget)
       throw new Error(`GitHub API returned HTTP ${status}`)
     }
     return response

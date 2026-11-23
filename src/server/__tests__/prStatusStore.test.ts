@@ -131,6 +131,21 @@ describe('PR status authority store', () => {
     expect(second.changes.map(info => info.stale)).toEqual([true, false])
   })
 
+  test('a GraphQL cooldown still allows REST to deliver a merge', async () => {
+    let merged = false
+    const { store, advance } = setup({
+      async list() { return { ...empty, items: [pull(7, BASE, { state: merged ? 'MERGED' : 'OPEN' })] } },
+      async checks() { throw new GithubPrCooldownError(BASE + 30 * POLL_MS, 'graphql') },
+    })
+    store.register([url(7)])
+    await store.poll()
+    expect((await store.check(url(7))).error).toBe('unavailable')
+    merged = true
+    advance(POLL_MS)
+    await store.poll()
+    expect(store.read([url(7)])[0].state).toBe('MERGED')
+  })
+
   test('keeps checks per repository and head, coalesces concurrent requests and drops exact duplicates', async () => {
     const shaA = 'a'.repeat(40)
     const shaB = 'b'.repeat(40)

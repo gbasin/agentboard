@@ -89,7 +89,7 @@ export class PrStatusStore {
   private closing?: Promise<void>
   private budgetWindow = -Infinity
   private requests = { list: 0, hydrate: 0, checks: 0 }
-  private retryAt = 0
+  private readonly retryAt = { core: 0, graphql: 0, shared: 0 }
 
   constructor(
     path: string,
@@ -255,7 +255,8 @@ export class PrStatusStore {
 
   private canRequest(lane: RequestLane) {
     const now = this.now()
-    return !this.closing && now >= this.retryAt &&
+    const bucket = lane === 'list' ? 'core' : 'graphql'
+    return !this.closing && now >= Math.max(this.retryAt[bucket], this.retryAt.shared) &&
       (now >= this.budgetWindow + POLL_MS || this.requests[lane] < REQUEST_BUDGET[lane])
   }
 
@@ -272,7 +273,7 @@ export class PrStatusStore {
 
   private handleFailure(error: unknown) {
     if (error instanceof GithubPrCooldownError) {
-      this.retryAt = Math.max(this.retryAt, error.retryAt)
+      this.retryAt[error.bucket] = Math.max(this.retryAt[error.bucket], error.retryAt)
     }
   }
 
@@ -313,7 +314,7 @@ export class PrStatusStore {
     const earliest = repos.reduce(
       (next, repo) => Math.min(next, this.due.get(repo.repo) ?? finished), finished + POLL_MS
     )
-    const available = Math.max(this.retryAt, this.canRequest('list') ? finished : this.budgetWindow + POLL_MS)
+    const available = Math.max(this.retryAt.core, this.retryAt.shared, this.canRequest('list') ? finished : this.budgetWindow + POLL_MS)
     return Math.min(POLL_MS, Math.max(1, earliest - finished, available - finished))
   }
 
