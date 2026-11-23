@@ -13,57 +13,9 @@ import { createPortal } from 'react-dom'
 import { GitMergeIcon, GitPullRequestIcon, Pencil02Icon, XCloseIcon } from './icons'
 import { ICON_SIZE, PR_STATE_MARK_SIZE } from './controlStyles'
 import type { SessionPullRequest } from '../../shared/types'
-import { createInfoBatcher, schedulePrMetadata } from '../lib/prMetadataRequests'
-
-interface PrInfo {
-  url: string
-  state?: string
-  isDraft?: boolean
-  title?: string
-  author?: string
-  error?: string
-}
-
-interface PrCheckInfo extends PrInfo {
-  checks?: {
-    name: string
-    status: string
-    conclusion: string | null
-    link?: string
-  }[]
-}
-
-// Module-level caches shared across all session rows: a session's PRs are
-// fetched once per 60s (server also caches) no matter how often rows remount.
-// Error results are never cached — a transient failure would otherwise pin
-// the chip to its gray fallback for the life of the page (days in a PWA).
-const INFO_TTL_MS = 60_000
-const infoCache = new Map<string, { at: number; info: PrInfo }>()
-const checksCache = new Map<string, { at: number; checks: PrCheckInfo }>()
-const checksInflight = new Map<string, Promise<PrCheckInfo | null>>()
-
-// Chips read infoCache straight through useSyncExternalStore — no per-chip
-// copies. A cache write from any fetch (any row's interval, the rail, a
-// hover, a resume) notifies every chip showing that url, so two PrChips
-// instances can't drift into showing different states for the same PR.
-const infoListeners = new Set<() => void>()
-
-function subscribeInfo(onChange: () => void): () => void {
-  infoListeners.add(onChange)
-  return () => {
-    infoListeners.delete(onChange)
-  }
-}
-
-function cachedInfo(url: string): PrInfo | undefined {
-  const c = infoCache.get(url)
-  return c && Date.now() - c.at < INFO_TTL_MS ? c.info : undefined
-}
-
-function cachedChecks(url: string): PrCheckInfo | undefined {
-  const c = checksCache.get(url)
-  return c && Date.now() - c.at < INFO_TTL_MS ? c.checks : undefined
-}
+import type { PrInfo } from '../../shared/prStatus'
+import { cachedChecks, fetchChecks, getPrInfo, subscribePrInfo, watchPrInfo } from '../lib/prStatus'
+import { formatRelativeTime } from '../utils/time'
 
 // Pill geometry shared by PrChip anchors and the offscreen measurer spans
 // below — keep these in sync or the single-row fit math drifts.
@@ -78,7 +30,7 @@ function stateGlyph(info: PrInfo | undefined): {
   StateIcon: typeof GitPullRequestIcon
   cls: string
 } {
-  if (!info || info.error || !info.state)
+  if (!info?.state)
     return { StateIcon: GitPullRequestIcon, cls: 'text-muted' }
   switch (info.state) {
     case 'OPEN':
@@ -105,7 +57,7 @@ function PrGlyph({ info }: { info?: PrInfo }) {
   // Kept inside the 12px box so the fit measurer's plain icon stays the
   // same width.
   const MarkIcon =
-    info && !info.error
+    info?.state
       ? info.state === 'CLOSED'
         ? XCloseIcon
         : info.isDraft
@@ -166,45 +118,6 @@ function checkIcon(c: {
     return { glyph: '✗', cls: 'text-pr-closed' }
   }
   return { glyph: '…', cls: 'text-pr-pending' }
-}
-
-// Shared eager fetch: fills infoCache for any urls not yet known/in-flight.
-// Callers await the shared in-flight promise so a chip that mounts while a
-// request is already running still receives its result — returning early
-// here would leave the late chip gray forever.
-const requestInfo = createInfoBatcher<PrInfo>(urls => schedulePrMetadata('info', async signal => {
-  const response = await fetch('/api/pr-info', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ urls }), signal,
-  })
-  if (!response.ok) throw new Error('PR metadata request failed')
-  const arr = await response.json() as PrInfo[]
-  for (const info of arr) {
-    if (!info.error) infoCache.set(info.url, { at: Date.now(), info })
-  }
-  infoListeners.forEach(listener => listener())
-  return arr
-}), info => info.url)
-
-async function fetchInfoBatch(urls: string[]): Promise<PrInfo[]> {
-  await Promise.all(urls.filter(url => !cachedInfo(url)).map(url => requestInfo(url).catch(() => undefined)))
-  return urls.map(url => cachedInfo(url)!).filter(Boolean)
-}
-
-function fetchChecks(url: string): Promise<PrCheckInfo | null> {
-  const cached = cachedChecks(url)
-  if (cached) return Promise.resolve(cached)
-  const existing = checksInflight.get(url)
-  if (existing) return existing
-  const promise = schedulePrMetadata('checks', async signal => {
-    const response = await fetch(`/api/pr-checks?url=${encodeURIComponent(url)}`, { signal })
-    if (!response.ok) return null
-    const checks = await response.json() as PrCheckInfo
-    if (!checks.error) checksCache.set(url, { at: Date.now(), checks })
-    return checks
-  }).finally(() => checksInflight.delete(url))
-  checksInflight.set(url, promise)
-  return promise
 }
 
 // Hover intent: the card opens only after the pointer rests on the chip,
@@ -405,25 +318,32 @@ function useHoverCard(
 // a spilled chip onto its card doesn't collapse the flyout out from under it.
 const FlyoutRetainContext = createContext<(() => () => void) | null>(null)
 
+function PrStatusAge({ at, stale }: { at: number; stale?: boolean }) {
+  const iso = new Date(at).toJSON() ?? ''
+  const [age, setAge] = useState(() => formatRelativeTime(iso))
+  useEffect(() => {
+    const tick = () => setAge(formatRelativeTime(iso))
+    tick()
+    const timer = setInterval(tick, 30_000)
+    return () => clearInterval(timer)
+  }, [iso])
+  if (!age) return null
+  return (
+    <div className="mt-0.5 shrink-0 text-[11px] text-muted">
+      {stale ? 'Last confirmed' : 'Checked'} {age === 'now' ? 'just now' : `${age} ago`}
+    </div>
+  )
+}
+
 function PrChip({
   pr,
-  refreshKey,
   pillClass = PILL_CLASS,
 }: {
   pr: SessionPullRequest
-  refreshKey: number
   pillClass?: string
 }) {
-  // The snapshot reads the cache entry itself, not the TTL'd cachedInfo:
-  // expiry only gates refetches — an aged entry keeps its color until the
-  // next fetch lands rather than flashing muted at the TTL boundary.
-  const info = useSyncExternalStore(
-    subscribeInfo,
-    () => infoCache.get(pr.url)?.info
-  )
-  const [checks, setChecks] = useState<PrCheckInfo | undefined>(
-    cachedChecks(pr.url)
-  )
+  const info = useSyncExternalStore(subscribePrInfo, () => getPrInfo(pr.url))
+  const checks = useSyncExternalStore(subscribePrInfo, () => cachedChecks(pr.url))
   const anchorRef = useRef<HTMLSpanElement>(null)
   const { open, pos, scheduleOpen, scheduleClose, cancelClose, cardRef } =
     useHoverCard(anchorRef, 256)
@@ -436,45 +356,26 @@ function PrChip({
     () => (open && retainFlyout ? retainFlyout() : undefined),
     [open, retainFlyout]
   )
-  const mounted = useRef(true)
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-    }
-  }, [])
-
-  const refreshInfo = useCallback(() => {
-    void fetchInfoBatch([pr.url])
-  }, [pr.url])
-
-  // Eager: state/title/author once per url. refreshKey re-runs this on
-  // PWA resume so stale entries refresh and uncached failures retry. The
-  // cache itself is what the chip renders, so a fresh entry needs no work
-  // here — the store snapshot already shows it.
-  useEffect(() => {
-    if (!cachedInfo(pr.url)) refreshInfo()
-  }, [pr.url, refreshKey, refreshInfo])
-
-  // Hover revalidates stale info: a PR that merged since the eager fetch
-  // flips the glyph (and card state) while the card is open.
-  useEffect(() => {
-    if (open && !cachedInfo(pr.url)) refreshInfo()
-  }, [open, pr.url, refreshInfo])
-
-  // Lazy: CI detail only on hover.
   useEffect(() => {
     if (!open) return
-    let active = true
-    void fetchChecks(pr.url).then(checks => {
-      if (active && mounted.current && checks) setChecks(checks)
-    }).catch(() => {})
-    return () => { active = false }
-  }, [open, pr.url])
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    async function refresh() {
+      if (document.visibilityState !== 'hidden') await fetchChecks(pr.url).catch(() => {})
+      if (!cancelled) timer = setTimeout(refresh, 60_000)
+    }
+    void refresh()
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [open, pr.url, info?.headSha, info?.state, info?.isDraft])
 
-  // info is the TTL'd source of truth for state — checks is permanent until
-  // its own TTL and would otherwise pin the glyph to a stale state forever.
-  const detail = info ?? checks
+  const chipInfo = info ?? checks
+  const chipState = stateLabel(chipInfo)
+  const detail = checks?.state && (checks.lastConfirmedAt ?? 0) > (info?.lastConfirmedAt ?? 0)
+    ? checks
+    : chipInfo
   return (
     <span
       ref={anchorRef}
@@ -488,9 +389,9 @@ function PrChip({
         rel="noreferrer"
         onClick={(e) => e.stopPropagation()}
         className={`${pillClass} bg-elevated text-muted hover:text-accent`}
-        aria-label={`${pr.repo}#${pr.number}${stateLabel(detail) ? ` ${stateLabel(detail)}` : ''}`}
+        aria-label={`${pr.repo}#${pr.number}${chipState ? ` ${chipState}` : ''}`}
       >
-        <PrGlyph info={detail} />
+        <PrGlyph info={chipInfo} />
         {pr.number}
       </a>
       {open &&
@@ -538,6 +439,14 @@ function PrChip({
               <div className="mt-0.5 shrink-0 text-[11px] text-muted">
                 {detail.author ? `by ${detail.author}` : ''}
               </div>
+              {detail.lastConfirmedAt !== undefined && (
+                <PrStatusAge at={detail.lastConfirmedAt} stale={detail.stale} />
+              )}
+              {checks?.error && (
+                <div className="mt-0.5 shrink-0 text-[11px] text-muted">
+                  {checks.checks?.length ? 'Showing last known checks' : 'Checks unavailable'}
+                </div>
+              )}
               {checks?.checks && checks.checks.length > 0 && (
                 <div className="mt-1.5 max-h-32 min-h-0 space-y-0.5 overflow-y-auto border-t border-border pt-1.5">
                   {checks.checks.map((c, i) => {
@@ -596,11 +505,9 @@ function PrChip({
     instead of clipping it. */
 function OverflowChip({
   prs,
-  refreshKey,
   pillClass = PILL_CLASS,
 }: {
   prs: SessionPullRequest[]
-  refreshKey: number
   pillClass?: string
 }) {
   const anchorRef = useRef<HTMLSpanElement>(null)
@@ -718,7 +625,6 @@ function OverflowChip({
                 <PrChip
                   key={pr.url}
                   pr={pr}
-                  refreshKey={refreshKey}
                   pillClass={pillClass}
                 />
               ))}
@@ -753,33 +659,7 @@ export function PrChips({
   // Extraction order is chronological by creation; show newest first.
   const ordered = useMemo(() => [...prs].reverse(), [prs])
   const [visibleCount, setVisibleCount] = useState(ordered.length)
-  // Bump on page-visible so mounted chips refetch stale info: PWAs resume
-  // from suspension instead of reloading, so without this PR state could
-  // sit gray for days after one failed launch-time fetch.
-  const [refreshKey, setRefreshKey] = useState(0)
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') setRefreshKey((k) => k + 1)
-    }
-    document.addEventListener?.('visibilitychange', onVisible)
-    return () =>
-      document.removeEventListener?.('visibilitychange', onVisible)
-  }, [])
-
-  // Passive revalidation: mount/resume/hover are the only other refresh
-  // paths, so without a timer a PR merged while the page sits open would
-  // leave its glyph stale indefinitely. One batch POST per row per TTL —
-  // fetchInfoBatch skips still-fresh urls — then the refreshKey bump lets
-  // each chip adopt the refreshed cache.
-  useEffect(() => {
-    const t = setInterval(() => {
-      if (document.visibilityState === 'hidden') return
-      fetchInfoBatch(ordered.map((p) => p.url)).then(() =>
-        setRefreshKey((k) => k + 1)
-      )
-    }, INFO_TTL_MS)
-    return () => clearInterval(t)
-  }, [ordered])
+  useEffect(() => watchPrInfo(ordered.map(pr => pr.url)), [ordered])
 
   const recompute = useCallback(() => {
     const n = ordered.length
@@ -848,12 +728,11 @@ export function PrChips({
       className={`relative flex flex-nowrap items-center gap-1 overflow-hidden ${className}`}
     >
       {visible.map((pr) => (
-        <PrChip key={pr.url} pr={pr} refreshKey={refreshKey} pillClass={pillClass} />
+        <PrChip key={pr.url} pr={pr} pillClass={pillClass} />
       ))}
       {overflow.length > 0 && (
         <OverflowChip
           prs={overflow}
-          refreshKey={refreshKey}
           pillClass={pillClass}
         />
       )}

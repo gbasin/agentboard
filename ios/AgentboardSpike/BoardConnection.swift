@@ -62,6 +62,7 @@ final class BoardConnection: ObservableObject {
     let preferences: NativePreferences
     @Published private(set) var hosts: [HostState] = []
     let conversations = AgentConversationCatalog()
+    let pullRequests = BoardPullRequests()
     @Published private(set) var libraryVersion = 0
     @Published var clipboardOffer: String?
     @Published private(set) var inCopyMode = false
@@ -91,6 +92,7 @@ final class BoardConnection: ObservableObject {
         stopSocket()
         preferences.serverURL = value; preferences.shared = [:]; preferences.error = nil
         conversations.replace(sleeping: [], history: [])
+        pullRequests.reset()
         hosts = []; clipboardOffer = nil; inCopyMode = false; remoteAllowControl = false
         sessions = []
         target = nil
@@ -225,12 +227,14 @@ final class BoardConnection: ObservableObject {
         case "library-changed": libraryVersion += 1
         case "clipboard-offer": if event.sessionId == target?.sessionID { clipboardOffer = event.clipboard }
         case "tmux-copy-mode-status": if event.sessionId == target?.sessionID { inCopyMode = event.inCopyMode ?? false }
+        case "pr-status": pullRequests.apply(event.infos ?? [])
         case "sessions":
             guard let items = event.sessions else { return }
             sessions = items.map(\.boardSession)
             let wasConnected = state == .connected
             state = .connected
             retryCount = 0
+            pullRequests.refresh(sessions.flatMap(\.prs), server: preferences.serverURL, force: !wasConnected)
             if !wasConnected { attach() }
             else { checkTargetExists() }
         case "session-update", "session-created":
@@ -242,6 +246,7 @@ final class BoardConnection: ObservableObject {
                 sessions[index] = item
             }
             else { sessions.append(item) }
+            pullRequests.refresh(item.prs, server: preferences.serverURL)
             checkTargetExists()
         case "session-removed":
             sessions.removeAll { $0.id == event.sessionId }
@@ -312,6 +317,7 @@ final class BoardConnection: ObservableObject {
         }
     }
     private func stopSocket() {
+        pullRequests.stop()
         snapshotRequest.cancel()
         generation = UUID()
         receiver?.cancel(); receiver = nil

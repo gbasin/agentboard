@@ -1,3 +1,4 @@
+import { restrictDatabaseFiles } from './databasePermissions'
 import { mapRow } from './sessionRecord'
 import { readSessionLists } from './sessionReads'
 import fs from 'node:fs'
@@ -227,22 +228,6 @@ function readJournalMode(db: SQLiteDatabase): string {
     return String(row?.journal_mode ?? 'unknown').toLowerCase()
   } catch {
     return 'unknown'
-  }
-}
-
-/**
- * Session data (prompts, paths) is private to the user. The WAL and shared
- * memory files hold the same data, so they get the same mode; they exist only
- * after the WAL switch, and are best-effort since SQLite may recreate them.
- */
-function restrictDatabaseFiles(dbPath: string) {
-  fs.chmodSync(dbPath, 0o600)
-  for (const suffix of ['-wal', '-shm']) {
-    try {
-      fs.chmodSync(`${dbPath}${suffix}`, 0o600)
-    } catch {
-      // Not created yet, or already gone after a checkpoint.
-    }
   }
 }
 

@@ -102,7 +102,7 @@ struct LiveSessionListView: View {
                         NativeSessionRow(session: session, preferences: preferences, canOpen: board.canOpen(session),
                                          onOpen: { path.append(session) },
                                          onPullRequests: { detailRoute = .pullRequests(session) },
-                                         onSubagents: { detailRoute = .activity(session) })
+                                         onSubagents: { detailRoute = .activity(session) }, pullRequests: board.pullRequests)
                             .padding(.horizontal, 14).padding(.vertical, 8)
                             .nativeGlassSurface(cornerRadius: 12)
                             .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
@@ -207,7 +207,7 @@ struct LiveSessionListView: View {
                 case .activity: NativeSubagentActivityView(session: current)
                 case .pullRequests:
                     NavigationStack {
-                        SessionContentView(server: serverURL, media: [], prs: current.prs, showsMedia: false)
+                        SessionContentView(server: serverURL, media: [], prs: current.prs, showsMedia: false, pullRequests: board.pullRequests)
                             .toolbar { ToolbarItem(placement: .confirmationAction) {
                                 Button("Done") { detailRoute = nil }
                             } }

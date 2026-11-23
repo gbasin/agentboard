@@ -20,6 +20,7 @@ export function isLeakedLaunchEnvVar(name: string): boolean {
   return (
     name === 'NODE_ENV' ||
     name === 'AGENTBOARD_STATIC_DIR' ||
+    name === 'AGENTBOARD_PR_STATUS_TOKEN' ||
     name.startsWith('npm_')
   )
 }

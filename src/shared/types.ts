@@ -1,6 +1,7 @@
 // History sessions lookback limits (in hours)
 import type { SyncedSettings } from './syncedSettings'
 import type { SessionActivity } from './activity'
+import type { PrInfo } from './prStatus'
 import type { MediaSummary } from './media'
 
 export const HISTORY_MAX_AGE_MIN_HOURS = 1
@@ -131,6 +132,7 @@ export type ServerMessage = (
   | { type: 'terminal-lease'; token: string }
   | { type: 'terminal-overload' }
   | { type: 'library-changed' }
+  | { type: 'pr-status'; infos: PrInfo[] }
   | { type: 'sessions'; sessions: Session[] }
   | { type: 'session-update'; session: Session }
   | { type: 'session-created'; session: Session }

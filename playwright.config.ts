@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { isolatePrStatusEnv } from './scripts/test-process-env'
 
 const port = Number(process.env.E2E_PORT) || 4173
 const tmuxSession =
@@ -24,6 +25,7 @@ const tmuxTmpDir =
   process.env.E2E_TMUX_TMPDIR || join(tmpdir(), `abe2e-${Date.now()}`)
 process.env.E2E_TMUX_TMPDIR = tmuxTmpDir
 mkdirSync(tmuxTmpDir, { recursive: true })
+isolatePrStatusEnv(process.env, tmuxTmpDir)
 process.env.TMUX_TMPDIR = tmuxTmpDir
 delete process.env.TMUX
 

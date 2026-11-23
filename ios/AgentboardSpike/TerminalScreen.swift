@@ -89,7 +89,7 @@ struct TerminalScreen: View {
                 }
             }
             .sheet(isPresented: $showContent) { NavigationStack {
-                SessionContentView(server: serverURL, media: (terminal.liveSession ?? session).media, prs: (terminal.liveSession ?? session).prs, sessionID: (terminal.liveSession ?? session).agentSessionID, catalog: (terminal.liveSession ?? session).mediaSummary)
+                SessionContentView(server: serverURL, media: (terminal.liveSession ?? session).media, prs: (terminal.liveSession ?? session).prs, sessionID: (terminal.liveSession ?? session).agentSessionID, catalog: (terminal.liveSession ?? session).mediaSummary, pullRequests: live?.pullRequests)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showContent = false } } }
             } }
             .sheet(isPresented: $showTranscript) { NavigationStack {

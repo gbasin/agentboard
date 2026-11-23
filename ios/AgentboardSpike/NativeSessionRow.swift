@@ -9,39 +9,13 @@ struct NativeSessionRow: View {
     let onPullRequests: () -> Void
     let onSubagents: () -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var pullRequestStates: [String: PRState] = [:]
+    @ObservedObject var pullRequests: BoardPullRequests
 
-    private struct PRState: Decodable {
-        let url: String
-        let state: String?
-        let isDraft: Bool?
-        let error: String?
-        var label: String { error != nil ? "State unavailable" : isDraft == true ? "Draft" : state?.capitalized ?? "State unavailable" }
-        var color: Color {
-            if error != nil || isDraft == true { return .secondary }
-            switch state?.uppercased() {
-            case "MERGED": return .purple
-            case "CLOSED": return .red
-            case "OPEN": return .green
-            default: return .secondary
-            }
-        }
-        var symbol: String {
-            if isDraft == true { return "pencil.circle" }
-            switch state?.uppercased() {
-            case "MERGED": return "arrow.triangle.merge"
-            case "CLOSED": return "xmark.circle"
-            case "OPEN": return "arrow.triangle.branch"
-            default: return "questionmark.circle"
-            }
-        }
-    }
     private var rowLayout: AnyLayout {
         typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
     }
     private var visiblePRs: [PullRequestItem] { Array(session.prs.prefix(typeSize.isAccessibilitySize ? 2 : 4)) }
-    private var requestKey: String { preferences.serverURL + session.prs.map(\.url).joined(separator: "|") }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -91,7 +65,6 @@ struct NativeSessionRow: View {
 
             }
         }.padding(.vertical, 2)
-            .task(id: requestKey) { await refreshPRs() }
     }
 
     @ViewBuilder
@@ -113,7 +86,7 @@ struct NativeSessionRow: View {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) {
                     ForEach(visiblePRs) { pr in
-                        let state = pullRequestStates[pr.url]
+                        let state = pullRequests[pr.url]
                         Label { Text("\(pr.number)").foregroundStyle(.primary).fixedSize() } icon: {
                             Image(systemName: state?.symbol ?? "questionmark.circle").foregroundStyle(state?.color ?? .secondary)
                         }.accessibilityLabel("\(pr.repo) pull request \(pr.number), \(state?.label ?? "State unavailable")")
@@ -128,13 +101,4 @@ struct NativeSessionRow: View {
         }
     }
 
-    private func refreshPRs() async {
-        pullRequestStates = [:]
-        guard !session.prs.isEmpty, let api = try? BoardAPI(preferences.serverURL) else { return }
-        do {
-            let values: [PRState] = try await api.request("api/pr-info", method: "POST", body: ["urls": visiblePRs.map(\.url)])
-            guard !Task.isCancelled else { return }
-            pullRequestStates = Dictionary(values.map { ($0.url, $0) }, uniquingKeysWith: { _, latest in latest })
-        } catch { /* Unknown remains explicit; full detail offers retry. */ }
-    }
 }

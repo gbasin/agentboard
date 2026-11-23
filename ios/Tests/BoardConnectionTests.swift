@@ -67,6 +67,38 @@ final class BoardConnectionTests: XCTestCase {
         XCTAssertTrue(board.conversations.snapshot.history.isEmpty)
     }
 
+    func testPullRequestEventsUpdateSharedCatalogAndDiscardOlderSnapshots() async throws {
+        let socket = Socket()
+        let board = BoardConnection { _ in socket }
+        defer { board.suspend(); socket.finish() }
+        board.configure("http://localhost:4040")
+        socket.emit(snapshot)
+        let url = "https://github.com/Owner/Repo/pull/042"
+        let old = try JSONDecoder().decode(PullRequestStatus.self,
+            from: Data(#"{"url":"https://github.com/owner/repo/pull/42","state":"OPEN","headSha":"old","lastConfirmedAt":100}"#.utf8))
+        socket.emit(#"{"type":"pr-status","infos":[{"url":"https://github.com/owner/repo/pull/42","state":"MERGED","headSha":"new","lastConfirmedAt":200}]}"#)
+        await settle()
+        XCTAssertEqual(board.pullRequests[url]?.state, "MERGED")
+        XCTAssertEqual(board.pullRequests[url]?.headSha, "new")
+        board.pullRequests.apply([old], baseline: [:])
+        XCTAssertEqual(board.pullRequests[url]?.state, "MERGED")
+        board.configure("http://localhost:5050")
+        XCTAssertNil(board.pullRequests[url])
+    }
+
+    func testPullRequestDetailPreservesChecksIfOnlyCILookupFails() throws {
+        func decode(_ json: String) throws -> PullRequestInfo {
+            try JSONDecoder().decode(PullRequestInfo.self, from: Data(json.utf8))
+        }
+        let previous = try decode(#"{"url":"https://github.com/o/r/pull/1","state":"OPEN","headSha":"same","lastConfirmedAt":100,"checks":[{"name":"CI","status":"COMPLETED","conclusion":"SUCCESS"}]}"#)
+        let failed = try decode(#"{"url":"https://github.com/o/r/pull/1","state":"OPEN","headSha":"same","lastConfirmedAt":200,"error":"unavailable"}"#)
+        let updated = failed.preservingChecks(from: previous)
+        XCTAssertEqual(updated.status.lastConfirmedAt, 200)
+        XCTAssertEqual(updated.checks?.first?.name, "CI")
+        let newHead = try decode(#"{"url":"https://github.com/o/r/pull/1","state":"OPEN","headSha":"new","lastConfirmedAt":300,"error":"unavailable"}"#)
+        XCTAssertNil(newHead.preservingChecks(from: previous).checks)
+    }
+
     func testTransportFailureReconnectsAutomatically() async throws {
         var sockets: [Socket] = []
         let board = BoardConnection { _ in let socket = Socket(); sockets.append(socket); return socket }

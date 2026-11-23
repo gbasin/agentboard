@@ -44,6 +44,7 @@ Agentboard allows one server per data directory. It also refuses to start from a
 | `bun run typecheck` | `tsc --noEmit`. |
 | `bun run test` | Unit and integration tests. |
 | `bun run test:e2e` | Playwright end-to-end tests. They run on a private tmux socket and data directory. |
+| `bun x playwright test -c playwright.pr-status.config.ts` | Verifies that two browsers observe a PR merge and recover from a missed update using one repository poll per cycle. GitHub responses come from a local fixture. |
 | `bun run test:coverage` | Tests with coverage output. Skips the isolated and real-tmux suites. |
 | `bun run deps:risk` | Dependency risk report. |
 | `bun run readme:shots` | Regenerates the README images in `assets/readme/`. |
