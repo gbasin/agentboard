@@ -70,6 +70,7 @@ import {
   TerminalProxyError,
 } from './terminal'
 import type { ITerminalProxy } from './terminal'
+import { antigravityProjectPath } from './antigravityLogs'
 import { resolveProjectPath } from './paths'
 import {
   HISTORY_MAX_AGE_MIN_HOURS,
@@ -3688,6 +3689,9 @@ function handleSessionHibernate(
     isHibernating: true,
     lastResumeError: null,
   }
+  if (!record.projectPath && liveSession.projectPath) {
+    markerPatch.projectPath = liveSession.projectPath
+  }
   if (liveSession.command && !record.launchCommand) {
     markerPatch.launchCommand = liveSession.command
   }
@@ -4210,6 +4214,7 @@ function handleSessionWake(
     const command = buildResumeCommand(latest)
     const projectPath =
       latest.projectPath ||
+      (latest.agentType === 'antigravity' && antigravityProjectPath(sessionId)) ||
       process.env.HOME ||
       process.env.USERPROFILE ||
       '.'

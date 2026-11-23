@@ -14,7 +14,7 @@ function tmux(args: string[]) {
   if (result.status !== 0) throw new Error(result.stderr)
   return result.stdout.trim()
 }
-export function seedActivity(kind: 'claude' | 'codex' | 'antigravity', ownership = false) {
+export function seedActivity(kind: 'claude' | 'codex' | 'antigravity', ownership = false, workspaceKnown = true) {
   const root = process.env.E2E_TMUX_TMPDIR!
   const sessionId = randomUUID(), childId = randomUUID()
   const name = `activity-${kind}-${sessionId.slice(0, 8)}`
@@ -32,7 +32,7 @@ export function seedActivity(kind: 'claude' | 'codex' | 'antigravity', ownership
   const gate = path.join(project, 'ready')
   // Print only after setting deterministic private-window geometry. This
   // prevents an earlier phone viewport from wrapping the matching prompt.
-  fs.writeFileSync(fixtureCli, `#!/bin/sh\nwhile [ ! -f '${gate}' ]; do sleep 0.01; done\ncat '${textFile}'\nsleep 600\n`, { mode: 0o755 })
+  fs.writeFileSync(fixtureCli, `#!/bin/sh\nwhile [ ! -f '${gate}' ]; do sleep 0.01; done\ncat '${textFile}'\nif [ "$1" = "--conversation" ]; then printf '%s' "$2" > '${project}/resumed-id'; fi\nsleep 600\n`, { mode: 0o755 })
   let log: string, child: string
   if (kind === 'claude') {
     const dir = path.join(process.env.CLAUDE_CONFIG_DIR!, 'projects', project.replace(/\//g, '-'))
@@ -57,7 +57,7 @@ export function seedActivity(kind: 'claude' | 'codex' | 'antigravity', ownership
       const db = new Database(file)
       db.run("CREATE TABLE IF NOT EXISTS conversation_summaries (conversation_id TEXT PRIMARY KEY, workspace_uris TEXT, parent_conversation_id TEXT, agent_name TEXT)")
       const insert = db.query("INSERT INTO conversation_summaries VALUES (?, ?, ?, ?)")
-      const uris = JSON.stringify([require('node:url').pathToFileURL(project).href])
+      const uris = JSON.stringify(${workspaceKnown} ? [require('node:url').pathToFileURL(project).href] : [])
       insert.run(parent, uris, '', '')
       insert.run(child, uris, parent, 'research')
       db.close()

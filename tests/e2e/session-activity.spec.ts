@@ -246,3 +246,39 @@ test('Antigravity associates the parent, updates delegated work, and serves chil
     expect((await request.get(image.url + '&thumbnail=1')).status()).toBe(409)
   } finally { fixture.stop() }
 })
+
+test('Antigravity hibernates and wakes in its workspace with the same conversation and child', async ({ page, request }) => {
+  // The summary has a parent and child but no workspace URI at hibernate time.
+  const fixture = seedActivity('antigravity', false, false)
+  const card = page.getByTestId('session-card').filter({ hasText: fixture.name }).first()
+  const session = async () => {
+    const rows = await (await request.get('/api/sessions')).json()
+    return rows.find((row: { name: string }) => row.name === fixture.name)
+  }
+  const hibernate = async () => {
+    await page.getByRole('button', { name: 'Session actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Hibernate', exact: true }).click()
+    await expect.poll(session).toBeUndefined()
+  }
+  try {
+    await page.goto('/')
+    await expect.poll(async () => {
+      const row = await session()
+      if (!row?.agentSessionId) fixture.refreshPrompt()
+      return row?.agentSessionId
+    }, { timeout: 60_000 }).toBe(fixture.sessionId)
+    const original = await session()
+    await card.click()
+    await hibernate()
+    await page.locator('footer').getByRole('button', { name: 'Wake', exact: true }).click()
+    const marker = join(fixture.project, 'resumed-id')
+    await expect.poll(() => fs.existsSync(marker) && fs.readFileSync(marker, 'utf8')).toBe(fixture.sessionId)
+    await expect.poll(session).toMatchObject({
+      agentSessionId: fixture.sessionId,
+      projectPath: original.projectPath,
+      activity: { subagents: [{ name: 'research', id: original.activity.subagents[0].id }] },
+    })
+    expect((await session()).id).not.toBe(original.id)
+    await hibernate()
+  } finally { fixture.stop() }
+})
