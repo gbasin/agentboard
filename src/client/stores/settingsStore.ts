@@ -67,6 +67,7 @@ export const DEFAULT_PRESETS: CommandPreset[] = [
   { id: 'grok', label: 'Grok', command: 'grok', isBuiltIn: true, agentType: 'grok' },
   { id: 'devin', label: 'Devin', command: 'devin', isBuiltIn: true, agentType: 'devin' },
   { id: 'omp', label: 'OMP', command: 'omp', isBuiltIn: true, agentType: 'omp' },
+  { id: 'antigravity', label: 'Antigravity', command: 'agy', isBuiltIn: true, agentType: 'antigravity' },
 ]
 
 // Validation and helper functions
@@ -78,8 +79,13 @@ export function isValidPreset(p: unknown): p is CommandPreset {
     typeof obj.label === 'string' && obj.label.trim().length >= 1 && obj.label.length <= 64 &&
     typeof obj.command === 'string' && obj.command.trim().length >= 1 && obj.command.length <= 1024 &&
     typeof obj.isBuiltIn === 'boolean' &&
-    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex' || obj.agentType === 'pi' || obj.agentType === 'devin' || obj.agentType === 'grok' || obj.agentType === 'omp' || obj.agentType === 'claude-rp')
+    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex' || obj.agentType === 'pi' || obj.agentType === 'devin' || obj.agentType === 'grok' || obj.agentType === 'antigravity' || obj.agentType === 'omp' || obj.agentType === 'claude-rp')
   )
+}
+
+export function includeBuiltInPresets(presets: CommandPreset[]): CommandPreset[] {
+  const existingIds = new Set(presets.map(p => p.id))
+  return [...presets, ...DEFAULT_PRESETS.filter(p => !existingIds.has(p.id))]
 }
 
 export function normalizePreset(p: CommandPreset): CommandPreset {
@@ -298,7 +304,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'agentboard-settings',
       storage: createJSONStorage(() => safeStorage),
-      version: 9,
+      version: 10,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Record<string, unknown>
         // This preference is device-local: retain only this platform's old choice.
@@ -394,12 +400,10 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Preserve saved presets when new built-ins push the list over MAX_PRESETS.
         // The limit still applies when adding a preset.
-        const existingIds = new Set(validPresets.map(p => p.id))
-        const missingBuiltIns = DEFAULT_PRESETS.filter(p => p.isBuiltIn && !existingIds.has(p.id))
-        const finalPresets = [...validPresets, ...missingBuiltIns]
+        const finalPresets = includeBuiltInPresets(validPresets)
 
-        if (version < 9) {
-          console.info(`[agentboard:settings] Migrated from v${version} to v9`)
+        if (version < 10) {
+          console.info(`[agentboard:settings] Migrated from v${version} to v10`)
         }
 
         return {

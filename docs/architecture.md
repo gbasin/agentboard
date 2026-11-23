@@ -251,6 +251,7 @@ Transcripts drive which conversation a window runs, the last user prompt, a sess
 | Codex | `$CODEX_HOME/sessions` (default `~/.codex/sessions`) | 4 |
 | Pi | `$PI_HOME/agent/sessions` (default `~/.pi/agent/sessions`) | 4 |
 | oh-my-pi | `$PI_CODING_AGENT_DIR/sessions`, or `~/<PI_CONFIG_DIR or .omp>/agent/sessions`, or `$XDG_DATA_HOME/omp/sessions` when that exists and no agent dir is set | 4 |
+| Google Antigravity CLI | `$AGENTBOARD_ANTIGRAVITY_HOME/brain` (default `~/.gemini/antigravity-cli/brain`), only `<id>/.system_generated/logs/transcript.jsonl` | 3 |
 | Grok CLI | `$GROK_HOME/sessions` (default `~/.grok/sessions`), only `chat_history.jsonl` | 3 |
 | Devin CLI | the mirror `<dataDir>/devin-sessions` (see [Devin mirror](#devin-mirror)) | 2 |
 

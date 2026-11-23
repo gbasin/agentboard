@@ -14,7 +14,7 @@ export type NormalizedEventRole =
   | 'tool'
   | 'other'
 
-export type NormalizedSourceFamily = 'claude' | 'codex' | 'pi' | 'devin' | 'grok' | 'unknown'
+export type NormalizedSourceFamily = 'claude' | 'codex' | 'pi' | 'devin' | 'grok' | 'antigravity' | 'unknown'
 
 export interface NormalizedEventSource {
   family: NormalizedSourceFamily
@@ -53,6 +53,9 @@ export function inferSourceFamily(record: Record<string, unknown>): NormalizedSo
   const source = asString(record.source) ?? asString(payload?.source) ?? ''
   const agent = asString(record.agent) ?? ''
 
+  if (typeof record.step_index === 'number' && ['USER_EXPLICIT', 'MODEL', 'SYSTEM'].includes(source)) {
+    return 'antigravity'
+  }
   if (source.toLowerCase() === 'pi' || agent.toLowerCase() === 'pi') {
     return 'pi'
   }
@@ -391,6 +394,18 @@ export function normalizeAgentLogEntry(entry: unknown): NormalizedEvent[] {
   if (record.synthetic_reason !== undefined) return []
 
   const source = createSource(record)
+  if (source.family === 'antigravity') {
+    const content = asString(record.content) ?? ''
+    if (record.type === 'USER_INPUT' && record.source === 'USER_EXPLICIT') {
+      const requests = Array.from(content.matchAll(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/g),
+        match => match[1]!.trim())
+      const text = requests.length ? requests.join('\n\n') : content.trim()
+      return text ? [{ kind: 'message', role: 'user', text, source }] : []
+    }
+    return record.type === 'PLANNER_RESPONSE' && record.source === 'MODEL' && content.trim()
+      ? [{ kind: 'message', role: 'assistant', text: content.trim(), source }]
+      : []
+  }
   const primary = [
     ...normalizeResponseItemMessage(record, source),
     ...normalizeEventMsgMessage(record, source),

@@ -15,6 +15,8 @@ import {
   scanAllLogDirs,
 } from '../logDiscovery'
 
+import { extractLastUserMessageFromLog, findLogsWithExactMessage, extractLastEntryTimestamp, extractRecentUserMessagesFromTmux } from '../logMatcher'
+
 let tempRoot: string
 let claudeDir: string
 let codexDir: string
@@ -24,6 +26,7 @@ const originalClaude = process.env.CLAUDE_CONFIG_DIR
 const originalCodex = process.env.CODEX_HOME
 const originalPi = process.env.PI_HOME
 const originalAgentboardData = process.env.AGENTBOARD_DATA_DIR
+const originalAntigravity = process.env.AGENTBOARD_ANTIGRAVITY_HOME
 const originalGrok = process.env.GROK_HOME
 const originalOmpAgent = process.env.PI_CODING_AGENT_DIR
 
@@ -37,6 +40,7 @@ beforeEach(async () => {
   process.env.CODEX_HOME = codexDir
   process.env.PI_HOME = piDir
   process.env.AGENTBOARD_DATA_DIR = path.join(tempRoot, 'agentboard')
+  process.env.AGENTBOARD_ANTIGRAVITY_HOME = path.join(tempRoot, 'antigravity-cli')
   process.env.GROK_HOME = path.join(tempRoot, 'grok')
   process.env.PI_CODING_AGENT_DIR = ompAgentDir
 })
@@ -50,6 +54,8 @@ afterEach(async () => {
   else delete process.env.PI_HOME
   if (originalAgentboardData) process.env.AGENTBOARD_DATA_DIR = originalAgentboardData
   else delete process.env.AGENTBOARD_DATA_DIR
+  if (originalAntigravity) process.env.AGENTBOARD_ANTIGRAVITY_HOME = originalAntigravity
+  else delete process.env.AGENTBOARD_ANTIGRAVITY_HOME
   if (originalGrok) process.env.GROK_HOME = originalGrok
   else delete process.env.GROK_HOME
   if (originalOmpAgent) process.env.PI_CODING_AGENT_DIR = originalOmpAgent
@@ -63,6 +69,35 @@ test('encodeProjectPath matches Claude path convention', () => {
 })
 
 describe('log discovery', () => {
+  test('matches Antigravity prompts in the canonical transcript and resolves the workspace by ID', async () => {
+    const home = process.env.AGENTBOARD_ANTIGRAVITY_HOME!
+    const brain = path.join(home, 'brain')
+    const id = '954ad641-fda6-451e-a784-72296babe417'
+    const logs = path.join(brain, id, '.system_generated', 'logs')
+    const fixture = path.resolve(import.meta.dir, '../../../tests/fixtures/fad/home/.gemini/antigravity-cli/brain',
+      id, '.system_generated/logs/transcript.jsonl')
+    const canonical = path.join(logs, 'transcript.jsonl')
+    const duplicate = path.join(logs, 'transcript_full.jsonl')
+    await fs.mkdir(logs, { recursive: true })
+    await fs.copyFile(fixture, canonical)
+    await fs.copyFile(fixture, duplicate)
+    await fs.mkdir(path.join(home, 'cache'))
+    await fs.writeFile(path.join(home, 'cache/last_conversations.json'), JSON.stringify({ [tempRoot]: id }))
+    expect(scanAllLogDirs()).toContain(canonical)
+    expect(scanAllLogDirs()).not.toContain(duplicate)
+    expect(inferAgentTypeFromPath(canonical)).toBe('antigravity')
+    expect(extractSessionId(canonical)).toBe(id)
+    expect(extractProjectPath(canonical)).toBe(tempRoot)
+    const prompt = 'Run the regression suite for the command parser.'
+    const divider = '─'.repeat(80)
+    const pane = [divider, '> ' + prompt, '● Generating...', divider, '> unsent draft', divider, 'esc to cancel'].join('\n')
+    expect(extractRecentUserMessagesFromTmux(pane, 1, 'antigravity')).toEqual([prompt])
+    expect(extractLastUserMessageFromLog(canonical)).toBe(prompt)
+    expect(extractLastEntryTimestamp(canonical)).toBe('2026-11-01T12:00:03Z')
+    expect(findLogsWithExactMessage(prompt, brain, { userOnly: true })).toEqual([canonical])
+    expect(findLogsWithExactMessage('A generated summary of previous turns.', brain, { userOnly: true })).toEqual([])
+  })
+
   test('scans Claude and Codex roots for jsonl files', async () => {
     const projectPath = '/Users/example/project'
     const encoded = encodeProjectPath(projectPath)

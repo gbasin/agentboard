@@ -18,6 +18,7 @@ export const YOLO_FLAGS: Record<AgentFamily, string | null> = {
   devin: '--permission-mode dangerous',
   // Pi has no permission prompts by design — it is always effectively yolo.
   pi: null,
+  antigravity: '--dangerously-skip-permissions',
   omp: '--auto-approve',
 }
 
@@ -38,6 +39,7 @@ const YOLO_FLAG_ALIASES: Record<AgentFamily, string[]> = {
   ],
   devin: ['--permission-mode dangerous', '--permission-mode=dangerous'],
   pi: [],
+  antigravity: ['--dangerously-skip-permissions'],
   omp: ['--auto-approve', '--approval-mode yolo', '--approval-mode=yolo'],
 }
 

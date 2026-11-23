@@ -89,6 +89,14 @@ function GrokIcon({ className }: { className?: string }) {
   )
 }
 
+function AntigravityIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="10 12 92 92" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M89.7 93.7c4.7 3.5 11.7 1.2 5.2-5.3C75.7 69.8 79.8 18.4 55.9 18.4S36 69.8 16.8 88.4c-7 7 .6 8.8 5.2 5.3C40.1 81.4 39 59.9 55.9 59.9s15.7 21.5 33.8 33.8Z" />
+    </svg>
+  )
+}
+
 function OmpIcon({ className }: { className?: string }) {
   // Official oh-my-pi icon (pi glyph + plugin connector), adapted:
   // glyph renders in currentColor, connector keeps the brand orange.
@@ -118,6 +126,8 @@ type IconComponent = ({ className }: { className?: string }) => JSX.Element
 const iconPrefixes: [string, IconComponent][] = [
   ['claude', AnthropicIcon],
   ['codex', OpenAIIcon],
+  ['antigravity', AntigravityIcon],
+  ['agy', AntigravityIcon],
   ['omp', OmpIcon],
   ['pi', PiIcon],
   ['devin', DevinIcon],

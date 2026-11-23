@@ -44,6 +44,7 @@ const AGENT_MAP: Record<string, AgentType> = {
   pi_agent: 'pi',
   omp: 'omp',
   grok: 'grok',
+  antigravity: 'antigravity',
   devin: 'devin',
 }
 
@@ -71,6 +72,7 @@ const ENV_KEYS = [
   'CODEX_HOME',
   'PI_HOME',
   'GROK_HOME',
+  'AGENTBOARD_ANTIGRAVITY_HOME',
   'PI_CODING_AGENT_DIR',
   'AGENTBOARD_DATA_DIR',
   'DEVIN_CLI_DIR',
@@ -85,6 +87,7 @@ beforeAll(() => {
   process.env.CLAUDE_CONFIG_DIR = path.join(FAD_HOME, '.claude')
   process.env.CODEX_HOME = path.join(FAD_HOME, '.codex')
   process.env.PI_HOME = path.join(FAD_HOME, '.pi')
+  process.env.AGENTBOARD_ANTIGRAVITY_HOME = path.join(FAD_HOME, '.gemini', 'antigravity-cli')
   process.env.GROK_HOME = path.join(FAD_HOME, '.grok')
   process.env.PI_CODING_AGENT_DIR = path.join(FAD_HOME, '.omp', 'agent')
   process.env.AGENTBOARD_DATA_DIR = path.join(tempRoot, 'agentboard')
@@ -202,7 +205,7 @@ describe('FAD parity', () => {
       expect(inferAgentTypeFromPath(logPath)).toBe(AGENT_MAP[conv.agent])
       expectSessionIdParity(conv, extractSessionId(logPath), name)
       expect(extractProjectPath(logPath)).toBe(
-        normalizeProjectPath(conv.workspace ?? '')
+        conv.workspace ? normalizeProjectPath(conv.workspace) : null
       )
       expectUserSubset(conv, agentboardUserTexts(logPath), name)
     })
@@ -237,7 +240,7 @@ describe('FAD parity', () => {
     expect(inferAgentTypeFromPath(mirrorPath)).toBe('devin')
     expectSessionIdParity(conv, extractSessionId(mirrorPath), 'devin')
     expect(extractProjectPath(mirrorPath)).toBe(
-      normalizeProjectPath(conv.workspace ?? '')
+      conv.workspace ? normalizeProjectPath(conv.workspace) : null
     )
     expectUserSubset(conv, agentboardUserTexts(mirrorPath), 'devin')
   })

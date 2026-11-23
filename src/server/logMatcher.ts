@@ -2,7 +2,8 @@ import { cleanUserImageAttachments, hasUserImageAttachment, hasUserImageMarkup, 
 import fs from 'node:fs'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
-import { normalizeAgentLogEntry } from '../shared/eventTaxonomy'
+import { antigravityBrain, isAntigravityAuxiliaryFile } from './antigravityLogs'
+import { inferSourceFamily, normalizeAgentLogEntry } from '../shared/eventTaxonomy'
 import type { AgentType, Session } from '../shared/types'
 import { agentFamily } from './agentDetection'
 import {
@@ -277,7 +278,9 @@ function lineMatchSpace(line: string): LogLineMatchSpace | null {
   try {
     const parsed = JSON.parse(trimmed)
     const walkTexts: string[] = []
-    collectMessageValueStrings(parsed, walkTexts)
+    if (typeof parsed?.step_index !== 'number' || inferSourceFamily(parsed) !== 'antigravity') {
+      collectMessageValueStrings(parsed, walkTexts)
+    }
     const userTexts = [...walkTexts]
     const allTexts = [...walkTexts]
     for (const event of normalizeAgentLogEntry(parsed)) {
@@ -656,12 +659,19 @@ function hasMessageInValidUserContextProgressive(
  * updates.jsonl, rewind_points.jsonl) that echo the prompt text; only
  * chat_history.jsonl is a transcript.
  */
-function isGrokTelemetryFile(logPath: string): boolean {
+function isAuxiliaryLogFile(logPath: string): boolean {
+  if (isAntigravityAuxiliaryFile(logPath)) return true
   if (path.basename(logPath) === 'chat_history.jsonl') return false
   const normalized = logPath.replace(/\\/g, '/')
   if (normalized.includes('/.grok/')) return true
   const grokHome = process.env.GROK_HOME
   return !!grokHome && normalized.startsWith(grokHome.replace(/\\/g, '/') + '/')
+}
+
+function logDirectoryArgs(dir: string): string[] {
+  return path.resolve(dir) === path.resolve(antigravityBrain())
+    ? ['--hidden', '--glob', '**/.system_generated/logs/transcript.jsonl', dir]
+    : ['--glob', '**/*.jsonl', dir]
 }
 
 export function findLogsWithExactMessage(
@@ -704,7 +714,7 @@ export function findLogsWithExactMessage(
     if (rgThreads && rgThreads > 0) {
       args.push('--threads', String(rgThreads))
     }
-    args.push('--glob', '**/*.jsonl', logDir)
+    args.push(...logDirectoryArgs(logDir))
     const start = performance.now()
     const result = runCommandSync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
     if (profile) {
@@ -719,7 +729,7 @@ export function findLogsWithExactMessage(
   }
 
   const uniqueMatches = Array.from(new Set(allMatches)).filter(
-    (logPath) => !isGrokTelemetryFile(logPath)
+    (logPath) => !isAuxiliaryLogFile(logPath)
   )
 
   // Post-filter to exclude tool_result false positives
@@ -773,7 +783,7 @@ export async function findLogsWithExactMessageAsync(
     if (rgThreads && rgThreads > 0) {
       args.push('--threads', String(rgThreads))
     }
-    args.push('--glob', '**/*.jsonl', logDir)
+    args.push(...logDirectoryArgs(logDir))
     const start = performance.now()
     const result = await runCommandAsync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
     if (profile) {
@@ -788,7 +798,7 @@ export async function findLogsWithExactMessageAsync(
   }
 
   const uniqueMatches = Array.from(new Set(allMatches)).filter(
-    (logPath) => !isGrokTelemetryFile(logPath)
+    (logPath) => !isAuxiliaryLogFile(logPath)
   )
   const validMatches = uniqueMatches.filter((logPath) =>
     hasMessageInValidUserContextProgressive(
@@ -1407,7 +1417,8 @@ function isAskUserQuestionOption(rawLines: string[], promptIdx: number): boolean
 
 export function extractRecentUserMessagesFromTmux(
   content: string,
-  maxMessages = MAX_RECENT_USER_MESSAGES
+  maxMessages = MAX_RECENT_USER_MESSAGES,
+  agentType?: AgentType
 ): string[] {
   const rawLines = stripAnsi(content).split('\n')
   while (rawLines.length > 0 && rawLines[rawLines.length - 1]?.trim() === '') {
@@ -1417,8 +1428,15 @@ export function extractRecentUserMessagesFromTmux(
   const messages: string[] = []
   for (let i = rawLines.length - 1; i >= 0 && messages.length < maxMessages; i--) {
     const line = rawLines[i] ?? ''
-    if (!isPromptLine(line)) continue
-    if (isCurrentInputField(rawLines, i)) continue
+    // Antigravity prints a submitted prompt below a divider. Its editor also
+    // has a bottom divider, and menu selections have no preceding divider.
+    const agyPrompt = agentType === 'antigravity' && /^>\s+\S/.test(line.trim()) &&
+      BOX_SEPARATOR_PATTERN.test(rawLines[i - 1]?.trim() ?? '')
+    if (agyPrompt) {
+      if (BOX_SEPARATOR_PATTERN.test(rawLines[i + 1]?.trim() ?? '')) continue
+    } else if (!isPromptLine(line) || isCurrentInputField(rawLines, i)) {
+      continue
+    }
     if (isAskUserQuestionOption(rawLines, i)) continue
     if (line.includes('↵')) continue
     const message = extractUserFromPrompt(line)
@@ -2002,13 +2020,8 @@ export function extractLastEntryTimestamp(
   for (let i = lines.length - 1; i >= 0; i--) {
     try {
       const entry = JSON.parse(lines[i])
-      // Grok writes `ts` instead of `timestamp`.
-      const ts = entry && typeof entry.timestamp === 'string'
-        ? entry.timestamp
-        : entry && typeof entry.ts === 'string'
-          ? entry.ts
-          : null
-      if (ts && !Number.isNaN(Date.parse(ts))) {
+      const ts = [entry?.timestamp, entry?.ts, entry?.created_at].find(value => typeof value === 'string')
+      if (typeof ts === 'string' && !Number.isNaN(Date.parse(ts))) {
         return ts
       }
     } catch {
@@ -2175,11 +2188,11 @@ function findLogsWithAskAnswerPair(
     logPaths.length > 0
       ? rgListFiles(pattern, Array.from(new Set(logPaths)), search)
       : (Array.isArray(logDirs) ? logDirs : [logDirs]).flatMap((dir) =>
-          rgListFiles(pattern, ['--glob', '**/*.jsonl', dir], search)
+          rgListFiles(pattern, logDirectoryArgs(dir), search)
         )
   return hits.filter(
     (logPath) =>
-      !isGrokTelemetryFile(logPath) &&
+      !isAuxiliaryLogFile(logPath) &&
       askAnswerHitIsValid(logPath, pattern, needle, search)
   )
 }
@@ -2202,13 +2215,13 @@ async function findLogsWithAskAnswerPairAsync(
       : (
           await Promise.all(
             (Array.isArray(logDirs) ? logDirs : [logDirs]).map((dir) =>
-              rgListFilesAsync(pattern, ['--glob', '**/*.jsonl', dir], search)
+              rgListFilesAsync(pattern, logDirectoryArgs(dir), search)
             )
           )
         ).flat()
   const valid = await Promise.all(
     hits.map(async (logPath) =>
-      !isGrokTelemetryFile(logPath) &&
+      !isAuxiliaryLogFile(logPath) &&
       (await askAnswerHitIsValidAsync(logPath, pattern, needle, search))
         ? logPath
         : null
@@ -2475,7 +2488,7 @@ export function tryExactMatchWindowToLog(
     profile.tmuxCaptureMs += performance.now() - tmuxStart
   }
   const extractStart = performance.now()
-  let userMessages = extractRecentUserMessagesFromTmux(scrollback)
+  let userMessages = extractRecentUserMessagesFromTmux(scrollback, undefined, context.agentType)
 
   // If no Claude/Codex prompts found, try pi TUI detection (uses ANSI background colors)
   if (userMessages.length === 0) {
@@ -2729,7 +2742,7 @@ export async function tryExactMatchWindowToLogAsync(
     profile.tmuxCaptureMs += performance.now() - tmuxStart
   }
   const extractStart = performance.now()
-  let userMessages = extractRecentUserMessagesFromTmux(scrollback)
+  let userMessages = extractRecentUserMessagesFromTmux(scrollback, undefined, context.agentType)
 
   if (userMessages.length === 0) {
     const ansiScrollback = await getTerminalScrollbackWithAnsiAsync(
@@ -3389,7 +3402,7 @@ export function findLogsWithExactMessagesBatch(
       if (search.rgThreads && search.rgThreads > 0) {
         args.push('--threads', String(search.rgThreads))
       }
-      args.push('--glob', '**/*.jsonl', logDir)
+      args.push(...logDirectoryArgs(logDir))
       const start = performance.now()
       const result = runCommandSync(args, { timeoutMs: SHARED_RG_TIMEOUT_MS })
       if (profile) {
@@ -3411,7 +3424,7 @@ export function findLogsWithExactMessagesBatch(
     queryChunkIndex.set(qi, chunkOfMessage.get(message) ?? 0)
   }
   for (const logPath of candidateFiles) {
-    if (isGrokTelemetryFile(logPath)) continue
+    if (isAuxiliaryLogFile(logPath)) continue
 
     // Tail validation first: read the last MAX_PROGRESSIVE_TAIL_BYTES once
     // and test every query against each line's match space — same predicate
@@ -3527,7 +3540,7 @@ export function verifyWindowsBatch(
         scrollbackLines
       )
       const scrollback = captureResult.content
-      let messages = extractRecentUserMessagesFromTmux(scrollback)
+      let messages = extractRecentUserMessagesFromTmux(scrollback, undefined, job.context.agentType)
       if (messages.length === 0) {
         const ansiScrollback = getTerminalScrollbackWithAnsi(
           job.tmuxWindow,

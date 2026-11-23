@@ -93,6 +93,7 @@ export type RefreshWorkerRequest =
       kind: 'last-user-message'
       tmuxWindow: string
       scrollbackLines?: number
+      agentType?: Session['agentType']
     }
   | {
       id: string
@@ -142,7 +143,7 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
         payload.tmuxWindow,
         payload.scrollbackLines ?? LAST_USER_MESSAGE_SCROLLBACK_LINES
       )
-      const message = extractRecentUserMessagesFromTmux(scrollback, 1)[0] ?? null
+      const message = extractRecentUserMessagesFromTmux(scrollback, 1, payload.agentType)[0] ?? null
       const response: RefreshWorkerResponse = {
         id: payload.id,
         kind: 'last-user-message',

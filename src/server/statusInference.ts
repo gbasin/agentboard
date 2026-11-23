@@ -33,6 +33,8 @@ export const PERMISSION_PATTERNS: RegExp[] = [
   /approve\s+this\s+(command|change|action)/i,
   // Generic: "allow" / "deny" choice pattern
   /\[allow\].*\[deny\]/i,
+  // Antigravity CLI workspace trust prompt
+  /Yes, I trust this folder[\s\S]*?No, exit/i,
   // Devin CLI: approval menu options
   /Approve once/i,
   /Yes, allow once/i,

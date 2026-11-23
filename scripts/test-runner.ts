@@ -59,6 +59,7 @@ async function main() {
     NODE_ENV: process.env.NODE_ENV === 'production' ? 'test' : (process.env.NODE_ENV || 'test'),
     CLAUDE_CONFIG_DIR: claudeDir,
     CODEX_HOME: codexDir,
+    AGENTBOARD_ANTIGRAVITY_HOME: path.join(tempRoot, 'antigravity-cli'),
     LOG_FILE: tempLogFile,
     AGENTBOARD_DB_PATH: tempDbPath,
     // Test servers get their own data dir so the single-instance lock

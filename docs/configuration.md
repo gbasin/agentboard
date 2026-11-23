@@ -126,6 +126,7 @@ Agentboard finds each agent's transcripts in the agent's default location and re
 | Pi | `~/.pi/agent/sessions/` | `PI_HOME` | `pi --session {logFilePath}` | `PI_RESUME_CMD` |
 | oh-my-pi | `~/.omp/agent/sessions/` | `PI_CODING_AGENT_DIR`, `PI_CONFIG_DIR` | `omp --resume {logFilePath}` | `OMP_RESUME_CMD` |
 | Devin CLI | `~/.local/share/devin/cli/` | `DEVIN_CLI_DIR`, `XDG_DATA_HOME` | `devin --resume {sessionId}` | `DEVIN_RESUME_CMD` |
+| Google Antigravity CLI | `~/.gemini/antigravity-cli/brain/` | `AGENTBOARD_ANTIGRAVITY_HOME` (parent of `brain/`) | `agy --conversation {sessionId}` | `ANTIGRAVITY_RESUME_CMD` |
 | Grok CLI | `~/.grok/sessions/` | `GROK_HOME` | `grok --resume {sessionId}` | `GROK_RESUME_CMD` |
 
 The overrides do not all name the same level of the path:
@@ -151,6 +152,8 @@ Notes:
 - Devin CLI keeps history in a SQLite database. Agentboard mirrors it into `devin-sessions/` in the data directory.
 
 ## Session matching
+
+Antigravity conversation IDs come from the transcript directory. Agentboard reads the CLI’s `cache/last_conversations.json` for the workspace when it still lists that conversation.
 
 Agentboard matches each agent transcript to the tmux window that runs it. The match drives the last prompt, pull requests, and media shown for a session.
 

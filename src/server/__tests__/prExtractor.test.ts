@@ -56,6 +56,19 @@ function claudePrLink(url: string, repo = 'acme/widgets', number = 42): string {
 }
 
 describe('extractPullRequests', () => {
+  test('Antigravity attributes only the adjacent command result, across appends', async () => {
+    const log = path.join(tempRoot, 'transcript.jsonl')
+    const planner = { step_index: 8, type: 'PLANNER_RESPONSE', source: 'MODEL', status: 'DONE',
+      tool_calls: [{ name: 'run_command', args: { CommandLine: '"gh pr create --fill"' } }] }
+    const result = { step_index: 9, type: 'RUN_COMMAND', source: 'MODEL', status: 'DONE',
+      content: 'Output: https://github.com/acme/widgets/pull/42' }
+    await fs.writeFile(log, JSON.stringify(planner) + '\n')
+    expect(getSessionPullRequests(log)).toEqual([])
+    await fs.appendFile(log, JSON.stringify(result) + '\n')
+    expect(getSessionPullRequests(log).map(pr => pr.number)).toEqual([42])
+    expect(extractPullRequests([planner, { ...result, step_index: 11 }].map(step => JSON.stringify(step)).join('\n'))).toEqual([])
+  })
+
   test('captures PR URL from tool result after gh pr create', () => {
     const content = [
       claudeBashToolUse('gh pr create --fill'),

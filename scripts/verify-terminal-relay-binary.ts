@@ -13,6 +13,7 @@ const env: Record<string, string | undefined> = {
   LOG_FILE: path.join(dir, 'server.log'), CLAUDE_CONFIG_DIR: path.join(dir, 'claude'),
   CODEX_HOME: path.join(dir, 'codex'), PI_HOME: path.join(dir, 'pi'),
   PI_CODING_AGENT_DIR: path.join(dir, 'omp'), DEVIN_CLI_DIR: path.join(dir, 'devin'),
+  AGENTBOARD_ANTIGRAVITY_HOME: path.join(dir, 'antigravity-cli'),
   GROK_HOME: path.join(dir, 'grok'), AGENTBOARD_TMUX_PID_FILE: path.join(dir, 'tmux-server.pid'),
   AGENTBOARD_TERMINAL_RELAY: '1', HOSTNAME: '127.0.0.1', AGENTBOARD_REMOTE_HOSTS: '',
   AGENTBOARD_OWNERSHIP_MATCHING: 'false', AGENTBOARD_TMUX_SET_CLIPBOARD: '0',
@@ -21,7 +22,7 @@ const env: Record<string, string | undefined> = {
 delete env.TMUX
 // Bun subprocesses receive this exact environment; the user's tmux is never used.
 delete env.TMUX_PANE
-for (const key of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_HOME', 'PI_CODING_AGENT_DIR', 'DEVIN_CLI_DIR', 'GROK_HOME']) mkdirSync(env[key]!, { recursive: true })
+for (const key of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_HOME', 'PI_CODING_AGENT_DIR', 'DEVIN_CLI_DIR', 'GROK_HOME', 'AGENTBOARD_ANTIGRAVITY_HOME']) mkdirSync(env[key]!, { recursive: true })
 const reservation = Bun.serve({ hostname: env.HOSTNAME, port: 0, fetch: () => new Response('') })
 const port = reservation.port!
 reservation.stop(true)

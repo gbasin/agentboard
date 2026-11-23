@@ -364,7 +364,7 @@ describe('preset migration', () => {
     ])
     expect(defaultPresetId).toBe(custom.id)
     const persisted = JSON.parse(storage.getItem('agentboard-settings')!)
-    expect(persisted.version).toBe(9)
+    expect(persisted.version).toBe(10)
     await useSettingsStore.persist.rehydrate()
     expect(useSettingsStore.getState().commandPresets).toEqual(commandPresets)
   })
@@ -419,7 +419,7 @@ describe('preset migration', () => {
 describe('settings persistence migration', () => {
   test('runs the hibernating/history expansion rename for v5 persisted state', async () => {
     const options = useSettingsStore.persist.getOptions()
-    expect(options.version).toBe(9)
+    expect(options.version).toBe(10)
     if (!options.migrate) {
       throw new Error('Expected settings migration to be configured')
     }
@@ -479,7 +479,7 @@ describe('mobile autocorrect migration', () => {
         await useSettingsStore.persist.rehydrate()
         expect(useSettingsStore.getState().mobileAutocorrect).toBe(expected)
         const saved = JSON.parse(storage.getItem('agentboard-settings')!)
-        expect(saved.version).toBe(9)
+        expect(saved.version).toBe(10)
         expect(saved.state.mobileAutocorrect).toBe(expected)
         expect(saved.state).not.toHaveProperty('iosAutocorrect')
         expect(saved.state).not.toHaveProperty('androidAutocorrect')

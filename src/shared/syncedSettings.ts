@@ -66,6 +66,7 @@ const AGENT_TYPES: readonly string[] = [
   'codex',
   'pi',
   'devin',
+  'antigravity',
   'grok',
   'omp',
 ]

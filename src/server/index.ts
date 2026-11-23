@@ -1424,14 +1424,14 @@ function scheduleLastUserMessageCapture(sessionId: string) {
   }
   const timer = setTimeout(() => {
     lastUserMessageTimers.delete(tmuxWindow)
-    void captureLastUserMessage(tmuxWindow)
+    void captureLastUserMessage(tmuxWindow, session.agentType)
   }, config.enterRefreshDelayMs)
   lastUserMessageTimers.set(tmuxWindow, timer)
 }
 
-async function captureLastUserMessage(tmuxWindow: string) {
+async function captureLastUserMessage(tmuxWindow: string, agentType?: AgentType) {
   try {
-    const captured = await lastUserMessageWorker.getLastUserMessage(tmuxWindow)
+    const captured = await lastUserMessageWorker.getLastUserMessage(tmuxWindow, undefined, agentType)
     const message = captured?.trim() ? stripPastePlaceholders(captured) : ''
     if (!message || message !== captured) {
       // Empty capture, or a paste the TUI collapsed to a "[Pasted text …]"
@@ -3863,6 +3863,7 @@ function getResumeCommandTemplate(agentType: AgentType): string {
   if (agentType === 'devin') {
     return config.devinResumeCmd
   }
+  if (agentType === 'antigravity') return config.antigravityResumeCmd
   if (agentType === 'grok') {
     return config.grokResumeCmd
   }
@@ -3908,6 +3909,12 @@ function buildResumeCommand(
       // strip -c / --continue (omp "continue previous session" flags)
       .replace(/(?:^|\s)--continue\b/g, ' ')
       .replace(/(?:^|\s)-c(?=\s|$)/g, ' ')
+  }
+
+  if (record.agentType === 'antigravity') {
+    flags = flags
+      .replace(new RegExp(`(?:^|\\s)--conversation(?:\\s+|=)${resumableArg.source}`, 'g'), ' ')
+      .replace(/(?:^|\s)(?:-c|--continue)(?=\s|$)/g, ' ')
   }
 
   flags = flags.replace(/\s+/g, ' ').trim()

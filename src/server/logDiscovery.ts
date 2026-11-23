@@ -1,3 +1,4 @@
+import { antigravityHome, antigravityBrain, antigravityProjectPath, antigravitySessionId } from './antigravityLogs'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentType } from '../shared/types'
@@ -118,6 +119,7 @@ export function getLogSearchDirs(): string[] {
     getDevinLogOutDir(),
     path.join(getGrokHomeDir(), 'sessions'),
     getOmpSessionsDir(),
+    antigravityBrain(),
   ]
 }
 
@@ -129,6 +131,7 @@ export function getLogWatchParentDirs(): string[] {
     path.dirname(getDevinLogOutDir()),
     getGrokHomeDir(),
     path.dirname(getOmpSessionsDir()),
+    antigravityHome(),
   ]
 }
 
@@ -175,6 +178,7 @@ export function scanAllLogDirs(): string[] {
   // are not transcripts, so only the transcript file is collected.
   paths.push(...scanDirForJsonl(grokRoot, 3, 'chat_history.jsonl'))
   paths.push(...scanDirForJsonl(ompRoot, 4))
+  paths.push(...scanDirForJsonl(antigravityBrain(), 3, 'transcript.jsonl').filter(antigravitySessionId))
 
   return paths
 }
@@ -203,6 +207,8 @@ export function extractSessionId(logPath: string): string | null {
   if (inferAgentTypeFromPath(logPath) === 'grok') {
     return grokSessionIdFromPath(logPath)
   }
+  const conversationId = antigravitySessionId(logPath)
+  if (conversationId) return conversationId
 
   const entries = parseLogHeadEntries(logPath)
 
@@ -230,6 +236,8 @@ export function extractProjectPath(logPath: string): string | null {
   if (inferAgentTypeFromPath(logPath) === 'grok') {
     return grokProjectPathFromPath(logPath)
   }
+  const conversationId = antigravitySessionId(logPath)
+  if (conversationId) return antigravityProjectPath(conversationId)
 
   const entries = parseLogHeadEntries(logPath)
 
@@ -287,6 +295,7 @@ export function inferAgentTypeFromPath(logPath: string): AgentType | null {
   ) {
     return 'omp'
   }
+  if (antigravitySessionId(logPath)) return 'antigravity'
   if (normalized.startsWith(claudeRoot + path.sep)) return 'claude'
   if (normalized.startsWith(codexRoot + path.sep)) return 'codex'
   if (normalized.startsWith(piRoot + path.sep)) return 'pi'

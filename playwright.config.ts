@@ -64,6 +64,7 @@ process.env.PI_CODING_AGENT_DIR = ompDir
 // notice mid-test.
 process.env.DEVIN_CLI_DIR = devinDir
 process.env.GROK_HOME = grokDir
+process.env.AGENTBOARD_ANTIGRAVITY_HOME = join(tmuxTmpDir, 'antigravity-cli')
 
 export default defineConfig({
   testDir: 'tests/e2e',

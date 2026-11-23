@@ -17,7 +17,7 @@ const env: Record<string, string | undefined> = {
   AGENTBOARD_OWNERSHIP_MATCHING: 'false', AGENTBOARD_TMUX_SET_CLIPBOARD: '0', NODE_ENV: 'production',
 }
 delete env.TMUX; delete env.TMUX_PANE
-for (const key of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_HOME', 'PI_CODING_AGENT_DIR', 'DEVIN_CLI_DIR', 'GROK_HOME']) {
+for (const key of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_HOME', 'PI_CODING_AGENT_DIR', 'DEVIN_CLI_DIR', 'GROK_HOME', 'AGENTBOARD_ANTIGRAVITY_HOME']) {
   env[key] = path.join(root, key.toLowerCase()); mkdirSync(env[key]!, { recursive: true })
 }
 // Initialize only this probe's database before loading modules with config/logger state.

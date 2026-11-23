@@ -252,6 +252,7 @@ export const config = {
   codexResumeCmd: process.env.CODEX_RESUME_CMD || 'codex resume {sessionId}',
   piResumeCmd: process.env.PI_RESUME_CMD || 'pi --session {logFilePath}',
   devinResumeCmd: process.env.DEVIN_RESUME_CMD || 'devin --resume {sessionId}',
+  antigravityResumeCmd: process.env.ANTIGRAVITY_RESUME_CMD || 'agy --conversation {sessionId}',
   grokResumeCmd: process.env.GROK_RESUME_CMD || 'grok --resume {sessionId}',
   ompResumeCmd: process.env.OMP_RESUME_CMD || 'omp --resume {logFilePath}',
   enterRefreshDelayMs,
