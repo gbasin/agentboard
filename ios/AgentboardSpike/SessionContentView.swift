@@ -9,6 +9,8 @@ struct SessionContentView: View {
     var showsMedia = true
     var sessionID: String? = nil
     var catalog: MediaCatalogSummary? = nil
+    var pullRequests: BoardPullRequests? = nil
+    @StateObject private var fallbackPullRequests = BoardPullRequests()
     @StateObject private var pages = MediaCatalogModel()
     @State private var selected: MediaItem?
     @State private var search = ""
@@ -21,7 +23,12 @@ struct SessionContentView: View {
         List {
             if !prs.isEmpty {
                 Section("Pull requests") {
-                    ForEach(prs) { pr in NavigationLink("\(pr.repo) #\(pr.number)") { PullRequestView(server: server, item: pr) } }
+                    ForEach(prs) { pr in
+                        NavigationLink("\(pr.repo) #\(pr.number)") {
+                            PullRequestView(server: server, item: pr, pullRequests: pullRequests ?? fallbackPullRequests)
+                                .id(server)
+                        }
+                    }
                 }
             }
             if paginated {
@@ -273,25 +280,63 @@ struct PullRequestInfo: Decodable {
             }
         }
     }
-    let title: String?; let state: String?; let author: String?; let isDraft: Bool?; let error: String?; let checks: [Check]?
+    let status: PullRequestStatus
+    let checks: [Check]?
+
+    init(from decoder: Decoder) throws {
+        status = try PullRequestStatus(from: decoder)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        checks = try values.decodeIfPresent([Check].self, forKey: .checks)
+    }
+
+    private enum CodingKeys: String, CodingKey { case checks }
 }
 struct PullRequestView: View {
     let server: String
     let item: PullRequestItem
+    @ObservedObject var pullRequests: BoardPullRequests
     @State private var info: PullRequestInfo?
+    @State private var refresh = 0
     @State private var error: String?
+    @Environment(\.scenePhase) private var scenePhase
+
+    private var status: PullRequestStatus? {
+        let base = pullRequests[item.url]
+        let detail = info?.status
+        return detail?.error == nil && (detail?.lastConfirmedAt ?? 0) > (base?.lastConfirmedAt ?? 0) ? detail : base ?? detail
+    }
+    private struct RequestKey: Equatable {
+        let server: String
+        let url: String
+        let head: String?
+        let state: String?
+        let draft: Bool?
+        let refresh: Int
+        let active: Bool
+    }
+    private var requestKey: RequestKey {
+        let base = pullRequests[item.url]
+        return .init(server: server, url: item.url, head: base?.headSha, state: base?.state, draft: base?.isDraft,
+                     refresh: refresh, active: scenePhase == .active)
+    }
     var body: some View {
         List {
-            if let error { ErrorRow(message: error) { Task { await load() } } }
-            if let info {
+            if let error { ErrorRow(message: error) { refresh += 1 } }
+            if let status {
                 Section {
-                    Text(info.title ?? "Pull request #\(item.number)").font(.headline)
-                    let metadata = [info.state, info.isDraft == true ? "Draft" : nil, info.author].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-                    if !metadata.isEmpty { Text(metadata).font(.subheadline).foregroundStyle(.secondary) }
-                    if let error = info.error {
-                        Text(error == "unavailable" ? "Pull request details are unavailable. Check GitHub access on the server." : error)
-                        Button("Retry") { Task { await load() } }
+                    Text(status.title ?? "Pull request #\(item.number)").font(.headline)
+                    let metadata = [status.label, status.author].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                    Text(metadata).font(.subheadline).foregroundStyle(.secondary)
+                    if let confirmed = status.lastConfirmedAt {
+                        let date = Date(timeIntervalSince1970: confirmed / 1000)
+                        Text("Last confirmed \(date, style: .relative) ago")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
+                }
+            } else if error == nil { ProgressView("Loading pull request…") }
+            if let info {
+                if let error = info.status.error {
+                    ErrorRow(message: error == "unavailable" ? "Pull request details are unavailable. Check GitHub access on the server." : error) { refresh += 1 }
                 }
                 if !(info.checks ?? []).isEmpty { Section("Checks") {
                     ForEach(Array((info.checks ?? []).enumerated()), id: \.offset) { _, check in
@@ -302,13 +347,26 @@ struct PullRequestView: View {
                     }
                 }
                 }
-            } else if error == nil { ProgressView("Loading pull request…") }
+            }
             if let url = resolved(item.url, server: server) { Link("Open pull request", destination: url); ShareLink(item: url) }
-        }.navigationTitle("Pull request").navigationBarTitleDisplayMode(.inline).task { await load() }
+        }.navigationTitle("Pull request").navigationBarTitleDisplayMode(.inline)
+            .task(id: requestKey) {
+                guard scenePhase == .active else { return }
+                if info?.status.headSha != pullRequests[item.url]?.headSha { info = nil }
+                while !Task.isCancelled {
+                    await load()
+                    do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                }
+            }
     }
     private func load() async {
-        do { info = try await BoardAPI(server).request("api/pr-checks", query: ["url": item.url]); error = nil }
-        catch { self.error = error.localizedDescription }
+        do {
+            let next: PullRequestInfo = try await BoardAPI(server).request("api/pr-checks", query: ["url": item.url])
+            guard !Task.isCancelled else { return }
+            info = next; error = nil
+        } catch {
+            if !Task.isCancelled { self.error = error.localizedDescription }
+        }
     }
 }
 

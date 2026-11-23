@@ -1,3 +1,4 @@
+import { applyPrStatus } from '../lib/prStatus'
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
 
@@ -656,75 +657,119 @@ describe('PrChips info fetch resilience', () => {
     act(() => renderer.unmount())
   })
 
-  test('interval revalidation flips a merged chip with no interaction', async () => {
-    // A visible chip in a long-lived page: no remount, resume, or hover —
-    // the row's timer is the only thing that can refresh it.
+  test('server updates recolor all mounted chips without an HTTP poll', async () => {
     const pr = prFor(6)
     fetchImpl = async () => infoResponse(pr.url, 'OPEN')
-    const intervals: (() => void)[] = []
-    const realSetInterval = globalThis.setInterval
-    globalThis.setInterval = ((fn: () => void) => {
-      intervals.push(fn)
-      return 0 as unknown as ReturnType<typeof setInterval>
-    }) as typeof setInterval
-    try {
-      let renderer!: TestRenderer.ReactTestRenderer
-      act(() => {
-        renderer = TestRenderer.create(<PrChips prs={[pr]} />, {
-          createNodeMock,
-        })
-      })
-      await act(async () => {})
-      expect(hasIconColor(renderer.root, 'text-pr-open')).toBe(true)
-
-      // PR merges while the page sits open; cache ages past the TTL.
-      fetchImpl = async () => infoResponse(pr.url, 'MERGED')
-      const realNow = Date.now
-      Date.now = () => realNow() + 61_000
-      const calls = fetchMock.mock.calls.length
-      await act(async () => {
-        for (const fn of intervals) fn()
-      })
-      await act(async () => {})
-      Date.now = realNow
-      expect(fetchMock.mock.calls.length).toBeGreaterThan(calls)
+    const renderers: TestRenderer.ReactTestRenderer[] = []
+    act(() => {
+      renderers.push(TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock }))
+      renderers.push(TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock }))
+    })
+    await act(async () => {})
+    for (const renderer of renderers) expect(hasIconColor(renderer.root, 'text-pr-open')).toBe(true)
+    const calls = fetchMock.mock.calls.length
+    act(() => applyPrStatus([{ url: pr.url.toUpperCase(), state: 'MERGED', lastConfirmedAt: Date.now() }]))
+    for (const renderer of renderers) {
       expect(hasIconColor(renderer.root, 'text-pr-merged')).toBe(true)
+      expect(hasIconColor(renderer.root, 'text-pr-open')).toBe(false)
       act(() => renderer.unmount())
+    }
+    expect(fetchMock.mock.calls.length).toBe(calls)
+  })
+
+  test('retry recovers from a failed snapshot for a zero-padded PR URL', async () => {
+    const pr = { url: 'https://github.com/Owner/Repo/pull/01', repo: 'Owner/Repo', number: 1 }
+    let attempts = 0
+    let settled!: () => void
+    const retried = new Promise<void>(resolve => { settled = resolve })
+    globalThis.fetch = mock(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body)).urls).toEqual(['https://github.com/owner/repo/pull/1'])
+      if (++attempts === 1) throw new Error('network temporarily unavailable')
+      settled()
+      return infoResponse('https://github.com/owner/repo/pull/1', 'OPEN')
+    }) as unknown as typeof fetch
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock }) })
+    try {
+      await act(async () => { await retried })
+      expect(attempts).toBe(2)
+      expect(hasIconColor(renderer.root, 'text-pr-open')).toBe(true)
     } finally {
-      globalThis.setInterval = realSetInterval
+      act(() => renderer.unmount())
     }
   })
 
-  test('a fetch in one instance recolors a mounted chip in another', async () => {
-    // Regression: chips copied the cache into local state at mount, so a
-    // merge fetched by the rail's poller never reached the session-row
-    // chip until its own interval ticked — and hovering couldn't fix it,
-    // since hover only refetches when the cache entry itself is expired.
-    const pr = prFor(8)
-    fetchImpl = async () => infoResponse(pr.url, 'OPEN')
-    let r1!: TestRenderer.ReactTestRenderer
-    act(() => {
-      r1 = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock })
-    })
+  test('details show the newest confirmation and prefer pushed status on a tie', async () => {
+    const pr = prFor(10)
+    const fresh = Date.now()
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith('/api/pr-checks')) {
+        return new Response(JSON.stringify({ url: pr.url, state: 'OPEN', title: 'Fresh details', lastConfirmedAt: fresh }))
+      }
+      return new Response(JSON.stringify([{ url: pr.url, state: 'OPEN', title: 'Old snapshot', lastConfirmedAt: fresh - 3_600_000 }]))
+    }) as unknown as typeof fetch
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock }) })
     await act(async () => {})
-    expect(hasIconColor(r1.root, 'text-pr-open')).toBe(true)
+    act(() => openCard(renderer.root))
+    await act(async () => {})
+    const card = renderer.root.findByProps({ 'data-testid': 'pr-hovercard' })
+    expect(card.findAllByType('div').some(div => div.children.join('') === 'Checked just now')).toBe(true)
+    expect(JSON.stringify(renderer.toJSON())).toContain('Fresh details')
+    act(() => applyPrStatus([{ url: pr.url, state: 'OPEN', title: 'Pushed details', lastConfirmedAt: fresh }]))
+    expect(JSON.stringify(renderer.toJSON())).toContain('Pushed details')
+    act(() => renderer.unmount())
+  })
 
-    // The PR merges; a second instance (the rail) ticks and refetches
-    // while the first sits untouched — its chip must follow the cache.
-    fetchImpl = async () => infoResponse(pr.url, 'MERGED')
-    const realNow = Date.now
-    Date.now = () => realNow() + 61_000
-    let r2!: TestRenderer.ReactTestRenderer
-    act(() => {
-      r2 = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock })
-    })
+  test('a head update refreshes an open card and removes outdated checks', async () => {
+    const pr = prFor(9)
+    let headSha = 'previous'
+    const checksResponse = () => new Response(JSON.stringify({
+      url: pr.url, state: 'OPEN', headSha,
+      checks: [{ name: `${headSha} CI`, status: 'COMPLETED', conclusion: 'SUCCESS' }],
+    }))
+    let checkCalls = 0
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith('/api/pr-checks')) {
+        checkCalls++
+        return checksResponse()
+      }
+      return new Response(JSON.stringify([{ url: pr.url, state: 'OPEN', headSha }]))
+    }) as unknown as typeof fetch
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock }) })
     await act(async () => {})
-    Date.now = realNow
-    expect(hasIconColor(r2.root, 'text-pr-merged')).toBe(true)
-    expect(hasIconColor(r1.root, 'text-pr-merged')).toBe(true)
-    expect(hasIconColor(r1.root, 'text-pr-open')).toBe(false)
-    act(() => r1.unmount())
-    act(() => r2.unmount())
+    act(() => openCard(renderer.root))
+    await act(async () => {})
+    expect(JSON.stringify(renderer.toJSON())).toContain('previous CI')
+
+    headSha = 'current'
+    act(() => applyPrStatus([{
+      url: pr.url, state: 'OPEN', headSha, stale: true, lastConfirmedAt: Date.now() - 120_000,
+    }]))
+    await act(async () => {})
+    const card = renderer.root.findByProps({ 'data-testid': 'pr-hovercard' })
+    const rendered = JSON.stringify(renderer.toJSON())
+    expect(checkCalls).toBe(2)
+    expect(rendered).toContain('current CI')
+    expect(rendered).not.toContain('previous CI')
+    expect(card.findAllByType('div').some(div => div.children.join('') === 'Last confirmed 2m ago')).toBe(true)
+    act(() => renderer.unmount())
+  })
+
+  test('an older initial snapshot cannot overwrite a pushed status', async () => {
+    const pr = prFor(8)
+    let resolveFetch!: (response: Response) => void
+    fetchImpl = () => new Promise(resolve => { resolveFetch = resolve })
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock }) })
+    await act(async () => {})
+    act(() => applyPrStatus([{ url: pr.url, state: 'MERGED', lastConfirmedAt: 50 }]))
+    resolveFetch(new Response(JSON.stringify([{ url: pr.url, state: 'OPEN', lastConfirmedAt: 40 }])))
+    await act(async () => {})
+    expect(hasIconColor(renderer.root, 'text-pr-merged')).toBe(true)
+    act(() => renderer.unmount())
   })
 
   test('closed PRs render the pull-request glyph with a red × overlay', async () => {

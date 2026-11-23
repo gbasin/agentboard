@@ -51,14 +51,16 @@ struct BoardEvent: Decodable {
     let ok: Bool?
     let actionError: JSONValue?
     let snapshot: TerminalSnapshotReply?
+    let infos: [PullRequestStatus]?
 
     private enum CodingKeys: String, CodingKey {
-        case type, sessions, session, sessionId, data, message, remoteAllowAttach, retryable, seq, settings, hosts, hibernating, history, text, inCopyMode, remoteAllowControl, ok, error
+        case type, sessions, session, sessionId, data, message, remoteAllowAttach, retryable, seq, settings, hosts, hibernating, history, text, inCopyMode, remoteAllowControl, ok, error, infos
     }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         type = try values.decode(String.self, forKey: .type)
         snapshot = type == "terminal-snapshot" ? try TerminalSnapshotReply(from: decoder) : nil
+        infos = type == "pr-status" ? try values.decodeIfPresent([PullRequestStatus].self, forKey: .infos) : nil
         // Other events reuse "session" for AgentSession, a different schema.
         // Decode only the payload for the event we actually consume.
         sessions = type == "sessions" ? try values.decode([RemoteSession].self, forKey: .sessions) : nil

@@ -35,10 +35,10 @@ struct LibraryView: View {
                 if category == .history {
                     Section("Agent conversations") {
                         NavigationLink("Hibernating conversations (\(filteredSleeping.count))") {
-                            AgentHistoryView(server: server, sessions: filteredSleeping, sleeping: true, preferences: preferences, open: finish)
+                            AgentHistoryView(pullRequests: board.pullRequests, server: server, sessions: filteredSleeping, sleeping: true, preferences: preferences, open: finish)
                         }
                         NavigationLink("Conversation history (\(filteredHistory.count))") {
-                            AgentHistoryView(server: server, sessions: filteredHistory, sleeping: false, preferences: preferences, open: finish)
+                            AgentHistoryView(pullRequests: board.pullRequests, server: server, sessions: filteredHistory, sleeping: false, preferences: preferences, open: finish)
                         }
                     }
                 } else {
@@ -260,6 +260,7 @@ struct SavedDetailView: View {
 }
 
 struct AgentHistoryView: View {
+    let pullRequests: BoardPullRequests
     let server: String
     let sessions: [AgentLogSession]
     let sleeping: Bool
@@ -294,7 +295,7 @@ struct AgentHistoryView: View {
                     Button(sleeping ? "Wake" : "Resume") { action("session-wake", session) }.disabled(busy != nil)
                     if sleeping { Button("Move to history") { action("session-move-to-history", session) }.disabled(busy != nil) }
                     if session.mediaSummary != nil || !(session.media ?? []).isEmpty || !(session.prs ?? []).isEmpty {
-                        NavigationLink("Media and links") { SessionContentView(server: server, media: session.media ?? [], prs: session.prs ?? [], sessionID: session.sessionId, catalog: session.mediaSummary) }
+                        NavigationLink("Media and links") { SessionContentView(server: server, media: session.media ?? [], prs: session.prs ?? [], sessionID: session.sessionId, catalog: session.mediaSummary, pullRequests: pullRequests) }
                     }
                 }
             }

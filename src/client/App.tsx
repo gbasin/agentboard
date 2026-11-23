@@ -2,6 +2,7 @@ import { createOperationId } from './utils/operationId'
 import { RecoveryNotice } from './components/history/RecoveryNotice'
 import SessionRecovery from './components/history/SessionRecovery'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { applyPrStatus, refreshPrStatus } from './lib/prStatus'
 import type { AgentSession, ServerMessage, Session, SessionKillSource } from '@shared/types'
 import SidebarControls from './components/SidebarControls'
 import SessionList from './components/SessionList'
@@ -121,6 +122,8 @@ export default function App() {
   const connectionEpoch = useSessionStore((state) => state.connectionEpoch)
   const { sendMessage, subscribe, getConnectionEpoch } = useWebSocket()
 
+  useEffect(() => { if (connectionEpoch) refreshPrStatus() }, [connectionEpoch])
+
   // Push local changes to server-synced settings (theme, presets, list prefs)
   useEffect(() => initSyncedSettings(), [])
 
@@ -195,6 +198,11 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = subscribe((message: ServerMessage) => {
       if (message.type === 'terminal-output') {
+        return
+      }
+
+      if (message.type === 'pr-status') {
+        applyPrStatus(message.infos)
         return
       }
 

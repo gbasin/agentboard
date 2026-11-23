@@ -20,7 +20,7 @@ Agent activity is optional. The native decoder follows the newer backend’s `se
 
 The original glass checkpoint counted only the supplied session snapshot. The subsequent media integration implements the newer `mediaSummary` contract: indexed totals, bounded cursor pages, search/filtering, discovery progress and image neighbors across pages. A persistent glass bar keeps paging reachable. Older servers retain the explicitly labeled “Available” snapshot fallback. See [MEDIA-INTEGRATION.md](MEDIA-INTEGRATION.md) for current evidence and limits.
 
-PR chips use the existing batched `/api/pr-info` endpoint. Missing or failed state lookup stays unknown. Catalog PR navigation opens a PR-only list and does not assert that omitted media is absent.
+PR chips receive live status over the board socket and restore the server’s last-known state through the batched `/api/pr-info` endpoint on reconnect. A failed lookup preserves the last confirmed state when available. Catalog PR navigation opens a PR-only list and does not assert that omitted media is absent.
 
 ## Validation boundary
 
