@@ -70,6 +70,20 @@ function pythonRepos(command: string): string[] {
   return repos
 }
 
+function chainedPythonRepos(script: string): string[] {
+  // A final heredoc after successful Git setup commands is also in command
+  // position. Accept only literal Git segments joined by &&, so a skipped
+  // branch, quoted Python example or heredoc for another command cannot match.
+  const word = String.raw`(?:[^\s'"\x60#$\\;&|(){}<>]|'[^'\n]*'|"[^"\n\x60$\\]*")+`
+  const segment = new RegExp(
+    String.raw`[ \t]*(?:PATH=${word}(?::\$PATH)?[ \t]+)?git(?:[ \t]+${word}|[ \t]+>[ \t]*${word}|[ \t]+2>&1)*[ \t]*&&`,
+    'y',
+  )
+  let end = 0
+  while (segment.test(script)) end = segment.lastIndex
+  return end ? pythonRepos(script.slice(end)) : []
+}
+
 export function restPrCompletionUrls(entry: RecordValue, invokes: Matcher): string[] {
   if (entry.type !== 'event_msg') return []
   const payload = entry.payload as RecordValue | undefined
@@ -87,12 +101,26 @@ export function restPrCompletionUrls(entry: RecordValue, invokes: Matcher): stri
   })
   const script = Array.isArray(argv) && ['-lc', '-c'].includes(String(argv[1])) ? String(argv[2]) : command
   for (const repo of pythonRepos(script)) repos.add(repo)
+  const chainedRepos = new Set(chainedPythonRepos(script))
   const urls = new Set<string>()
+  const chainedUrls = new Set<string>()
+  const lastLines = new Set<string>()
   for (const key of ['stdout', 'aggregated_output', 'formatted_output']) {
-    if (typeof item[key] !== 'string') continue
-    for (const match of item[key].matchAll(/https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g)) {
+    const output = item[key]
+    if (typeof output !== 'string') continue
+    for (const match of output.matchAll(/https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g)) {
       if (repos.has(match[1])) urls.add(match[0])
+      if (chainedRepos.has(match[1])) chainedUrls.add(match[0])
     }
+    if (chainedRepos.size > 0) {
+      const trimmed = output.trimEnd()
+      lastLines.add(trimmed.slice(trimmed.lastIndexOf('\n') + 1).trimStart())
+    }
+  }
+  // Earlier Git commands share the completion's output. Require one distinct
+  // matching URL and a final output line where the Python script printed it.
+  if (chainedUrls.size === 1) {
+    for (const url of chainedUrls) if (lastLines.has(url)) urls.add(url)
   }
   return [...urls]
 }
