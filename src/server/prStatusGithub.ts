@@ -181,9 +181,12 @@ export function createGithubPrTransport(run: RunGh = runGh, now = Date.now): Git
     const retryAfter = headers.get('retry-after')
     const errors = object(body)?.errors
     const graphqlErrors = Array.isArray(errors) ? errors.map(object) : []
-    const rateLimited = graphqlErrors.some(error =>
-      error?.type === 'RATE_LIMITED' || object(error?.extensions)?.type === 'RATE_LIMITED'
-    )
+    const rateLimited = graphqlErrors.some(error => {
+      const extensions = object(error?.extensions)
+      return [error?.type, error?.code, extensions?.type, extensions?.code].some(value =>
+        value === 'RATE_LIMIT' || value === 'RATE_LIMITED' || value === 'graphql_rate_limit'
+      )
+    })
     const secondaryLimit = /secondary rate limit|abuse detection/i
     const secondaryLimited = graphqlErrors.some(error => secondaryLimit.test(String(error?.message ?? ''))) ||
       (status === 403 && secondaryLimit.test(String(object(body)?.message ?? '')))

@@ -13,7 +13,7 @@ test.skip(process.env.PR_STATUS_E2E !== '1', 'Requires the isolated fake gh from
 test.use({ viewport: { width: 1280, height: 900 } })
 
 test('two browsers share one PR check per cycle and recover the merged state after reconnect', async ({ page, browser, request }, info) => {
-  // Exercise the real two-minute daemon cadence with the fake GitHub server.
+  // Exercise the real 30-second active repository cadence with the fake GitHub server.
   test.setTimeout(215_000)
   const root = process.env.E2E_TMUX_TMPDIR!
   const callsFile = join(root, 'gh-calls')
@@ -79,7 +79,7 @@ test('two browsers share one PR check per cycle and recover the merged state aft
     // misses that frame and must get the same state when it reconnects.
     dropStatus = true
     githubState('MERGED')
-    await expect(chip(page)).toHaveAccessibleName(`${repo}#${number} Merged`, { timeout: 135_000 })
+    await expect(chip(page)).toHaveAccessibleName(`${repo}#${number} Merged`, { timeout: 45_000 })
     expect(mergedBroadcast).toBe(true)
     await expect(chip(second)).toHaveAccessibleName(`${repo}#${number} Open`)
     expect(calls()).toHaveLength(2)

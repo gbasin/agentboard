@@ -55,6 +55,31 @@ describe('PR status authority store', () => {
     expect(changes.map(info => info.url)).toEqual([url(4)])
   })
 
+  test('polls open drafts every 30 seconds and quiet repos every two minutes', async () => {
+    const calls: string[] = []
+    let merged = false
+    const { store, advance } = setup({
+      async list(repo) {
+        calls.push(repo)
+        const open = repo === 'org/active' && !merged
+        return { ...empty, items: [pull(1, BASE, { state: open ? 'OPEN' : 'MERGED', isDraft: open })] }
+      },
+    })
+    store.register([url(1, 'org/active'), url(1, 'org/quiet')])
+    await store.poll()
+    calls.length = 0
+    advance(29_999)
+    await store.poll()
+    expect(calls).toEqual([])
+    merged = true
+    advance(1)
+    await store.poll()
+    expect(calls).toEqual(['org/active'])
+    advance(90_000)
+    await store.poll()
+    expect(calls).toEqual(['org/active', 'org/quiet'])
+  })
+
   test('backfills in bounded batches and round robins across repositories', async () => {
     const requests: [string, number[]][] = []
     const { store } = setup({

@@ -170,6 +170,7 @@ jobs:
             id: contention
             run: |
               bun scripts/verify-pr-request-priority.ts
+              bunx playwright test --config playwright.pr-status.config.ts --output=test-results/pr-status
               PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-contention-report \
                 bunx playwright test --config playwright.contention.config.ts --reporter=line,html
     env:

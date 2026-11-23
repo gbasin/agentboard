@@ -221,6 +221,8 @@ A standalone board uses its local GitHub CLI login to track pull requests discov
 | `AGENTBOARD_PR_STATUS_TOKEN` | Authority and all its followers | The same secret, 32–256 URL-safe characters. Generate one with `openssl rand -hex 32`. |
 | `AGENTBOARD_PR_STATUS_AUTHORITY_URL` | Followers only | HTTPS origin of the authority, for example `https://board.example.ts.net`. Loopback HTTP is also supported at `127.0.0.1` or `[::1]`. |
 
+The first supported PR creation result or Claude PR-link record in a tracked transcript registers its repository. An authority checks repositories with tracked open or draft PRs every 30 seconds and the rest every two minutes, subject to request budgets and GitHub cooldowns.
+
 The authority uses its GitHub credentials for every registered repository. Share a token only with boards trusted to read those repositories. Each board serves its own discovered PRs to clients. Followers retain snapshots across restarts and show the last known state if the authority is unreachable. The last confirmation time appears in the PR detail.
 
 With `LOG_LEVEL=debug`, the authority logs `github_pr_request` for GitHub responses, including the operation, HTTP status, rate-limit bucket, remaining quota and reset time. A conditional poll returning HTTP 304 reuses the previous result.

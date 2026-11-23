@@ -289,6 +289,17 @@ struct PullRequestInfo: Decodable {
         checks = try values.decodeIfPresent([Check].self, forKey: .checks)
     }
 
+    private init(status: PullRequestStatus, checks: [Check]?) {
+        self.status = status
+        self.checks = checks
+    }
+
+    func preservingChecks(from previous: PullRequestInfo?) -> PullRequestInfo {
+        guard status.error != nil, let previous else { return self }
+        let lastChecks = status.headSha == nil || status.headSha == previous.status.headSha ? previous.checks : nil
+        return PullRequestInfo(status: status.state == nil ? previous.status : status, checks: lastChecks)
+    }
+
     private enum CodingKeys: String, CodingKey { case checks }
 }
 struct PullRequestView: View {
@@ -303,7 +314,7 @@ struct PullRequestView: View {
     private var status: PullRequestStatus? {
         let base = pullRequests[item.url]
         let detail = info?.status
-        return detail?.error == nil && (detail?.lastConfirmedAt ?? 0) > (base?.lastConfirmedAt ?? 0) ? detail : base ?? detail
+        return detail?.state != nil && (detail?.lastConfirmedAt ?? 0) > (base?.lastConfirmedAt ?? 0) ? detail : base ?? detail
     }
     private struct RequestKey: Equatable {
         let server: String
@@ -335,9 +346,6 @@ struct PullRequestView: View {
                 }
             } else if error == nil { ProgressView("Loading pull request…") }
             if let info {
-                if let error = info.status.error {
-                    ErrorRow(message: error == "unavailable" ? "Pull request details are unavailable. Check GitHub access on the server." : error) { refresh += 1 }
-                }
                 if !(info.checks ?? []).isEmpty { Section("Checks") {
                     ForEach(Array((info.checks ?? []).enumerated()), id: \.offset) { _, check in
                         VStack(alignment: .leading) {
@@ -363,7 +371,12 @@ struct PullRequestView: View {
         do {
             let next: PullRequestInfo = try await BoardAPI(server).request("api/pr-checks", query: ["url": item.url])
             guard !Task.isCancelled else { return }
-            info = next; error = nil
+            let detail = next.preservingChecks(from: info)
+            info = detail
+            if next.status.error != "unavailable" { error = next.status.error }
+            else if !(detail.checks ?? []).isEmpty { error = "Showing last known checks. Live checks are unavailable." }
+            else if detail.status.state != nil { error = "Checks are unavailable. Check GitHub access on the server." }
+            else { error = "Pull request details are unavailable. Check GitHub access on the server." }
         } catch {
             if !Task.isCancelled { self.error = error.localizedDescription }
         }

@@ -86,6 +86,19 @@ final class BoardConnectionTests: XCTestCase {
         XCTAssertNil(board.pullRequests[url])
     }
 
+    func testPullRequestDetailPreservesChecksIfOnlyCILookupFails() throws {
+        func decode(_ json: String) throws -> PullRequestInfo {
+            try JSONDecoder().decode(PullRequestInfo.self, from: Data(json.utf8))
+        }
+        let previous = try decode(#"{"url":"https://github.com/o/r/pull/1","state":"OPEN","headSha":"same","lastConfirmedAt":100,"checks":[{"name":"CI","status":"COMPLETED","conclusion":"SUCCESS"}]}"#)
+        let failed = try decode(#"{"url":"https://github.com/o/r/pull/1","state":"OPEN","headSha":"same","lastConfirmedAt":200,"error":"unavailable"}"#)
+        let updated = failed.preservingChecks(from: previous)
+        XCTAssertEqual(updated.status.lastConfirmedAt, 200)
+        XCTAssertEqual(updated.checks?.first?.name, "CI")
+        let newHead = try decode(#"{"url":"https://github.com/o/r/pull/1","state":"OPEN","headSha":"new","lastConfirmedAt":300,"error":"unavailable"}"#)
+        XCTAssertNil(newHead.preservingChecks(from: previous).checks)
+    }
+
     func testTransportFailureReconnectsAutomatically() async throws {
         var sockets: [Socket] = []
         let board = BoardConnection { _ in let socket = Socket(); sockets.append(socket); return socket }

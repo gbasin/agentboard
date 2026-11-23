@@ -6,6 +6,8 @@ const infoCache = new Map<string, PrInfo>()
 const checksCache = new Map<string, { at: number; checks: PrCheckInfo }>()
 const checksInflight = new Map<string, Promise<void>>()
 const activeUrls = new Map<string, number>()
+const snapshotUrls = new Set<string>()
+let snapshotEpoch = 0
 const listeners = new Set<() => void>()
 function keyFor(url: string): string {
   return url.toLowerCase().replace(/(\/pull\/)0+(?=\d+$)/, '$1')
@@ -46,13 +48,15 @@ export function applyPrStatus(infos: PrInfo[], baseline?: ReadonlyMap<string, Pr
 
 const SNAPSHOT_RETRY_DELAYS = [500, 2_000]
 
-async function loadSnapshot(urls: string[]): Promise<PrInfo[]> {
+async function loadSnapshot(urls: string[], epoch: number): Promise<PrInfo[]> {
   for (const delay of [0, ...SNAPSHOT_RETRY_DELAYS]) {
     if (delay) await new Promise(resolve => setTimeout(resolve, delay))
-    const active = urls.filter(url => activeUrls.has(url))
-    if (!active.length) break
+    if (epoch !== snapshotEpoch) break
     try {
       const result = await schedulePrMetadata('info', async signal => {
+        if (epoch !== snapshotEpoch) return []
+        const active = urls.filter(url => activeUrls.has(url))
+        if (!active.length) return []
         const baseline = new Map(active.map(url => [url, getPrInfo(url)]))
         const response = await fetch('/api/pr-info', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -61,6 +65,8 @@ async function loadSnapshot(urls: string[]): Promise<PrInfo[]> {
         if (response.status === 408 || response.status === 429 || response.status >= 500) return null
         if (!response.ok) return []
         const infos = await response.json() as PrInfo[]
+        if (epoch !== snapshotEpoch) return []
+        for (const url of active) snapshotUrls.add(url)
         applyPrStatus(infos, baseline)
         return infos
       })
@@ -72,13 +78,20 @@ async function loadSnapshot(urls: string[]): Promise<PrInfo[]> {
   return []
 }
 
-const requestInfo = createInfoBatcher<PrInfo>(loadSnapshot, info => keyFor(info.url))
+function batchSnapshots(epoch: number) {
+  return createInfoBatcher<PrInfo>(urls => loadSnapshot(urls, epoch), info => keyFor(info.url))
+}
+
+let requestInfo = batchSnapshots(snapshotEpoch)
 
 function requestSnapshot(urls: Iterable<string>) {
   for (const url of urls) void requestInfo(url).catch(() => {})
 }
 
 export function refreshPrStatus() {
+  // Recovery needs a new request even if a pre-reconnect snapshot is still running.
+  requestInfo = batchSnapshots(++snapshotEpoch)
+  snapshotUrls.clear()
   requestSnapshot(activeUrls.keys())
 }
 
@@ -91,7 +104,7 @@ export function watchPrInfo(urls: string[]): () => void {
   if (!keys.length) return () => {}
   if (!activeUrls.size) document.addEventListener?.('visibilitychange', onVisible)
   for (const key of keys) activeUrls.set(key, (activeUrls.get(key) ?? 0) + 1)
-  requestSnapshot(keys.filter(key => !infoCache.has(key)))
+  requestSnapshot(keys.filter(key => !infoCache.has(key) || !snapshotUrls.has(key)))
   return () => {
     for (const key of keys) {
       const count = activeUrls.get(key) ?? 0
@@ -115,8 +128,13 @@ export function fetchChecks(url: string): Promise<void> {
     if (checksInflight.get(key) !== promise) return
     const currentHead = infoCache.get(key)?.headSha
     if (currentHead && checks.headSha && currentHead !== checks.headSha) return
-    if (checks.error && checksCache.has(key)) return
-    checksCache.set(key, { at: Date.now(), checks })
+    const previous = checksCache.get(key)?.checks
+    // The server can confirm the PR via REST while the CI lookup is unavailable.
+    const lastChecks = !checks.headSha || checks.headSha === previous?.headSha ? previous?.checks : undefined
+    const detail = checks.error && previous
+      ? { ...(checks.state ? checks : previous), checks: lastChecks, error: checks.error }
+      : checks
+    checksCache.set(key, { at: Date.now(), checks: detail })
     listeners.forEach(listener => listener())
   }).finally(() => {
     if (checksInflight.get(key) === promise) checksInflight.delete(key)

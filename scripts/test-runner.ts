@@ -161,6 +161,8 @@ async function main() {
       // module stub leaks into every later importer in the same process
       // (prChips.test.tsx once saw XCloseIcon lose forwarded props).
       'agentIcon.test.tsx',
+      // PR chip tests replace react-dom, fetch and browser globals across reconnects.
+      'prChips.test.tsx',
       // Folder picker fixtures replace fetch/window and schedule focus restoration.
       'DirectoryBrowser.test.tsx',
       'app.test.tsx',

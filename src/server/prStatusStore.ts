@@ -11,12 +11,14 @@ import {
   type GithubPrTransport,
 } from './prStatusGithub'
 
-const POLL_MS = 120_000
+const ACTIVE_POLL_MS = 30_000
+const QUIET_POLL_MS = 120_000
+const BUDGET_WINDOW_MS = 120_000
 const OVERLAP_MS = 5 * 60_000
 const RECONCILE_MS = 24 * 60 * 60_000
 const HYDRATE_RETRY_MS = 10 * 60_000
 const CHECK_TTL_MS = 60_000
-const REQUEST_BUDGET = { list: 20, hydrate: 20, checks: 24 }
+const REQUEST_BUDGET = { list: 32, hydrate: 20, checks: 24 }
 type RequestLane = keyof typeof REQUEST_BUDGET
 const CHECK_CONCURRENCY = 4
 
@@ -30,6 +32,7 @@ interface RepoRow {
   repo: string
   etag: string | null
   cursor: number
+  active: number
 }
 
 interface PullRow {
@@ -79,7 +82,7 @@ export class PrStatusStore {
   private readonly now: () => number
   private readonly onConfirmed?: () => void
   private readonly sweeps = new Map<string, Sweep>()
-  private readonly due = new Map<string, number>()
+  private readonly lastPoll = new Map<string, number>()
   private readonly checkInflight = new Map<string, Promise<CheckSnapshot | undefined>>()
   private readonly stalePublished = new Set<string>()
   private timer?: ReturnType<typeof setTimeout>
@@ -123,6 +126,7 @@ export class PrStatusStore {
         PRIMARY KEY (repo, number)
       );
       CREATE INDEX IF NOT EXISTS pr_status_hydrate ON pr_status_pulls(repo, next_hydrate);
+      CREATE INDEX IF NOT EXISTS pr_status_open ON pr_status_pulls(repo) WHERE state = 'OPEN';
       CREATE INDEX IF NOT EXISTS pr_status_head ON pr_status_pulls(repo, head_sha);
       CREATE INDEX IF NOT EXISTS pr_status_confirmed ON pr_status_pulls(confirmed_at);
       CREATE TABLE IF NOT EXISTS pr_status_checks (
@@ -200,7 +204,7 @@ export class PrStatusStore {
       }).catch((error: unknown) => {
         logger.warn('pr_status_poll_failed', { error: String(error) })
         if (this.started) {
-          this.timer = setTimeout(() => void this.poll(), POLL_MS)
+          this.timer = setTimeout(() => void this.poll(), QUIET_POLL_MS)
           this.timer.unref?.()
         }
       }).finally(() => {
@@ -257,13 +261,13 @@ export class PrStatusStore {
     const now = this.now()
     const bucket = lane === 'list' ? 'core' : 'graphql'
     return !this.closing && now >= Math.max(this.retryAt[bucket], this.retryAt.shared) &&
-      (now >= this.budgetWindow + POLL_MS || this.requests[lane] < REQUEST_BUDGET[lane])
+      (now >= this.budgetWindow + BUDGET_WINDOW_MS || this.requests[lane] < REQUEST_BUDGET[lane])
   }
 
   private takeRequest(lane: RequestLane) {
     if (!this.canRequest(lane)) return false
     const now = this.now()
-    if (now >= this.budgetWindow + POLL_MS) {
+    if (now >= this.budgetWindow + BUDGET_WINDOW_MS) {
       this.budgetWindow = now
       this.requests = { list: 0, hydrate: 0, checks: 0 }
     }
@@ -279,12 +283,16 @@ export class PrStatusStore {
 
   private async pollRepos() {
     const now = this.now()
-    const repos = this.db.query<RepoRow, []>('SELECT * FROM pr_status_repos ORDER BY repo').all()
-      .sort((a, b) => (this.due.get(a.repo) ?? 0) - (this.due.get(b.repo) ?? 0))
+    const repos = this.db.query<RepoRow, []>(`
+      SELECT r.*, EXISTS(SELECT 1 FROM pr_status_pulls p WHERE p.repo = r.repo AND p.state = 'OPEN') AS active
+      FROM pr_status_repos r ORDER BY repo
+    `).all()
+    const dueAt = (r: RepoRow) => (this.lastPoll.get(r.repo) ?? -Infinity) + (r.active ? ACTIVE_POLL_MS : QUIET_POLL_MS)
+    repos.sort((a, b) => dueAt(a) - dueAt(b))
     let morePages: RepoRow[] = []
     for (const repo of repos) {
-      if (now < (this.due.get(repo.repo) ?? 0) || !this.canRequest('list')) break
-      this.due.set(repo.repo, this.now() + POLL_MS)
+      if (now < dueAt(repo) || !this.canRequest('list')) break
+      this.lastPoll.set(repo.repo, this.now())
       if (await this.syncPage(repo)) morePages.push(repo)
     }
 
@@ -312,10 +320,10 @@ export class PrStatusStore {
     if (!this.closing) this.publishStale()
     const finished = this.now()
     const earliest = repos.reduce(
-      (next, repo) => Math.min(next, this.due.get(repo.repo) ?? finished), finished + POLL_MS
+      (next, repo) => Math.min(next, dueAt(repo)), finished + ACTIVE_POLL_MS
     )
-    const available = Math.max(this.retryAt.core, this.retryAt.shared, this.canRequest('list') ? finished : this.budgetWindow + POLL_MS)
-    return Math.min(POLL_MS, Math.max(1, earliest - finished, available - finished))
+    const available = Math.max(this.retryAt.core, this.retryAt.shared, this.canRequest('list') ? finished : this.budgetWindow + BUDGET_WINDOW_MS)
+    return Math.min(QUIET_POLL_MS, Math.max(1, earliest - finished, available - finished))
   }
 
   private async syncPage(repo: RepoRow): Promise<boolean> {
@@ -397,7 +405,7 @@ export class PrStatusStore {
     const numbers = targets.map(row => row.number)
     const retry = this.db.query('UPDATE pr_status_pulls SET next_hydrate = ? WHERE repo = ? AND number = ?')
     this.db.transaction(() => {
-      for (const number of numbers) retry.run(now + POLL_MS, repo, number)
+      for (const number of numbers) retry.run(now + QUIET_POLL_MS, repo, number)
     })()
     let items
     try {

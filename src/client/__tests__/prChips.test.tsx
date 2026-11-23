@@ -1,4 +1,4 @@
-import { applyPrStatus } from '../lib/prStatus'
+import { applyPrStatus, fetchChecks, refreshPrStatus } from '../lib/prStatus'
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
 
@@ -657,6 +657,49 @@ describe('PrChips info fetch resilience', () => {
     act(() => renderer.unmount())
   })
 
+  test('a cached PR reopened after reconnect loads the current snapshot', async () => {
+    const pr = prFor(11)
+    fetchImpl = async () => infoResponse(pr.url, 'OPEN')
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock }) })
+    await act(async () => {})
+    expect(hasIconColor(renderer.root, 'text-pr-open')).toBe(true)
+    act(() => renderer.unmount())
+
+    const calls = fetchMock.mock.calls.length
+    fetchImpl = async () => infoResponse(pr.url, 'MERGED')
+    refreshPrStatus()
+    await act(async () => {})
+    expect(fetchMock.mock.calls.length).toBe(calls)
+
+    act(() => { renderer = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock }) })
+    await act(async () => {})
+    expect(fetchMock.mock.calls.length).toBe(calls + 1)
+    expect(hasIconColor(renderer.root, 'text-pr-merged')).toBe(true)
+    act(() => renderer.unmount())
+  })
+
+  test('reconnect ignores a pre-reconnect HTTP response and requests a new snapshot', async () => {
+    const pr = prFor(12)
+    const requests: ((response: Response) => void)[] = []
+    fetchImpl = () => new Promise(resolve => { requests.push(resolve) })
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock }) })
+    await act(async () => {})
+    expect(requests).toHaveLength(1)
+
+    refreshPrStatus()
+    requests[0](infoResponse(pr.url, 'OPEN'))
+    await act(async () => {})
+    expect(requests).toHaveLength(2)
+    expect(hasIconColor(renderer.root, 'text-pr-open')).toBe(false)
+
+    requests[1](infoResponse(pr.url, 'MERGED'))
+    await act(async () => {})
+    expect(hasIconColor(renderer.root, 'text-pr-merged')).toBe(true)
+    act(() => renderer.unmount())
+  })
+
   test('server updates recolor all mounted chips without an HTTP poll', async () => {
     const pr = prFor(6)
     fetchImpl = async () => infoResponse(pr.url, 'OPEN')
@@ -719,6 +762,42 @@ describe('PrChips info fetch resilience', () => {
     act(() => applyPrStatus([{ url: pr.url, state: 'OPEN', title: 'Pushed details', lastConfirmedAt: fresh }]))
     expect(JSON.stringify(renderer.toJSON())).toContain('Pushed details')
     act(() => renderer.unmount())
+  })
+
+  test('a CI failure preserves last-known checks and displays a newer PR confirmation', async () => {
+    const pr = prFor(13)
+    const realNow = Date.now
+    const start = realNow()
+    let failed = false
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      if (!String(input).startsWith('/api/pr-checks')) {
+        return new Response(JSON.stringify([{ url: pr.url, state: 'OPEN', headSha: 'same', lastConfirmedAt: start - 3_600_000 }]))
+      }
+      return new Response(JSON.stringify({
+        url: pr.url, state: 'OPEN', headSha: 'same', lastConfirmedAt: failed ? Date.now() : start - 3_600_000,
+        ...(failed ? { error: 'unavailable' } : { checks: [{ name: 'Prior CI', status: 'COMPLETED', conclusion: 'SUCCESS' }] }),
+      }))
+    }) as unknown as typeof fetch
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock }) })
+    try {
+      await act(async () => {})
+      act(() => openCard(renderer.root))
+      await act(async () => {})
+      expect(JSON.stringify(renderer.toJSON())).toContain('Prior CI')
+
+      failed = true
+      Date.now = () => start + 61_000
+      await act(async () => { await fetchChecks(pr.url) })
+      const rendered = JSON.stringify(renderer.toJSON())
+      expect(rendered).toContain('Prior CI')
+      expect(rendered).toContain('Showing last known checks')
+      const card = renderer.root.findByProps({ 'data-testid': 'pr-hovercard' })
+      expect(card.findAllByType('div').some(div => div.children.join('') === 'Checked just now')).toBe(true)
+    } finally {
+      Date.now = realNow
+      act(() => renderer.unmount())
+    }
   })
 
   test('a head update refreshes an open card and removes outdated checks', async () => {

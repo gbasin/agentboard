@@ -30,7 +30,7 @@ function stateGlyph(info: PrInfo | undefined): {
   StateIcon: typeof GitPullRequestIcon
   cls: string
 } {
-  if (!info || info.error || !info.state)
+  if (!info?.state)
     return { StateIcon: GitPullRequestIcon, cls: 'text-muted' }
   switch (info.state) {
     case 'OPEN':
@@ -57,7 +57,7 @@ function PrGlyph({ info }: { info?: PrInfo }) {
   // Kept inside the 12px box so the fit measurer's plain icon stays the
   // same width.
   const MarkIcon =
-    info && !info.error
+    info?.state
       ? info.state === 'CLOSED'
         ? XCloseIcon
         : info.isDraft
@@ -373,7 +373,7 @@ function PrChip({
 
   const chipInfo = info ?? checks
   const chipState = stateLabel(chipInfo)
-  const detail = !checks?.error && (checks?.lastConfirmedAt ?? 0) > (info?.lastConfirmedAt ?? 0)
+  const detail = checks?.state && (checks.lastConfirmedAt ?? 0) > (info?.lastConfirmedAt ?? 0)
     ? checks
     : chipInfo
   return (
@@ -441,6 +441,11 @@ function PrChip({
               </div>
               {detail.lastConfirmedAt !== undefined && (
                 <PrStatusAge at={detail.lastConfirmedAt} stale={detail.stale} />
+              )}
+              {checks?.error && (
+                <div className="mt-0.5 shrink-0 text-[11px] text-muted">
+                  {checks.checks?.length ? 'Showing last known checks' : 'Checks unavailable'}
+                </div>
               )}
               {checks?.checks && checks.checks.length > 0 && (
                 <div className="mt-1.5 max-h-32 min-h-0 space-y-0.5 overflow-y-auto border-t border-border pt-1.5">

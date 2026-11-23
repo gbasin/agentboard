@@ -108,6 +108,33 @@ test('honors separate primary budgets, then applies Retry-After to both', async 
   expect(calls).toBe(3)
 })
 
+test('honors GitHub GraphQL HTTP 200 rate-limit errors without blocking REST', async () => {
+  const errors = [
+    { type: 'RATE_LIMIT', code: 'graphql_rate_limit' },
+    { extensions: { code: 'RATE_LIMITED' } },
+  ]
+  for (const error of errors) {
+    let now = 1_000_000
+    let graphqlCalls = 0
+    const transport = createGithubPrTransport(async args => {
+      if (args.includes('graphql')) {
+        graphqlCalls++
+        return response(200, { errors: [error] })
+      }
+      return response(200, [])
+    }, () => now)
+    await expect(transport.hydrate('owner/repo', [42])).rejects.toMatchObject({
+      retryAt: 1_060_000, bucket: 'graphql',
+    })
+    await expect(transport.checks('owner/repo', 42, sha)).rejects.toBeInstanceOf(GithubPrCooldownError)
+    expect((await transport.list('owner/repo', null, null)).items).toEqual([])
+    expect(graphqlCalls).toBe(1)
+    now = 1_060_000
+    await expect(transport.hydrate('owner/repo', [42])).rejects.toMatchObject({ retryAt: 1_120_000 })
+    expect(graphqlCalls).toBe(2)
+  }
+})
+
 test('bounds admission and does not run queued calls during a cooldown', async () => {
   const gate = Promise.withResolvers<void>()
   let calls = 0
