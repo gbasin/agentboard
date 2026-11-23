@@ -118,7 +118,7 @@ export function restPrCompletionUrls(entry: RecordValue, invokes: Matcher): stri
     }
   }
   // Earlier Git commands share the completion's output. Require one distinct
-  // matching URL and a final output line where the Python script printed it.
+  // matching URL and a final output line containing only that URL.
   if (chainedUrls.size === 1) {
     for (const url of chainedUrls) if (lastLines.has(url)) urls.add(url)
   }

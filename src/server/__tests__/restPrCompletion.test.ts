@@ -31,11 +31,21 @@ test('recognizes the trailing Python heredoc in a successful Git chain', () => {
   expect(extractPullRequests(line(restCompletion(chainedPython, {
     aggregated_output: `${restPrUrl}\nFinished pushing\n`,
   })))).toEqual([])
+  expect(extractPullRequests(line(restCompletion(chainedPython, {
+    aggregated_output: output, exit_code: 1,
+  })))).toEqual([])
 })
 
-test('ignores a long malformed Git chain', () => {
-  const command = `git push ${'x'.repeat(16_384)} || ${pythonRestCommand}`
-  expect(extractPullRequests(line(restCompletion(command, { aggregated_output: restPrUrl })))).toEqual([])
+test('ignores branching, quoted Python and other Git chain lookalikes', () => {
+  for (const command of [
+    `git push || ${pythonRestCommand}`,
+    `git push && cat <<'EXAMPLE'\n${pythonRestCommand}\nEXAMPLE`,
+    `git commit -m 'git push && ${pythonRestCommand}'`,
+    `exit 0 && git push && ${pythonRestCommand}`,
+    `git push ${'x'.repeat(16_384)} || ${pythonRestCommand}`,
+  ]) {
+    expect(extractPullRequests(line(restCompletion(command, { aggregated_output: restPrUrl })))).toEqual([])
+  }
 })
 
 for (const command of [
@@ -62,10 +72,6 @@ for (const command of [
   restCommand.replace('/pulls ', '/issues '),
   `echo '${restCommand}'`, `grep '${restCommand}' another.jsonl`,
   `cat <<'PY'\n${pythonRestCommand}\nPY`,
-  `git push || ${pythonRestCommand}`,
-  `git push && cat <<'EXAMPLE'\n${pythonRestCommand}\nEXAMPLE`,
-  `git commit -m 'git push && ${pythonRestCommand}'`,
-  `exit 0 && git push && ${pythonRestCommand}`,
   pythonRestCommand.replace('r=subprocess.run', '# r=subprocess.run'),
   pythonRestCommand.replace('r=subprocess.run', 'example="""subprocess.run').replace("x=json.loads", '"""\nx=json.loads'),
   pythonRestCommand.replace('r=subprocess.run', 'if False:\n r=subprocess.run'),
@@ -91,10 +97,10 @@ test('requires a successful completed command and matching repository', () => {
   expect(extractPullRequests(line({ type: 'response_item', payload: { type: 'message', role: 'assistant', content: restPrUrl } }))).toEqual([])
 })
 
-test('incremental byte prefilter retains REST completions across every pulls seam', () => {
+test.each([pythonComprehensionRestCommand, chainedPython])('incremental byte prefilter retains REST completions across every pulls seam', command => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-rest-pr-'))
   const file = path.join(dir, 'log.jsonl')
-  const content = line(restCompletion(chainedPython, { aggregated_output: restPrUrl }))
+  const content = line(restCompletion(command, { aggregated_output: restPrUrl }))
   try {
     for (let split = 1; split < 'pulls'.length; split++) {
       clearPrScanCache()
