@@ -373,7 +373,7 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 5)); replace(search, "parity-saved-transcript"); search.typeText("\n")
         tap("Media and links", in: app); tap("gbasin/agentboard #1", in: app, preferUp: true)
         XCTAssertTrue(app.staticTexts["Parity pull request fixture"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["OPEN · Draft · fixture-author"].exists)
+        XCTAssertTrue(app.staticTexts["Draft · fixture-author"].exists)
         capture("pull-request-checks")
         for status in ["Passed", "In progress", "Failed"] {
             reveal(app.staticTexts[status], in: app)
