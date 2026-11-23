@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import AgentboardSpike
 
@@ -21,6 +22,14 @@ final class SessionActionsTests: XCTestCase {
     }
     let snapshot = #"{"type":"sessions","sessions":[{"id":"one","name":"One","projectPath":"/tmp","status":"unknown"}]}"#
     var address: ServerAddress { try! ServerAddress("http://localhost:4151") }
+
+    func testAntigravityPresetAndIconAreBundled() {
+        let preset = CommandPreset.defaults.first { $0.agentType == "antigravity" }
+        XCTAssertEqual(preset?.command, "agy")
+        XCTAssertNotNil(UIImage(named: "Harness-antigravity"))
+        XCTAssertEqual(CommandPermission.set("agy", enabled: true), "agy --dangerously-skip-permissions")
+        XCTAssertTrue(CommandPermission.state("agy --dangerously-skip-permissions").enabled)
+    }
 
     func testCreateWaitsForDirectResponseAndSendsExactlyOnce() async throws {
         let socket = Socket([snapshot,

@@ -8,7 +8,8 @@ struct HarnessIcon: View {
 
     private var key: String? {
         let value = (agent ?? "").lowercased()
-        return ["claude", "codex", "omp", "pi", "devin", "grok"].first { value.hasPrefix($0) }
+        if value == "agy" { return "antigravity" }
+        return ["antigravity", "claude", "codex", "omp", "pi", "devin", "grok"].first { value.hasPrefix($0) }
     }
     private var name: String {
         switch key {
@@ -17,6 +18,7 @@ struct HarnessIcon: View {
         case "omp": return "Oh My Pi"
         case "pi": return "Pi"
         case "devin": return "Devin"
+        case "antigravity": return "Antigravity"
         case "grok": return "Grok"
         default: return agent.flatMap { $0.isEmpty ? nil : $0 } ?? "Shell"
         }

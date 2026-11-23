@@ -54,6 +54,7 @@ struct CommandPreset: Codable, Identifiable, Equatable {
     static let defaults: [Self] = [
         .init(id: "claude", label: "Claude", command: "claude", isBuiltIn: true, agentType: "claude"),
         .init(id: "codex", label: "Codex", command: "codex", isBuiltIn: true, agentType: "codex"),
+        .init(id: "antigravity", label: "Antigravity", command: "agy", isBuiltIn: true, agentType: "antigravity"),
         .init(id: "shell", label: "Shell", command: "/bin/zsh", isBuiltIn: true)]
 }
 struct MediaItem: Decodable, Hashable, Identifiable {
