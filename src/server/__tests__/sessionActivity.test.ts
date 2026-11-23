@@ -496,3 +496,21 @@ test('missing children sort last and sessions at the cap skip the stat pass', as
   expect(over.activity).toMatchObject({ total: 257, unknown: 1 })
   expect(over.activity?.subagents.some(c => c.id === 'gone')).toBe(false)
 })
+
+test('Antigravity tracks pending tools until each indexed result completes', () => {
+  const state = newActivityState()
+  const apply = (step_index: number, type: string, extra = {}) => reduceActivity(state, {
+    step_index, type, source: 'MODEL', status: 'DONE', created_at: '2026-11-01T12:00:00Z', ...extra,
+  }, 'antigravity')
+  apply(0, 'USER_INPUT', { source: 'USER_EXPLICIT' })
+  expect(state.phase).toBe('model')
+  apply(1, 'PLANNER_RESPONSE', { tool_calls: [{ name: 'read_file' }, { name: 'run_command' }] })
+  expect(activitySnapshot(state).tools).toEqual(['read_file', 'run_command'])
+  apply(2, 'GENERIC')
+  expect(activitySnapshot(state).tools).toEqual(['run_command'])
+  apply(3, 'RUN_COMMAND')
+  expect(state.phase).toBe('model')
+  apply(4, 'PLANNER_RESPONSE')
+  apply(5, 'OTHER')
+  expect(activitySnapshot(state)).toMatchObject({ phase: 'idle', tools: [], updatedAt: '2026-11-01T12:00:00Z' })
+})
