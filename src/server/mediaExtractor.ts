@@ -6,6 +6,8 @@
 // demand. Scans incrementally like prExtractor: cached per file offset so
 // polling only reads appended bytes.
 
+import { materializeMediaSync } from './antigravityMedia'
+import { antigravityArtifacts } from './antigravityArtifacts'
 import fs from 'node:fs'
 import { collectToolLabels } from './mediaLabels'
 import { extractReplyLinks } from './replyLinks'
@@ -73,6 +75,7 @@ const MARKER_BYTES = [
   Buffer.from('.htm'),
   Buffer.from('.HTM'),
   Buffer.from('visualize'),
+  Buffer.from('ArtifactMetadata'),
   Buffer.from('localhost:'),
   Buffer.from('127.0.0.1:'),
   Buffer.from('[::1]:'),
@@ -261,6 +264,7 @@ function extractMediaItemsFromRecord(
   if (!record || typeof record !== 'object') return []
   const out: ExtractedMediaItem[] = []
   walkMedia(record, undefined, out)
+  out.push(...antigravityArtifacts(record))
   // Append: existing image/document indices must remain stable.
   out.push(...extractReplyLinks(record).filter(item => !item.url || !loopbackUrl(item.url)))
   for (const ref of extractOutputReferences(record)) {
@@ -301,7 +305,7 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
   const hasMedia =
     line.includes('"image') ||
     line.includes('"document"') ||
-    line.includes('frame-link') || /https?:|visualize|\.htm/i.test(line)
+    line.includes('frame-link') || line.includes('ArtifactMetadata') || /https?:|visualize|\.htm/i.test(line)
   const hasLabel =
     line.includes('"file_path"') &&
     (line.includes('"tool_use"') ||
@@ -352,7 +356,7 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
     if (state.emit) {
       const contentKey = createHash('sha256').update(item.url ? `${item.kind}:${item.url}` : `${item.kind}:${item.mediaType}:${item.data ?? ''}`).digest('hex')
       lineDigest ??= createHash('sha256').update(line).digest('hex')
-      const stamp = record.timestamp ?? record.time
+      const stamp = record.timestamp ?? record.time ?? record.created_at
       const time = typeof stamp === 'string' ? Date.parse(stamp) : NaN
       state.emit(entry, contentKey, lineDigest, Number.isFinite(time) ? time : 0)
       continue
@@ -367,7 +371,7 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
 // Feeds one read chunk. See prExtractor.consumeChunk: lines a chunk completes
 // are decoded only when the chunk, the seam, or the carried partial line can
 // hold a candidate — media lines run to MBs, so this skip is most of the win.
-function consumeChunk(state: ScanState, bytes: Buffer): void {
+function consumeChunk(state: ScanState, bytes: Buffer, logPath: string): void {
   const lastNewline = bytes.lastIndexOf(0x0a)
   const seamCandidate = seamHasCandidate(state.partial, bytes)
   const chunkCandidate = hasCandidate(bytes)
@@ -388,7 +392,8 @@ function consumeChunk(state: ScanState, bytes: Buffer): void {
       let end = lines.indexOf(0x0a, pos)
       if (end === -1) end = lines.length
       if (end > pos) {
-        processLine(state, lines.subarray(pos, end).toString('utf8'), regionStart + pos)
+        const line = lines.subarray(pos, end).toString('utf8')
+        processLine(state, materializeMediaSync(logPath, line), regionStart + pos)
       }
       pos = end + 1
     }
@@ -453,7 +458,7 @@ export function getSessionMedia(logPath: string): ScannedMedia[] {
       readBuffer ??= Buffer.allocUnsafe(READ_CHUNK_BYTES)
       const read = fs.readSync(fd, readBuffer, 0, length, state.offset)
       if (read <= 0) break
-      consumeChunk(state, readBuffer.subarray(0, read))
+      consumeChunk(state, readBuffer.subarray(0, read), logPath)
       state.offset += read
     }
     state.mtimeMs = stat.mtimeMs

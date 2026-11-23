@@ -28,11 +28,29 @@ function tool(state: ActivityState, id: unknown, name: unknown): void {
   state.phase = 'tool'
 }
 
-export function reduceActivity(state: ActivityState, value: unknown, kind: 'claude' | 'codex'): void {
+export function reduceActivity(state: ActivityState, value: unknown, kind: 'claude' | 'codex' | 'antigravity'): void {
   const e = record(value)
   const p = record(e.payload)
   const m = record(e.message)
   let relevant = false
+  if (kind === 'antigravity') {
+    if (!Number.isInteger(e.step_index) || e.status !== 'DONE') return
+    if (e.type === 'USER_INPUT' && e.source === 'USER_EXPLICIT' || e.type === 'SYSTEM_MESSAGE' && e.source === 'SYSTEM') {
+      state.tools.clear()
+      state.phase = 'model'
+    } else if (e.type === 'PLANNER_RESPONSE' && e.source === 'MODEL') {
+      state.tools.clear()
+      state.phase = 'idle'
+      if (Array.isArray(e.tool_calls)) {
+        e.tool_calls.forEach((call, i) => tool(state, String(Number(e.step_index) + 1 + i), record(call).name))
+      }
+    } else if ((e.type === 'GENERIC' || e.type === 'RUN_COMMAND') && e.source === 'MODEL') {
+      state.tools.delete(String(e.step_index))
+      state.phase = state.tools.size ? 'tool' : 'model'
+    } else return
+    if (typeof e.created_at === 'string') state.updatedAt = e.created_at
+    return
+  }
   if (kind === 'codex') {
     if (e.type === 'session_meta') {
       // Forked history may precede the child's own metadata.

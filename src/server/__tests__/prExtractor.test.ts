@@ -1182,3 +1182,13 @@ describe('getSessionPullRequests', () => {
     })
   })
 })
+
+test('Antigravity 1.5 CLI attributes successful generic command output', () => {
+  const planner = { step_index: 1, type: 'PLANNER_RESPONSE', source: 'MODEL', status: 'DONE',
+    tool_calls: [{ name: 'run_command', args: { CommandLine: JSON.stringify('/tmp/fixture/gh pr create --fill') } }] }
+  const result = { step_index: 2, type: 'GENERIC', source: 'MODEL', status: 'DONE',
+    content: 'Completed At: 2026-11-01T00:00:00Z\nCommand exited with code 0.\n\nCommand output:\nhttps://github.com/example/fixture/pull/42\r\n' }
+  const ids = (content: string) => extractPullRequests([planner, { ...result, content }].map(s => JSON.stringify(s)).join('\n')).map(pr => pr.number)
+  expect(ids(result.content)).toEqual([42])
+  expect(ids(result.content.replace('code 0.', 'code 1.'))).toEqual([])
+})

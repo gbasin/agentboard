@@ -1,3 +1,4 @@
+import { isAntigravityAuxiliaryFile } from './antigravityLogs'
 import { performance } from 'node:perf_hooks'
 import type { AgentType } from '../shared/types'
 import {
@@ -196,6 +197,7 @@ export function collectLogEntriesForPaths(
   const entries: LogEntrySnapshot[] = []
 
   for (const logPath of new Set(logPaths)) {
+    if (isAntigravityAuxiliaryFile(logPath)) continue
     const times = getLogTimes(logPath)
     if (!times) continue
     entries.push(

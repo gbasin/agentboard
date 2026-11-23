@@ -1,7 +1,5 @@
 // Claude's local peer registry supplies identity; never connect to its messaging socket.
-import type { ProcessIdentity, PaneIdentity } from './codex'
-import { isWithinPane } from './codex'
-import path from 'node:path'
+import type { ProcessIdentity } from './codex'
 
 export interface ClaudeRecord {
   pid: number
@@ -21,13 +19,6 @@ export function parseClaudeRecord(text: string, pid: number, platform: string): 
       || !/^[a-zA-Z0-9_-]{1,64}$/.test(value.parkedJobId))) return null
     return { parkedJobId: value.parkedJobId ?? undefined, pid, sessionId: value.sessionId, procStart: value.procStart.trim().replace(/\s+/g, ' ') }
   } catch { return null }
-}
-
-export function claudeRoots(pane: PaneIdentity, processes: ProcessIdentity[]): ProcessIdentity[] {
-  const candidates = processes.filter(process => path.basename(process.command) === 'claude'
-    && isWithinPane(process.pid, pane.pid, processes))
-  return candidates.filter(process => !candidates.some(other => other.pid !== process.pid
-    && isWithinPane(process.pid, other.pid, processes)))
 }
 
 export function resolveClaudeRecord(

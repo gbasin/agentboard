@@ -402,9 +402,18 @@ export function normalizeAgentLogEntry(entry: unknown): NormalizedEvent[] {
       const text = requests.length ? requests.join('\n\n') : content.trim()
       return text ? [{ kind: 'message', role: 'user', text, source }] : []
     }
-    return record.type === 'PLANNER_RESPONSE' && record.source === 'MODEL' && content.trim()
-      ? [{ kind: 'message', role: 'assistant', text: content.trim(), source }]
-      : []
+    if (record.source !== 'MODEL') return []
+    if (record.type === 'PLANNER_RESPONSE') {
+      const events: NormalizedEvent[] = []
+      if (content.trim()) events.push({ kind: 'message', role: 'assistant', text: content.trim(), source })
+      for (const call of Array.isArray(record.tool_calls) ? record.tool_calls : []) {
+        const name = asString(asRecord(call)?.name)
+        if (name) events.push({ kind: 'tool_call', role: 'assistant', text: `[Tool: ${name}]`, source })
+      }
+      return events
+    }
+    return (record.type === 'GENERIC' || record.type === 'RUN_COMMAND') && content.trim()
+      ? [{ kind: 'tool_result', role: 'tool', text: content.trim(), source }] : []
   }
   const primary = [
     ...normalizeResponseItemMessage(record, source),

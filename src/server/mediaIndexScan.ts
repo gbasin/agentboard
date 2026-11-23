@@ -1,10 +1,14 @@
 /** Resumable forward JSONL reader. Checkpoints contain no partial record buffers. */
+import { materializeMediaSync } from './antigravityMedia'
+import { antigravitySessionId } from './antigravityLogs'
+import path from 'node:path'
 import fs from 'node:fs'
 import { createHash } from 'node:crypto'
 import { createMediaLineScanner, type ScannedMedia } from './mediaExtractor'
 
 export interface MediaFileState {
   version?: number
+  mediaDirectoryTime?: number
   path: string
   offset: number
   size: number
@@ -53,7 +57,10 @@ export function scanMediaFileStep(
       snapshot.size = stat.size; snapshot.mtime = stat.mtimeMs; snapshot.inode = stat.ino
     }
     const end = Math.min(snapshot.size, stat.size)
-    if (previous && (previous.orderTime === undefined || previous.version !== 5)) { reset(); previous = undefined }
+    const version = antigravitySessionId(filePath) ? 6 : 5
+    const mediaDirectoryTime = version === 6
+      ? fs.statSync(path.join(path.dirname(filePath), 'media'), { throwIfNoEntry: false })?.mtimeMs : undefined
+    if (previous && (previous.mediaDirectoryTime !== mediaDirectoryTime || previous.orderTime === undefined || previous.version !== version)) { reset(); previous = undefined }
     if (previous && previous.complete !== false && end === previous.size && snapshot.mtime === previous.mtime && stat.ino === previous.inode) {
       return { state: previous, done: true, bytesRead: 0 }
     }
@@ -83,7 +90,8 @@ export function scanMediaFileStep(
         if (buffer[i] !== 10) continue
         const part = buffer.subarray(start, i)
         if (!discarding && pieceBytes + part.length <= maxRecordBytes) {
-          scanner.line(pieces.length ? Buffer.concat([...pieces, part]).toString('utf8') : part.toString('utf8'), offset)
+          const line = pieces.length ? Buffer.concat([...pieces, part]).toString('utf8') : part.toString('utf8')
+          scanner.line(version === 6 ? materializeMediaSync(filePath, line) : line, offset)
         } else if (!discarding) omittedRecords++
         offset = chunkStart + i + 1; position = offset
         pieces = []; pieceBytes = 0; discarding = false; start = i + 1
@@ -103,7 +111,7 @@ export function scanMediaFileStep(
       if (discarding && exhausted()) stopped = true
     }
     const done = position >= end
-    return { state: { version: 5, path: filePath, offset, size: end, mtime: snapshot.mtime, inode: stat.ino,
+    return { state: { version, mediaDirectoryTime, path: filePath, offset, size: end, mtime: snapshot.mtime, inode: stat.ino,
       boundary: boundary(fd, offset), labels: JSON.stringify(scanner.labels()), discarding, omittedRecords,
       omittedItems: previous?.omittedItems ?? 0, orderTime, complete: done }, done, bytesRead: position - startOffset }
   } finally { fs.closeSync(fd) }

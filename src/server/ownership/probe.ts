@@ -1,6 +1,8 @@
 // Shared read-only collection and validation. No database or registry write capability.
-import { claudeRoots, parseClaudeJobSession, parseClaudeRecord, resolveClaudeRecord } from './claude'
-import { isTranscript, paneCodexRoots, parseTranscriptHead, resolveOwnership } from './codex'
+import path from 'node:path'
+import { antigravityHome } from '../antigravityLogs'
+import { parseClaudeJobSession, parseClaudeRecord, resolveClaudeRecord } from './claude'
+import { isTranscript, paneProcessRoots, parseTranscriptHead, resolveOwnership } from './codex'
 import type { OpenFile, PaneIdentity, ProcessIdentity, TranscriptIdentity } from './codex'
 
 export interface OwnershipWindow {
@@ -12,7 +14,7 @@ export interface OwnershipWindow {
   remote?: boolean
   agentboardTags?: { runId: string; serverPid: number }
 }
-export type Observation = { window: string; pane: string; agent: 'claude' | 'codex' } & (
+export type Observation = { window: string; pane: string; agent: 'claude' | 'codex' | 'antigravity' } & (
   | { status: 'resolved'; pid: number; started: string; sessionId: string; transcript?: string }
   | { status: 'unresolved'; reason: string }
 )
@@ -27,16 +29,17 @@ export interface OwnershipIO {
 }
 
 export async function probeOwnership(windows: OwnershipWindow[], io: OwnershipIO): Promise<Observation[]> {
-  const local = windows.filter(window => !window.remote && ['claude', 'codex'].includes(window.agentType ?? ''))
+  const local = windows.filter(window => !window.remote && ['claude', 'codex', 'antigravity'].includes(window.agentType ?? ''))
   if (!local.length) return []
   const [allPanes, before] = await Promise.all([io.panes(), io.processes()])
   const panes = allPanes.filter(pane => local.some(window => window.tmuxWindow === pane.window))
   if (panes.length > 128) throw new Error('ownership pane limit exceeded')
-  const roots = new Map(panes.map(pane => [pane.pane,
-    local.find(window => window.tmuxWindow === pane.window)!.agentType === 'codex'
-      ? paneCodexRoots(pane.pid, before) : claudeRoots(pane, before)]))
-  const codexPanes = panes.filter(pane => local.find(window => window.tmuxWindow === pane.window)!.agentType === 'codex')
-  const pids = [...new Set(codexPanes.flatMap(pane => roots.get(pane.pane)!.map(process => process.pid)))]
+  const agentOf = (pane: PaneIdentity) => local.find(window => window.tmuxWindow === pane.window)!.agentType as Observation['agent']
+  const candidatesFor = (pane: PaneIdentity, snapshot: ProcessIdentity[]) =>
+    paneProcessRoots(agentOf(pane) === 'antigravity' ? 'agy' : agentOf(pane), pane.pid, snapshot)
+  const roots = new Map(panes.map(pane => [pane.pane, candidatesFor(pane, before)]))
+  const codexPanes = panes.filter(pane => agentOf(pane) === 'codex')
+  const pids = [...new Set(panes.filter(pane => agentOf(pane) !== 'claude').flatMap(pane => roots.get(pane.pane)!.map(process => process.pid)))]
   // A missing lsof must not suppress Claude's independent registry evidence.
   let fileError = false
   let files: OpenFile[] = []
@@ -46,7 +49,7 @@ export async function probeOwnership(windows: OwnershipWindow[], io: OwnershipIO
   const metadata = new Map<string, TranscriptIdentity | null>()
   for (const file of transcripts) metadata.set(file, parseTranscriptHead(await io.head(file, true) ?? ''))
   const claude = new Map<number, ReturnType<typeof parseClaudeRecord>>()
-  const claudePanes = panes.filter(pane => !codexPanes.includes(pane))
+  const claudePanes = panes.filter(pane => agentOf(pane) === 'claude')
   for (const pane of claudePanes) {
     for (const process of roots.get(pane.pane)!) {
       claude.set(process.pid, parseClaudeRecord(await io.head(`${io.claudeHome}/sessions/${process.pid}.json`, false) ?? '', process.pid, io.platform))
@@ -78,7 +81,7 @@ export async function probeOwnership(windows: OwnershipWindow[], io: OwnershipIO
     .filter(file => file.pid === pid && (isTranscript(file, io.codexHome) || file.name.includes('/thread-writer-locks/')))
     .map(file => `${file.access}:${file.name}`).sort())
   const observations = panes.map((pane): Observation => {
-    const agent = local.find(window => window.tmuxWindow === pane.window)!.agentType as 'claude' | 'codex'
+    const agent = agentOf(pane)
     const base = { window: pane.window, pane: pane.pane, agent }
     const unknown = (reason: string): Observation => ({ ...base, status: 'unresolved', reason })
     const expectedServer = local.find(window => window.tmuxWindow === pane.window)?.agentboardTags?.serverPid
@@ -89,7 +92,7 @@ export async function probeOwnership(windows: OwnershipWindow[], io: OwnershipIO
     if (candidates.length !== 1) return unknown('ambiguous_process_roots')
     const process = candidates[0]
     if (!stable(process.pid)) return unknown('process_changed')
-    const finalRoots = agent === 'codex' ? paneCodexRoots(pane.pid, after) : claudeRoots(pane, after)
+    const finalRoots = candidatesFor(pane, after)
     if (finalRoots.length !== 1 || finalRoots[0].pid !== process.pid) return unknown('process_ancestry_changed')
     if (agent === 'claude') {
       const result = resolveClaudeRecord(process, claude.get(process.pid) ?? null, finalClaude.get(process.pid) ?? null)
@@ -100,7 +103,18 @@ export async function probeOwnership(windows: OwnershipWindow[], io: OwnershipIO
       }
       return { ...base, ...result, ...(result.status === 'resolved' ? { pid: process.pid, started: process.started } : {}) } as Observation
     }
-    if (fileError) return unknown('codex_descriptor_inspection_failed')
+    if (fileError) return unknown(agent + '_descriptor_inspection_failed')
+    if (agent === 'antigravity') {
+      const home = antigravityHome()
+      const locks = (snapshot: OpenFile[]) => snapshot.filter(f => f.pid === process.pid && f.type === 'REG' &&
+        ['w', 'u'].includes(f.access) && path.dirname(f.name) === path.join(home, 'presence') &&
+        /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.lock$/i.test(path.basename(f.name)))
+      const first = locks(files), second = locks(finalFiles)
+      if (first.length !== 1 || second.length !== 1 || first[0].name !== second[0].name) return unknown('antigravity_presence_ambiguous')
+      const sessionId = path.basename(first[0].name, '.lock')
+      return { ...base, status: 'resolved', pid: process.pid, started: process.started, sessionId,
+        transcript: path.join(home, 'brain', sessionId, '.system_generated/logs/transcript.jsonl') }
+    }
     if (fingerprint(process.pid, files) !== fingerprint(process.pid, finalFiles)) return unknown('codex_descriptors_changed')
     const result = codex.find(result => result.pane === pane.pane)
     return result?.status === 'resolved'

@@ -1,4 +1,4 @@
-import { antigravityHome, antigravityBrain, antigravityProjectPath, antigravitySessionId } from './antigravityLogs'
+import { antigravityHome, antigravityBrain, isAntigravityAuxiliaryFile, antigravityProjectPath, antigravitySessionId } from './antigravityLogs'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentType } from '../shared/types'
@@ -178,7 +178,7 @@ export function scanAllLogDirs(): string[] {
   // are not transcripts, so only the transcript file is collected.
   paths.push(...scanDirForJsonl(grokRoot, 3, 'chat_history.jsonl'))
   paths.push(...scanDirForJsonl(ompRoot, 4))
-  paths.push(...scanDirForJsonl(antigravityBrain(), 3, 'transcript.jsonl').filter(antigravitySessionId))
+  paths.push(...scanDirForJsonl(antigravityBrain(), 3, 'transcript.jsonl').filter(file => !isAntigravityAuxiliaryFile(file)))
 
   return paths
 }

@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+import { isAntigravityAuxiliaryFile } from './antigravityLogs'
 import os from 'node:os'
 import { statSync, accessSync, constants } from 'node:fs'
 import path from 'node:path'
@@ -311,7 +312,7 @@ function buildOrphanEntries(
 
   for (const record of candidates) {
     const logPath = record.logFilePath
-    if (!logPath) continue
+    if (!logPath || isAntigravityAuxiliaryFile(logPath)) continue
 
     const agentType = record.agentType
     if (agentType === 'codex' && isCodexSubagent(logPath)) {
@@ -388,7 +389,7 @@ function buildLastMessageEntries(
 
   for (const record of candidates) {
     const logPath = record.logFilePath
-    if (!logPath || existingLogPaths.has(logPath)) continue
+    if (!logPath || existingLogPaths.has(logPath) || isAntigravityAuxiliaryFile(logPath)) continue
 
     const resolvedAgentType =
       record.agentType ?? inferAgentTypeFromPath(logPath) ?? null

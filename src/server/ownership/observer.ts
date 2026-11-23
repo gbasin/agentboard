@@ -35,7 +35,7 @@ export class OwnershipObserver {
     const generation = this.generation
     const started = performance.now()
     try {
-      const windows = this.dependencies.windows().filter(window => !window.remote && ['codex', 'claude'].includes(window.agentType ?? ''))
+      const windows = this.dependencies.windows().filter(window => !window.remote && ['codex', 'claude', 'antigravity'].includes(window.agentType ?? ''))
         .map(window => ({ ...window, agentboardTags: window.agentboardTags ? { ...window.agentboardTags } : undefined }))
       const results = await this.dependencies.probe(windows)
       if (generation !== this.generation) return

@@ -144,3 +144,19 @@ test('unpark during job inspection and unsafe job paths fail closed', async () =
     expect(parseClaudeRecord(JSON.stringify({ ...f.record, parkedJobId }), 10, 'darwin')).toBeNull()
   }
 })
+
+test('Antigravity requires a stable, unique writable presence lock in the pane', async () => {
+  const { antigravityHome } = await import('../antigravityLogs')
+  const f = fixture()
+  f.windows[1].agentType = 'antigravity'
+  f.processes[1].command = '/bin/agy'
+  const lock = { pid: 20, name: antigravityHome() + '/presence/' + codexId + '.lock', type: 'REG', access: 'u' }
+  f.io.files = async () => [lock]
+  const probe = async () => (await probeOwnership(f.windows, f.io))[1]
+  expect(await probe()).toMatchObject({ status: 'resolved', sessionId: codexId })
+  let calls = 0
+  f.io.files = async () => ++calls === 1 ? [lock] : []
+  expect(await probe()).toMatchObject({ status: 'unresolved' })
+  f.io.files = async () => [lock, { ...lock, name: lock.name.replace(codexId, claudeId) }]
+  expect(await probe()).toMatchObject({ status: 'unresolved' })
+})
