@@ -19,15 +19,15 @@ async function isFile(file: string) {
 export class OutputFileResolver {
   private cache = new Map<string, { signature: string; paths: Promise<string[]> }>()
   private active = 0
-  private async evidence(record: Session): Promise<string[]> {
-    const sourceFiles = () => [record.logFilePath!, ...getSubagentLogPaths(record.logFilePath!, record.agentType, record.sessionId)]
+  private async evidence(record: Session, images = false): Promise<string[]> {
+    const sourceFiles = () => images ? [record.logFilePath] : [record.logFilePath!, ...getSubagentLogPaths(record.logFilePath!, record.agentType, record.sessionId)]
     const files = sourceFiles()
     const snapshot = (sources: string[]) => Promise.all(sources.map(async file => {
       try { const s = await fs.stat(file); return [file, s.ino, s.size, s.mtimeMs, s.ctimeMs] }
       catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [file, null]; throw error }
     }))
     const stamps = await snapshot(files)
-    const key = JSON.stringify([record.sessionId, record.logFilePath, record.agentType, record.projectPath])
+    const key = JSON.stringify([record.sessionId, record.logFilePath, record.agentType, record.projectPath, images])
     const signature = JSON.stringify(stamps)
     const cached = this.cache.get(key)
     if (cached?.signature === signature) return cached.paths
@@ -41,7 +41,7 @@ export class OutputFileResolver {
       }
       worker.onerror = () => reject(Error('Unable to read session file references. Try again.'))
       worker.onmessageerror = () => reject(Error('Unable to read session file references. Try again.'))
-      worker.postMessage({ files, cwd: record.projectPath })
+      worker.postMessage({ files, cwd: record.projectPath, images })
     }).then(async result => {
       if (JSON.stringify(await snapshot(sourceFiles())) !== signature) {
         throw Error('Session files changed during lookup. Try again to use the latest references.')
@@ -53,6 +53,12 @@ export class OutputFileResolver {
     this.cache.set(key, entry)
     if (this.cache.size > 32) this.cache.delete(this.cache.keys().next().value!)
     try { return await paths } catch (error) { if (this.cache.get(key) === entry) this.cache.delete(key); throw error }
+  }
+
+  async sidebarImage(name: string, record: Session): Promise<string | null> {
+    if (!name || name.length > 255 || path.basename(name) !== name || !/\.(?:png|jpe?g|gif|webp)$/i.test(name)) return null
+    const matches = (await this.evidence(record, true)).filter(file => path.basename(file) === name)
+    return matches.length === 1 ? matches[0] : null
   }
 
   async resolve(ref: string, record: Session, selected?: string): Promise<FileResolution> {

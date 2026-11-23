@@ -1,8 +1,9 @@
 /// <reference lib="webworker" />
 /** On-demand finite transcript scan, off the terminal server thread. Exits after one job. */
 import fs from 'node:fs'
-import { collectFileEvidence } from './outputs/fileEvidence'
-export interface OutputPathScan { files: string[]; cwd: string }
+import { collectFileEvidence, evidenceCwd } from './outputs/fileEvidence'
+import { codexImageLinks } from './outputs/codexSidebarImage'
+export interface OutputPathScan { files: string[]; cwd: string; images?: boolean }
 const ctx = self as DedicatedWorkerGlobalScope
 ctx.onmessage = (event: MessageEvent<OutputPathScan>) => {
   try {
@@ -26,12 +27,18 @@ ctx.onmessage = (event: MessageEvent<OutputPathScan>) => {
           let raw: unknown
           try {
             const text = bytes.toString('utf8')
-            if (!/\.html?|"cwd"/i.test(text)) return
+            const candidate = event.data.images ? /\.(?:png|jpe?g|gif|webp)|"cwd"/i : /\.html?|"cwd"/i
+            if (!candidate.test(text)) return
             raw = JSON.parse(text)
           } catch { return }
-          const result = collectFileEvidence(raw, cwd)
-          cwd = result.cwd
-          for (const candidate of result.paths) paths.add(candidate)
+          if (event.data.images) {
+            cwd = evidenceCwd(raw, cwd)
+            for (const file of codexImageLinks(raw, cwd)) paths.add(file)
+          } else {
+            const result = collectFileEvidence(raw, cwd)
+            cwd = result.cwd
+            for (const file of result.paths) paths.add(file)
+          }
           if (paths.size > 4096) throw Error('Too many file references to resolve automatically. Share the full file path.')
         }
         while (position < size) {

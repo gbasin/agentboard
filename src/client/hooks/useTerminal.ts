@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useLayoutEffect, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { installCodexSidebarImage } from './codexSidebarImage'
 import { ImageAddon } from '@xterm/addon-image'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -323,6 +324,7 @@ interface UseTerminalOptions {
   sessionId: string | null
   tmuxTarget: string | null
   agentType?: AgentType
+  agentSessionId?: string | null
   allowAttach?: boolean
   connectionStatus?: ConnectionStatus
   connectionEpoch?: number
@@ -347,6 +349,7 @@ export function useTerminal({
   sessionId,
   tmuxTarget,
   agentType,
+  agentSessionId,
   allowAttach = true,
   connectionStatus = 'connected',
   connectionEpoch = 0,
@@ -364,6 +367,8 @@ export function useTerminal({
   onDeferredInput,
   deferInput = false,
 }: UseTerminalOptions) {
+  const previewSession = useRef({ sessionId, agentType, agentSessionId })
+  previewSession.current = { sessionId, agentType, agentSessionId }
   const onPasteFilesRef = useRef(onPasteFiles)
   onPasteFilesRef.current = onPasteFiles
   const onPasteErrorRef = useRef(onPasteError)
@@ -659,6 +664,7 @@ export function useTerminal({
 
     // Track if effect has been cleaned up (for async font loading)
     let cancelled = false
+    let disposeSidebarImage: (() => void) | undefined
     let unsubscribeAutocorrect: (() => void) | undefined
 
     // Clear container
@@ -740,6 +746,10 @@ export function useTerminal({
       }
 
       terminal.open(container)
+      disposeSidebarImage = installCodexSidebarImage(terminal, () => {
+        const selected = previewSession.current
+        return selected.agentType === 'codex' && selected.sessionId === readySessionRef.current ? selected.agentSessionId ?? null : null
+      })
       const updateAutocorrect = () => {
         // Recovery drafts use xterm's ordinary input path, not terminal correction sequences.
         const settings = useSettingsStore.getState()
@@ -1298,6 +1308,7 @@ export function useTerminal({
 
     return () => {
       updateNativeInputRef.current = () => {}
+      disposeSidebarImage?.()
       unsubscribeAutocorrect?.()
       nativeInputRef.current?.dispose()
       nativeInputRef.current = null

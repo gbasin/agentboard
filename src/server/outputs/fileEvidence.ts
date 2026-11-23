@@ -9,12 +9,17 @@ export function absoluteOutputPath(ref: string, cwd: string): string {
   return ref.startsWith('~/') ? path.join(os.homedir(), ref.slice(2)) : path.resolve(cwd, ref)
 }
 
+export function evidenceCwd(raw: unknown, previousCwd: string): string {
+  const record = asRecord(raw), payload = asRecord(record?.payload)
+  const recorded = record?.cwd ?? (['session_meta', 'turn_context'].includes(String(record?.type)) ? payload?.cwd : undefined)
+  return typeof recorded === 'string' && path.isAbsolute(recorded) ? recorded : previousCwd
+}
+
 export function collectFileEvidence(raw: unknown, previousCwd: string): { cwd: string; paths: string[] } {
   const record = asRecord(raw)
   if (!record) return { cwd: previousCwd, paths: [] }
   const payload = asRecord(record.payload)
-  const recordedCwd = record.cwd ?? (['session_meta', 'turn_context'].includes(String(record.type)) ? payload?.cwd : undefined)
-  const cwd = typeof recordedCwd === 'string' && path.isAbsolute(recordedCwd) ? recordedCwd : previousCwd
+  const cwd = evidenceCwd(raw, previousCwd)
   const paths = new Set<string>()
   const add = (value: string, base = cwd, allowBare = false) => {
     if (value.startsWith('file://')) { try { value = fileURLToPath(value) } catch { return } }
