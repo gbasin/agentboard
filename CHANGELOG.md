@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.48.0](https://github.com/gbasin/agentboard/compare/v0.47.0...v0.48.0) (2026-11-23)
+
+
+### Features
+
+* share PR status across boards and refresh active repositories every 30 seconds ([#607](https://github.com/gbasin/agentboard/issues/607)) ([911f9e3](https://github.com/gbasin/agentboard/commit/911f9e35427d0a306795f617c3c90913f72bc63f))
+
+
+### Bug Fixes
+
+* recover PR chips after chained Git and Python commands ([#612](https://github.com/gbasin/agentboard/issues/612)) ([fdf5792](https://github.com/gbasin/agentboard/commit/fdf5792f8fb4835557835d64b31034081a624e41))
+
 ## [0.47.0](https://github.com/gbasin/agentboard/compare/v0.46.11...v0.47.0) (2026-11-23)
 
 
