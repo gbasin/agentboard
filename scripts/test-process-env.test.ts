@@ -5,8 +5,8 @@ import { userInfo } from 'node:os'
 import { testProcessEnv } from './test-process-env'
 
 test('removes inherited pane identity and replaces the socket directory without mutating the parent', () => {
-  const parent = { TMUX: '/parent/socket,123,0', TMUX_PANE: '%12', TMUX_TMPDIR: '/parent', KEEP: 'yes' }
-  expect(testProcessEnv(parent, '/private-test')).toEqual({ TMUX_TMPDIR: '/private-test', KEEP: 'yes' })
+  const parent = { TMUX: '/parent/socket,123,0', TMUX_PANE: '%12', TMUX_TMPDIR: '/parent', KEEP: 'yes', AGENTBOARD_PR_STATUS_AUTHORITY_URL: 'https://example.com', AGENTBOARD_PR_STATUS_TOKEN: 'private', GH_TOKEN: 'private', GITHUB_TOKEN: 'private' }
+  expect(testProcessEnv(parent, '/private-test')).toEqual({ TMUX_TMPDIR: '/private-test', KEEP: 'yes', GH_CONFIG_DIR: '/private-test/gh', GH_PROMPT_DISABLED: '1' })
   expect(parent.TMUX).toBe('/parent/socket,123,0')
 })
 

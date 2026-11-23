@@ -31,6 +31,7 @@ describe('sanitizedTmuxEnv', () => {
       SSH_AUTH_SOCK: '/tmp/agent.sock',
       NODE_ENV: 'production',
       AGENTBOARD_STATIC_DIR: '/npx/dist/client',
+      AGENTBOARD_PR_STATUS_TOKEN: 'service-only',
       npm_config_cache: '/Users/x/.npm',
       npm_execpath: '/opt/npm-cli.js',
     })

@@ -51,7 +51,8 @@ import { catalogMessage, sessionSummary } from './catalogMessages'
 import { CATALOG_VERSION, catalogVersionFromUrl } from '../shared/catalogProtocol'
 import { startCatalogUpgradeNotice } from './catalogUpgrade'
 import { getCodexSubagentIndex, setCodexSubagentIndexListener } from './subagentLogs'
-import { fetchPrChecks, fetchPrInfo, parsePrUrl } from './prInfo'
+import { BoardPrStatus } from './boardPrStatus'
+import { createPrStatusProvider } from './prStatusProvider'
 import { getLogSearchDirs } from './logDiscovery'
 import {
   createStartupLifecycle,
@@ -604,8 +605,16 @@ async function ensureBaseSessionForRefreshAsync(context: string): Promise<boolea
 }
 const registry = new SessionRegistry()
 const thumbnailClient = new MediaThumbnailClient()
+const prProvider = createPrStatusProvider(path.join(config.dataDir, 'pr-status.sqlite'), infos => {
+  const local = boardPrStatus.changes(infos)
+  if (local.length) broadcast({ type: 'pr-status', infos: local })
+})
+const boardPrStatus = new BoardPrStatus(prProvider)
+prProvider.mount(app)
+app.route('/api', boardPrStatus.routes())
 const metadataPublisher = new SessionMetadataPublisher(registry, config.hostLabel)
 const metadataClient = new SessionMetadataClient((record, metadata) => {
+  boardPrStatus.discover(metadata.prs)
   metadataPublisher.queue(record, metadata)
 })
 
@@ -1549,24 +1558,6 @@ app.post('/api/client-log', async (c) => {
 app.get('/api/health', (c) => c.json({ ok: true }))
 app.get('/api/sessions', (c) => c.json(registry.getAll().map(sessionSummary)))
 
-// Eager tier for PR chips: state/title/author, batched + 60s cached.
-app.post('/api/pr-info', async (c) => {
-  const body = (await c.req.json().catch(() => null)) as {
-    urls?: unknown
-  } | null
-  const urls = Array.isArray(body?.urls)
-    ? body.urls.filter((u): u is string => typeof u === 'string').slice(0, 50)
-    : []
-  return c.json(await fetchPrInfo(urls))
-})
-
-// Lazy tier for hover cards: includes CI check rollup.
-app.get('/api/pr-checks', async (c) => {
-  const url = c.req.query('url') ?? ''
-  if (!parsePrUrl(url)) return c.json({ error: 'Invalid PR url' }, 400)
-  return c.json(await fetchPrChecks(url))
-})
-
 app.get('/api/session-preview/:sessionId', async (c) => {
   const sessionId = c.req.param('sessionId')
   if (!isValidSessionId(sessionId)) {
@@ -2499,6 +2490,7 @@ const startupLifecycle = createStartupLifecycle({
 })
 
 export const startupReady = (async () => {
+  prProvider.start()
   try {
     await refreshSessionsAsync()
   } catch (error) {
@@ -2541,6 +2533,7 @@ export const startupReady = (async () => {
 // Cleanup all terminals on server shutdown
 async function cleanupAllTerminals() {
   metadataPublisher.dispose()
+  await prProvider.stop()
   await terminalRelay?.shutdown()
   ownershipObserver?.stop()
   persistenceRuntime?.stop()

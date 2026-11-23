@@ -47,7 +47,7 @@ For local Claude Code and Codex sessions, a counter on the session shows how man
 
 ### Pull requests with CI state
 
-Pull requests that a session created with `gh pr create` or through the GitHub connector appear as chips on the session, colored by state: open, draft, merged, or closed. Claude Code sessions also show pull requests that Claude Code linked to the session, such as one it pushed to. Hover a chip to see its title and CI checks.
+Pull requests that a session created with `gh pr create` or through the GitHub connector appear as chips on the session, colored by state: open, draft, merged, or closed. Claude Code sessions also show pull requests that Claude Code linked to the session, such as one it pushed to. Hover a chip to see its title and CI checks. Multiple boards can share [one GitHub polling schedule](docs/configuration.md#shared-pull-request-status).
 
 </td>
 <td width="60%">
@@ -135,7 +135,7 @@ Agentboard finds each agent's transcripts in its default location and matches th
 
 Optional:
 
-- The [GitHub CLI](https://cli.github.com/) (`gh`), signed in, to show pull request state and CI checks.
+- The [GitHub CLI](https://cli.github.com/) (`gh`), signed in on the board that tracks GitHub, to show pull request state and CI checks.
 - `ssh` with key-based access, to show sessions from [remote hosts](docs/remote-hosts.md).
 
 ## Install

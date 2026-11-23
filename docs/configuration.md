@@ -212,6 +212,19 @@ The browser accepts files of any extension, up to 40 MiB (41,943,040 bytes) for 
 
 The mobile dialog works the same over HTTP and HTTPS. Type or paste into the field, or attach files with **Choose files**, then tap **Submit**. Agentboard inserts the text and the file paths into the existing terminal prompt without pressing Enter. Automatic clipboard reads elsewhere depend on browser support and permission and require HTTPS or localhost.
 
+## Shared pull request status
+
+A standalone board uses its local GitHub CLI login to track pull requests discovered in session transcripts. To share one GitHub polling schedule across multiple boards, choose an always-on board as the authority. Browsers and native clients continue to connect to their own board.
+
+| Variable | Where to set it | Value |
+| --- | --- | --- |
+| `AGENTBOARD_PR_STATUS_TOKEN` | Authority and all its followers | The same secret, 32–256 URL-safe characters. Generate one with `openssl rand -hex 32`. |
+| `AGENTBOARD_PR_STATUS_AUTHORITY_URL` | Followers only | HTTPS origin of the authority, for example `https://board.example.ts.net`. Loopback HTTP is also supported at `127.0.0.1` or `[::1]`. |
+
+The authority uses its GitHub credentials for every registered repository. Share a token only with boards trusted to read those repositories. Each board serves its own discovered PRs to clients. Followers retain snapshots across restarts and show the last known state if the authority is unreachable. The last confirmation time appears in the PR detail.
+
+With `LOG_LEVEL=debug`, the authority logs `github_pr_request` for GitHub responses, including the operation, HTTP status, rate-limit bucket, remaining quota and reset time. A conditional poll returning HTTP 304 reuses the previous result.
+
 ## Remote hosts
 
 `AGENTBOARD_REMOTE_HOSTS` and the related `AGENTBOARD_REMOTE_*` variables are described in [remote-hosts.md](remote-hosts.md).

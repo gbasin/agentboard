@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { fetchPrInfo, mapCheck, parsePrUrl } from '../prInfo'
+import { mapCheck, parsePrUrl } from '../prInfo'
 
 describe('parsePrUrl', () => {
   test('parses github PR urls', () => {
@@ -16,13 +16,6 @@ describe('parsePrUrl', () => {
     expect(parsePrUrl('https://evil.com/o/r/pull/1')).toBeNull()
     expect(parsePrUrl('not a url')).toBeNull()
     expect(parsePrUrl('')).toBeNull()
-  })
-})
-
-describe('fetchPrInfo', () => {
-  test('returns invalid-url errors without spawning gh', async () => {
-    const res = await fetchPrInfo(['not a url'])
-    expect(res).toEqual([{ url: 'not a url', error: 'invalid url' }])
   })
 })
 

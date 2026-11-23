@@ -1,87 +1,21 @@
-// prInfo.ts - Fetch GitHub PR metadata for session PR chips via `gh`.
-//
-// Two tiers:
-//   fetchPrInfo(urls)   - eager, batched: state/title/author per PR
-//   fetchPrChecks(url)  - lazy, on hover: CI statusCheckRollup detail
-// Both are cached briefly so refreshes and hovers don't spam gh.
-
+// Parse transcript PR identities and normalize GitHub check results.
 import type { SessionPullRequest } from '../shared/types'
-import { GhRequestQueue } from './ghRequestQueue'
-
-const CACHE_TTL_MS = 60_000
-const MAX_CACHE_ENTRIES = 5_000
-
-export interface PrInfo {
-  url: string
-  state?: string // OPEN | MERGED | CLOSED
-  isDraft?: boolean
-  title?: string
-  author?: string
-  error?: string
-}
-
-export interface PrCheckInfo extends PrInfo {
-  checks?: {
-    name: string
-    status: string
-    conclusion: string | null
-    link?: string
-  }[]
-}
+import type { PrCheckInfo } from '../shared/prStatus'
+export type { PrInfo, PrCheckInfo } from '../shared/prStatus'
 
 const PR_URL_PARSE_RE =
   /^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/(\d+)$/
 
 export function parsePrUrl(url: string): SessionPullRequest | null {
   const m = PR_URL_PARSE_RE.exec(url)
-  return m ? { url, repo: m[1], number: Number(m[2]) } : null
+  if (!m || url.length > 256 || m[1].split('/').some(part => part === '.' || part === '..')) return null
+  const number = Number(m[2])
+  return Number.isSafeInteger(number) && number > 0 ? { url, repo: m[1], number } : null
 }
 
-const cache = new Map<string, { at: number; info: PrCheckInfo }>()
-const ghQueue = new GhRequestQueue()
-const ghPrView = (repo: string, number: number, fields: string) =>
-  ghQueue.request(repo, number, fields)
-
-function cacheInfo(key: string, info: PrCheckInfo): void {
-  cache.delete(key)
-  cache.set(key, { at: Date.now(), info })
-  if (cache.size > MAX_CACHE_ENTRIES) cache.delete(cache.keys().next().value!)
-}
-
-function baseInfo(url: string, raw: Record<string, unknown> | null): PrInfo {
-  if (!raw) return { url, error: 'unavailable' }
-  const author = raw.author as Record<string, unknown> | undefined
-  return {
-    url,
-    state: typeof raw.state === 'string' ? raw.state : undefined,
-    isDraft: raw.isDraft === true,
-    title: typeof raw.title === 'string' ? raw.title : undefined,
-    author: typeof author?.login === 'string' ? author.login : undefined,
-  }
-}
-
-/** Batched eager fetch: bounded gh calls shared with checks, cached 60s. */
-export async function fetchPrInfo(urls: string[]): Promise<PrInfo[]> {
-  const now = Date.now()
-  return Promise.all(
-    urls.map(async (url) => {
-      const cached = cache.get(`info:${url}`)
-      if (cached && now - cached.at < CACHE_TTL_MS) return cached.info
-      const parsed = parsePrUrl(url)
-      const info = parsed
-        ? baseInfo(
-            url,
-            await ghPrView(
-              parsed.repo,
-              parsed.number,
-              'state,isDraft,title,author'
-            )
-          )
-        : { url, error: 'invalid url' }
-      cacheInfo(`info:${url}`, info)
-      return info
-    })
-  )
+export function canonicalPrUrl(url: string): string | null {
+  const pr = parsePrUrl(url)
+  return pr ? `https://github.com/${pr.repo.toLowerCase()}/pull/${pr.number}` : null
 }
 
 // Check runs report status+conclusion; status contexts report state
@@ -115,33 +49,4 @@ export function mapCheck(
           ? c.targetUrl
           : undefined,
   }
-}
-
-/** Lazy fetch for hover cards: includes CI check rollup. */
-export async function fetchPrChecks(url: string): Promise<PrCheckInfo> {
-  const now = Date.now()
-  const cached = cache.get(`checks:${url}`)
-  if (cached && now - cached.at < CACHE_TTL_MS) return cached.info
-  const parsed = parsePrUrl(url)
-  let info: PrCheckInfo = parsed
-    ? { url, error: 'unavailable' }
-    : { url, error: 'invalid url' }
-  if (parsed) {
-    const raw = await ghPrView(
-      parsed.repo,
-      parsed.number,
-      'state,isDraft,title,author,statusCheckRollup'
-    )
-    if (raw) {
-      const rollup = Array.isArray(raw.statusCheckRollup)
-        ? (raw.statusCheckRollup as Record<string, unknown>[])
-        : []
-      info = {
-        ...baseInfo(url, raw),
-        checks: rollup.slice(0, 20).map(mapCheck),
-      }
-    }
-  }
-  cacheInfo(`checks:${url}`, info)
-  return info
 }

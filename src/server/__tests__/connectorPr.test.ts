@@ -1,12 +1,11 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { getCachedPullRequests, pullRequestScanPlan, rescanPullRequests } from '../agentSessions'
 import type { AgentSessionRecord } from '../db'
-import { GhRequestQueue } from '../ghRequestQueue'
+import { PrStatusStore } from '../prStatusStore'
 import { clearPrScanCache, extractPullRequests, getSessionPullRequests } from '../prExtractor'
-import { fetchPrInfo } from '../prInfo'
 
 // Minimal synthetic versions of Codex response_item records: no private
 // transcript, PR body, branch name, or tool IDs from the reported session.
@@ -155,18 +154,22 @@ describe('connector PR association', () => {
       lastResumeError: null, wakeStartedAt: null,
       lastKnownLogSize: (await fs.stat(file)).size, isCodexExec: false, launchCommand: null,
     }
-    const github = spyOn(GhRequestQueue.prototype, 'request').mockResolvedValue({
-      state: 'MERGED', isDraft: false, title: 'fix', author: { login: 'author' },
-    })
+    const github = new PrStatusStore(':memory:', () => {}, { transport: {
+      list: async () => ({ items: [], etag: null, next: null }),
+      hydrate: async (repo, numbers) => {
+        expect(repo).toBe('acme/widgets')
+        expect(numbers).toEqual([488])
+        return [{ number: 488, state: 'MERGED', isDraft: false, title: 'fix', author: 'author', headSha: 'a'.repeat(40), updatedAt: Date.now() }]
+      },
+      checks: async () => [],
+    } })
     try {
-      // This is the same scan/serialization path used by sessionMetadataWorker.
       expect(rescanPullRequests(session, pullRequestScanPlan(session))).toBe(true)
       const prs = getCachedPullRequests(session)
       expect(prs).toEqual(expected)
-      expect(await fetchPrInfo(prs.map((pr) => pr.url))).toEqual([
-        { url, state: 'MERGED', isDraft: false, title: 'fix', author: 'author' },
-      ])
-      expect(github).toHaveBeenCalledWith('acme/widgets', 488, 'state,isDraft,title,author')
-    } finally { github.mockRestore() }
+      github.register(prs.map(pr => pr.url))
+      await github.poll()
+      expect(github.read([url])[0]).toMatchObject({ url, state: 'MERGED', title: 'fix', author: 'author' })
+    } finally { await github.stop() }
   })
 })
