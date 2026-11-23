@@ -1,5 +1,6 @@
 /** Resolve only transcript-discovered references; never accept an arbitrary target. */
 import path from 'node:path'
+import { sidebarImageResponse } from './codexSidebarImage'
 import { PreviewTlsError } from './certificates'
 import { OutputFileResolver } from './fileResolver'
 import { absoluteOutputPath } from './fileEvidence'
@@ -25,6 +26,17 @@ export function outputRoutes(options: {
   const app = new Hono()
   const files = new OutputFileResolver()
   const thumbnails = new OutputThumbnails(path.join(options.cacheRoot, 'output-thumbnails'))
+  app.get('/:sessionId/sidebar-image', async c => {
+    const record = options.getSession(c.req.param('sessionId'))
+    if (record?.agentType !== 'codex' || !record.logFilePath) return c.notFound()
+    const name = c.req.query('name') ?? ''
+    try {
+      const file = await files.sidebarImage(name, record)
+      const current = options.getSession(record.sessionId)
+      if (!file || !current || metadataIdentity(current) !== metadataIdentity(record) || current.projectPath !== record.projectPath) return c.notFound()
+      return await sidebarImageResponse(file) ?? c.notFound()
+    } catch { return c.notFound() }
+  })
   app.get('/:sessionId/open', async c => {
     const record = options.getSession(c.req.param('sessionId'))
     if (!record?.logFilePath) return c.json({ error: 'Session not found' }, 404)

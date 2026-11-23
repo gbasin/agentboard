@@ -200,6 +200,7 @@ export default function Terminal({
     sessionId: session?.id ?? null,
     tmuxTarget: session?.tmuxWindow ?? null,
     agentType: session?.agentType,
+    agentSessionId: session?.agentSessionId,
     onPasteFiles: (input) => pasteFilesRef.current(input),
     onPasteError: (message) => pasteErrorRef.current(message),
     allowAttach: !isReadOnly,

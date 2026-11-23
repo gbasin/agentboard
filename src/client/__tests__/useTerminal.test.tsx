@@ -42,6 +42,7 @@ class TerminalMock {
   }
 
   loadAddon() {}
+  onRender() { return { dispose() {} } }
 
   open(container: HTMLElement) {
     this.element = container
