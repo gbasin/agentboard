@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.47.0](https://github.com/gbasin/agentboard/compare/v0.46.11...v0.47.0) (2026-11-23)
+
+
+### Features
+
+* support Google Antigravity CLI sessions ([#608](https://github.com/gbasin/agentboard/issues/608)) ([d33937b](https://github.com/gbasin/agentboard/commit/d33937b7db1d0198f82870b5c5d03f9796520443))
+
+
+### Bug Fixes
+
+* display linked images in the Codex terminal file viewer ([#609](https://github.com/gbasin/agentboard/issues/609)) ([6329979](https://github.com/gbasin/agentboard/commit/63299792e601d39643662017bc321543b215a2f1))
+
 ## [0.46.11](https://github.com/gbasin/agentboard/compare/v0.46.10...v0.46.11) (2026-11-22)
 
 
