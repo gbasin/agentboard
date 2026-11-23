@@ -763,6 +763,8 @@ describe('db', () => {
         ('pin-era-history', '/tmp/pin-era-history.jsonl', '/tmp/project', 'claude', 'history', '${now}', '${now}', null, 0),
         ('pin-era-active', '/tmp/pin-era-active.jsonl', '/tmp/project', 'claude', 'active', '${now}', '${now}', 'agentboard:1', 0);
     `)
+    legacyDb.exec("ALTER TABLE agent_sessions ADD COLUMN last_known_log_revision TEXT")
+    legacyDb.exec("UPDATE agent_sessions SET last_known_log_revision='stored-revision' WHERE session_id='pin-era-active'")
     legacyDb.close()
 
     const migrated = initDatabase({ path: dbPath })
@@ -773,6 +775,7 @@ describe('db', () => {
 
     expect(columnNames).toContain('is_hibernating')
     expect(columnNames).not.toContain('is_pinned')
+    expect(migrated.getSessionById('pin-era-active')?.lastKnownLogRevision).toBe('stored-revision')
     expect(migrated.getSessionById('pin-era-hibernating')?.isHibernating).toBe(true)
     expect(migrated.getSessionById('pin-era-history')?.isHibernating).toBe(false)
     expect(migrated.getHibernatingSessions().map((session) => session.sessionId)).toEqual([
@@ -785,6 +788,10 @@ describe('db', () => {
       'pin-era-active',
     ])
 
+    expect(migrated.insertSession(makeSession({
+      sessionId: 'antigravity-id', agentType: 'antigravity', currentWindow: null, isHibernating: false,
+      lastActivityAt: '2000-01-01T00:00:00Z',
+    })).agentType).toBe('antigravity')
     migrated.close()
     fs.rmSync(tempDir, { recursive: true, force: true })
   })

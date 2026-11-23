@@ -19,6 +19,7 @@ export const PRESET_ICON_OPTIONS: ReadonlyArray<{ value: AgentType | ''; label: 
   { value: 'pi', label: 'Pi' },
   { value: 'devin', label: 'Devin' },
   { value: 'grok', label: 'Grok' },
+  { value: 'antigravity', label: 'Antigravity' },
   { value: 'omp', label: 'OMP' },
 ]
 

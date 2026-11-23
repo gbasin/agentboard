@@ -279,7 +279,7 @@ export default function NewSessionModal({
     commandAgentType && !yoloChecked ? yoloConflict(command, commandAgentType) : null
   const yoloDisabled = !yoloSupported || yoloConflictReason !== null
   const yoloTooltip = !commandAgentType
-    ? 'Enter a supported agent command (claude, codex, grok, devin)'
+    ? 'Enter a supported agent command (claude, codex, pi, grok, devin, omp, agy)'
     : commandAgentType === 'pi'
       ? 'Pi has no permission prompts — nothing to enable'
       : yoloConflictReason ?? `Append ${yoloFlagFor(commandAgentType)}`

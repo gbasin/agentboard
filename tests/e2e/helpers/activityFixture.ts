@@ -14,23 +14,25 @@ function tmux(args: string[]) {
   if (result.status !== 0) throw new Error(result.stderr)
   return result.stdout.trim()
 }
-export function seedActivity(kind: 'claude' | 'codex', ownership = false) {
+export function seedActivity(kind: 'claude' | 'codex' | 'antigravity', ownership = false, workspaceKnown = true) {
   const root = process.env.E2E_TMUX_TMPDIR!
   const sessionId = randomUUID(), childId = randomUUID()
   const name = `activity-${kind}-${sessionId.slice(0, 8)}`
   const project = path.join(root, name)
   fs.mkdirSync(project)
   const prompt = `Inspect fixture ${sessionId.slice(0, 8)}`
-  const userPrompt = () => activityLine(kind === 'claude'
+  const userPrompt = () => activityLine(kind === 'antigravity'
+    ? { step_index: 0, type: 'USER_INPUT', source: 'USER_EXPLICIT', status: 'DONE', created_at: new Date().toISOString(), content: '<USER_REQUEST>' + prompt + '</USER_REQUEST>' }
+    : kind === 'claude'
     ? { type: 'user', sessionId, cwd: project, message: { role: 'user', content: prompt } }
     : { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: prompt }] } })
   const textFile = path.join(project, 'prompt.txt')
-  fs.writeFileSync(textFile, `${kind === 'claude' ? '❯' : '›'} ${prompt}\n`)
-  const fixtureCli = path.join(project, kind)
+  fs.writeFileSync(textFile, kind === 'antigravity' ? '─'.repeat(80) + '\n> ' + prompt + '\n● Ready\n' : `${kind === 'claude' ? '❯' : '›'} ${prompt}\n`)
+  const fixtureCli = path.join(project, kind === 'antigravity' ? 'agy' : kind)
   const gate = path.join(project, 'ready')
   // Print only after setting deterministic private-window geometry. This
   // prevents an earlier phone viewport from wrapping the matching prompt.
-  fs.writeFileSync(fixtureCli, `#!/bin/sh\nwhile [ ! -f '${gate}' ]; do sleep 0.01; done\ncat '${textFile}'\nsleep 600\n`, { mode: 0o755 })
+  fs.writeFileSync(fixtureCli, `#!/bin/sh\nwhile [ ! -f '${gate}' ]; do sleep 0.01; done\ncat '${textFile}'\nif [ "$1" = "--conversation" ]; then printf '%s' "$2" > '${project}/resumed-id'; fi\nsleep 600\n`, { mode: 0o755 })
   let log: string, child: string
   if (kind === 'claude') {
     const dir = path.join(process.env.CLAUDE_CONFIG_DIR!, 'projects', project.replace(/\//g, '-'))
@@ -42,6 +44,28 @@ export function seedActivity(kind: 'claude' | 'codex', ownership = false) {
     child = path.join(childDir, `agent-${childId}.jsonl`)
     fs.writeFileSync(child, activityLine({ type: 'assistant', sessionId, agentId: childId, isSidechain: true, cwd: project, message: { content: [{ type: 'tool_use', id: 'bash1', name: 'Bash', input: { command: 'private command must not appear' } }] } }))
     fs.writeFileSync(child.replace('.jsonl', '.meta.json'), JSON.stringify({ description: 'Review activity parser' }))
+  } else if (kind === 'antigravity') {
+    const home = process.env.AGENTBOARD_ANTIGRAVITY_HOME!
+    const logs = (id: string) => path.join(home, 'brain', id, '.system_generated/logs/transcript.jsonl')
+    log = logs(sessionId)
+    child = logs(childId)
+    fs.mkdirSync(path.dirname(log), { recursive: true })
+    fs.mkdirSync(path.dirname(child), { recursive: true })
+    const init = spawnSync('bun', ['-e', `
+      const { Database } = require('bun:sqlite')
+      const [file, parent, child, project] = Bun.argv.slice(1)
+      const db = new Database(file)
+      db.run("CREATE TABLE IF NOT EXISTS conversation_summaries (conversation_id TEXT PRIMARY KEY, workspace_uris TEXT, parent_conversation_id TEXT, agent_name TEXT)")
+      const insert = db.query("INSERT INTO conversation_summaries VALUES (?, ?, ?, ?)")
+      const uris = JSON.stringify(${workspaceKnown} ? [require('node:url').pathToFileURL(project).href] : [])
+      insert.run(parent, uris, '', '')
+      insert.run(child, uris, parent, 'research')
+      db.close()
+    `, path.join(home, 'conversation_summaries.db'), sessionId, childId, project], { env: process.env, encoding: 'utf8' })
+    if (init.status !== 0) throw new Error(init.stderr)
+    fs.writeFileSync(log, userPrompt())
+    fs.writeFileSync(child, activityLine({ step_index: 1, source: 'MODEL', status: 'DONE', type: 'PLANNER_RESPONSE',
+      created_at: new Date().toISOString(), tool_calls: [{ name: 'read_file', args: { Path: 'secret body' } }] }))
   } else {
     const dir = path.join(process.env.CODEX_HOME!, 'sessions', '2026', '10', '30')
     fs.mkdirSync(dir, { recursive: true })

@@ -56,6 +56,19 @@ function claudePrLink(url: string, repo = 'acme/widgets', number = 42): string {
 }
 
 describe('extractPullRequests', () => {
+  test('Antigravity attributes only the adjacent command result, across appends', async () => {
+    const log = path.join(tempRoot, 'transcript.jsonl')
+    const planner = { step_index: 8, type: 'PLANNER_RESPONSE', source: 'MODEL', status: 'DONE',
+      tool_calls: [{ name: 'run_command', args: { CommandLine: '"gh pr create --fill"' } }] }
+    const result = { step_index: 9, type: 'RUN_COMMAND', source: 'MODEL', status: 'DONE',
+      content: 'Output: https://github.com/acme/widgets/pull/42' }
+    await fs.writeFile(log, JSON.stringify(planner) + '\n')
+    expect(getSessionPullRequests(log)).toEqual([])
+    await fs.appendFile(log, JSON.stringify(result) + '\n')
+    expect(getSessionPullRequests(log).map(pr => pr.number)).toEqual([42])
+    expect(extractPullRequests([planner, { ...result, step_index: 11 }].map(step => JSON.stringify(step)).join('\n'))).toEqual([])
+  })
+
   test('captures PR URL from tool result after gh pr create', () => {
     const content = [
       claudeBashToolUse('gh pr create --fill'),
@@ -1168,4 +1181,14 @@ describe('getSessionPullRequests', () => {
       expect(getSessionPullRequests(logPath).map((p) => p.number)).toEqual([11])
     })
   })
+})
+
+test('Antigravity 1.5 CLI attributes successful generic command output', () => {
+  const planner = { step_index: 1, type: 'PLANNER_RESPONSE', source: 'MODEL', status: 'DONE',
+    tool_calls: [{ name: 'run_command', args: { CommandLine: JSON.stringify('/tmp/fixture/gh pr create --fill') } }] }
+  const result = { step_index: 2, type: 'GENERIC', source: 'MODEL', status: 'DONE',
+    content: 'Completed At: 2026-11-01T00:00:00Z\nCommand exited with code 0.\n\nCommand output:\nhttps://github.com/example/fixture/pull/42\r\n' }
+  const ids = (content: string) => extractPullRequests([planner, { ...result, content }].map(s => JSON.stringify(s)).join('\n')).map(pr => pr.number)
+  expect(ids(result.content)).toEqual([42])
+  expect(ids(result.content.replace('code 0.', 'code 1.'))).toEqual([])
 })

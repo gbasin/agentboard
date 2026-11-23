@@ -1,5 +1,6 @@
 /** Optional image extraction and decoding are isolated from terminal and catalog workers. */
 import { createHash } from 'node:crypto'
+import { antigravitySessionId } from './antigravityLogs'
 import fs from 'node:fs/promises'
 import { readMediaLine } from './mediaLine'
 import { extractMediaItems } from './mediaExtractor'
@@ -22,7 +23,7 @@ export class MediaThumbnails {
     const source = JSON.stringify([ref.path, ref.offset,
       String(stat.dev), String(stat.ino), String(stat.size), String(stat.mtimeNs), String(stat.ctimeNs)])
     const cached = this.cache.get(key)
-    if (cached?.source === source) { this.cache.delete(key); this.cache.set(key, cached); return cached.body }
+    if (cached?.source === source && !antigravitySessionId(ref.path)) { this.cache.delete(key); this.cache.set(key, cached); return cached.body }
     const line = await readMediaLine(ref.path, ref.offset)
     if (!line) fail('NOT_FOUND')
     if (createHash('sha256').update(line).digest('hex') !== ref.digest) fail('STALE')

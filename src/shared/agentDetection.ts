@@ -72,7 +72,7 @@ function unwrapBashLoginWrapper(command: string): string | null {
   return unquoteShellString(rest)
 }
 
-export type AgentFamily = 'claude' | 'codex' | 'pi' | 'devin' | 'grok' | 'omp'
+export type AgentFamily = 'claude' | 'codex' | 'pi' | 'devin' | 'grok' | 'omp' | 'antigravity'
 
 /** Collapse agent variants onto the log family they write to (claude-rp -> claude). */
 export function agentFamily(agentType: AgentType | null | undefined): AgentFamily | null {
@@ -95,6 +95,7 @@ function agentTypeFromBaseName(baseName: string): AgentType | undefined {
   if (baseName === 'pi') return 'pi'
   if (baseName === 'devin' || baseName === 'devin-cli') return 'devin'
   if (baseName === 'grok' || baseName.startsWith('grok-')) return 'grok'
+  if (baseName === 'agy') return 'antigravity'
   if (baseName === 'omp') return 'omp'
   return undefined
 }

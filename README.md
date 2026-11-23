@@ -120,6 +120,7 @@ Sessions from other machines appear on the same board over SSH, with a host badg
 | Pi | Yes | Yes | Links | |
 | oh-my-pi | Yes | Yes | Links | |
 | Devin CLI | Yes | Yes | Links | |
+| Google Antigravity CLI (`agy`) | Yes | Yes | Links | |
 | Grok CLI | Yes | Yes | Links | |
 
 The media rail shows images, documents, and links for Claude Code and Codex. For the other agents it shows links.

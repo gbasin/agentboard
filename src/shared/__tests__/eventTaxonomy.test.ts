@@ -287,3 +287,13 @@ describe('eventTaxonomy', () => {
     ).toEqual([])
   })
 })
+
+test('Antigravity transcript tools stay distinct from assistant prose', () => {
+  const step = { step_index: 1, type: 'PLANNER_RESPONSE', source: 'MODEL', status: 'DONE',
+    content: 'Opening the attachment.', thinking: 'internal', tool_calls: [{ name: 'read_file', args: { Path: 'internal' } }] }
+  expect(normalizeAgentLogEntry(step).map(e => [e.kind, e.text])).toEqual([
+    ['message', 'Opening the attachment.'], ['tool_call', '[Tool: read_file]'],
+  ])
+  expect(normalizeAgentLogEntry({ ...step, type: 'GENERIC', content: 'Image opened' })[0])
+    .toMatchObject({ kind: 'tool_result', role: 'tool', text: 'Image opened' })
+})

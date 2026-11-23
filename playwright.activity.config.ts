@@ -3,6 +3,8 @@ import { defineConfig } from '@playwright/test'
 import base from './playwright.config'
 process.env.AGENTBOARD_OWNERSHIP_MATCHING = 'true'
 process.env.AGENTBOARD_SKIP_MATCHING_PATTERNS = ''
+// Resume the fixture executable inside its workspace on every runner.
+process.env.ANTIGRAVITY_RESUME_CMD = './agy --conversation {sessionId}'
 process.env.ACTIVITY_E2E_MATRIX = '1'
 const binary = process.env.ACTIVITY_E2E_BINARY
 const command = binary

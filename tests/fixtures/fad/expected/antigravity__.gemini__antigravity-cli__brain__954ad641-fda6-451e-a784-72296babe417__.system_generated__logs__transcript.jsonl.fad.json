@@ -1,0 +1,40 @@
+{
+  "agent": "antigravity",
+  "externalId": "954ad641-fda6-451e-a784-72296babe417",
+  "title": "Review the command parser.",
+  "workspace": null,
+  "sourcePath": ".gemini/antigravity-cli/brain/954ad641-fda6-451e-a784-72296babe417/.system_generated/logs/transcript.jsonl",
+  "startedAt": 1793534400000,
+  "endedAt": 1793534403000,
+  "metadata": {
+    "source": "antigravity",
+    "layout": "cli",
+    "data_root": ".gemini/antigravity-cli"
+  },
+  "messages": [
+    {
+      "idx": 0,
+      "role": "user",
+      "content": "Review the command parser.\n\nInclude the resume flags.",
+      "createdAt": 1793534400000
+    },
+    {
+      "idx": 1,
+      "role": "assistant",
+      "content": "I checked the parser and its resume flags.",
+      "createdAt": 1793534401000
+    },
+    {
+      "idx": 2,
+      "role": "user",
+      "content": "Run the regression suite for the command parser.",
+      "createdAt": 1793534402000
+    },
+    {
+      "idx": 3,
+      "role": "system",
+      "content": "A generated summary of previous turns.",
+      "createdAt": 1793534403000
+    }
+  ]
+}

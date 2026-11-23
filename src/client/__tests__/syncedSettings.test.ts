@@ -97,6 +97,14 @@ describe('applySyncedSettings', () => {
     expect(state.lastProjectPath).toBe('/proj/b')
   })
 
+  test('adds the Antigravity launcher when a server sends older presets', () => {
+    const customized = { id: 'claude', label: 'Claude', command: 'claude --model opus', isBuiltIn: true }
+    applySyncedSettings({ commandPresets: [customized] })
+    const presets = useSettingsStore.getState().commandPresets
+    expect(presets[0]).toEqual(customized)
+    expect(presets.find(preset => preset.id === 'antigravity')?.command).toBe('agy')
+  })
+
   test('ignores unknown keys and invalid values', () => {
     applySyncedSettings({
       theme: 'neon',

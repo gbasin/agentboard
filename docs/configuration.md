@@ -126,6 +126,7 @@ Agentboard finds each agent's transcripts in the agent's default location and re
 | Pi | `~/.pi/agent/sessions/` | `PI_HOME` | `pi --session {logFilePath}` | `PI_RESUME_CMD` |
 | oh-my-pi | `~/.omp/agent/sessions/` | `PI_CODING_AGENT_DIR`, `PI_CONFIG_DIR` | `omp --resume {logFilePath}` | `OMP_RESUME_CMD` |
 | Devin CLI | `~/.local/share/devin/cli/` | `DEVIN_CLI_DIR`, `XDG_DATA_HOME` | `devin --resume {sessionId}` | `DEVIN_RESUME_CMD` |
+| Google Antigravity CLI | `~/.gemini/antigravity-cli/brain/` | `AGENTBOARD_ANTIGRAVITY_HOME` (parent of `brain/`) | `agy --conversation {sessionId}` | `ANTIGRAVITY_RESUME_CMD` |
 | Grok CLI | `~/.grok/sessions/` | `GROK_HOME` | `grok --resume {sessionId}` | `GROK_RESUME_CMD` |
 
 The overrides do not all name the same level of the path:
@@ -152,6 +153,8 @@ Notes:
 
 ## Session matching
 
+Antigravity conversation IDs come from the transcript directory. Agentboard reads the CLI’s `cache/last_conversations.json` for the workspace when it still lists that conversation.
+
 Agentboard matches each agent transcript to the tmux window that runs it. The match drives the last prompt, pull requests, and media shown for a session.
 
 | Variable | Default | Effect |
@@ -167,7 +170,7 @@ Agentboard matches each agent transcript to the tmux window that runs it. The ma
 
 ### Ownership matching
 
-Ownership matching identifies the conversation in a tmux window from the agent process that runs there. It covers local Claude Code and Codex sessions. The other agents keep the matching that is described above.
+Ownership matching identifies the conversation in a tmux window from the agent process that runs there. It covers local Claude Code, Codex, and Antigravity sessions. The other agents keep the matching that is described above.
 
 It is on by default on macOS. To turn it off, set `AGENTBOARD_OWNERSHIP_MATCHING=false` and restart Agentboard. Sessions that are already matched stay matched. On Linux the variable has no effect, because ownership matching is not yet validated there. You do not need to change any agent configuration.
 
@@ -176,7 +179,7 @@ How it identifies a conversation:
 - **Claude Code.** It reads the session ID from Claude's local PID registry and checks the entry against the running process.
 - **Codex.** It finds the one Codex process in the pane, then the transcript that this process holds open for writing, together with the writer lock for that conversation.
 
-Both readers use internal file formats of the agents.
+Antigravity identifies its conversation by the writable `presence/<conversation-id>.lock` held by the pane’s `agy` process. Agentboard requires the same single lock in two observations.
 
 When ownership is confirmed:
 
@@ -188,9 +191,9 @@ When ownership is confirmed:
 
 When ownership is not confirmed, the existing match stays. This is the result for a Codex session that a shared daemon serves, for a pane with more than one candidate, for a registry format that Agentboard does not recognize, and for an inspection that fails.
 
-Ownership matching can bind only a conversation that is already in the Agentboard database. A Codex transcript that is not yet there is queued for discovery. A Claude transcript arrives through normal transcript discovery. A later ownership check then binds the conversation. Checks run at startup and every 30 seconds.
+Ownership matching can bind only a conversation that is already in the Agentboard database. A Codex or Antigravity transcript that is not yet there is queued for discovery. A Claude transcript arrives through normal transcript discovery. A later ownership check then binds the conversation. Checks run at startup and every 30 seconds.
 
-**Diagnostics.** `AGENTBOARD_OWNERSHIP_OBSERVER=true` turns on the observer: a read-only check of the same evidence for local Claude and Codex sessions, at startup and every 30 seconds. The observer also runs whenever ownership matching is on. To observe on macOS without ownership matching, set `AGENTBOARD_OWNERSHIP_MATCHING=false` as well. A changed result appears in the log as an `ownership_observation` event with the comparison `agree`, `unmatched`, `disagree`, or `unresolved`. Set `LOG_LEVEL=debug` to add the counts and the duration of each cycle.
+**Diagnostics.** `AGENTBOARD_OWNERSHIP_OBSERVER=true` turns on the observer: a read-only check of the same evidence for local Claude, Codex, and Antigravity sessions, at startup and every 30 seconds. The observer also runs whenever ownership matching is on. To observe on macOS without ownership matching, set `AGENTBOARD_OWNERSHIP_MATCHING=false` as well. A changed result appears in the log as an `ownership_observation` event with the comparison `agree`, `unmatched`, `disagree`, or `unresolved`. Set `LOG_LEVEL=debug` to add the counts and the duration of each cycle.
 
 To compare a running instance once from a source checkout, give the command the instance's tmux socket and API address:
 

@@ -15,5 +15,5 @@ export function activityKey(session: ActivitySession): string {
 }
 export function supportsActivity(session: ActivitySession): boolean {
   return !session.remote && session.source === 'managed' && !!session.logFilePath && !!session.agentSessionId &&
-    (session.agentType === 'claude' || session.agentType === 'codex')
+    (session.agentType === 'claude' || session.agentType === 'codex' || session.agentType === 'antigravity')
 }

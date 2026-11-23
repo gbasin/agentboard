@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { isAntigravityAuxiliaryFile } from './antigravityLogs'
 import { logger } from './logger'
 
 interface LogWatcherOptions {
@@ -100,7 +101,7 @@ export class LogWatcher {
   }
 
   private handleEvent(filePath: string): void {
-    if (!filePath.endsWith('.jsonl')) return
+    if (!filePath.endsWith('.jsonl') || isAntigravityAuxiliaryFile(filePath)) return
 
     this.pending.add(filePath)
     const now = Date.now()

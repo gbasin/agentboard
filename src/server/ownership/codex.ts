@@ -51,14 +51,14 @@ export function isWithinPane(pid: number, panePid: number, processes: ProcessIde
   return false
 }
 
-export function isCodex(process: ProcessIdentity): boolean {
-  return path.basename(process.command) === 'codex'
+export function paneCodexRoots(panePid: number, processes: ProcessIdentity[]): ProcessIdentity[] {
+  return paneProcessRoots('codex', panePid, processes)
 }
 
-export function paneCodexRoots(panePid: number, processes: ProcessIdentity[]): ProcessIdentity[] {
-  const candidates = processes.filter(process => isCodex(process) && isWithinPane(process.pid, panePid, processes))
+export function paneProcessRoots(command: string, panePid: number, processes: ProcessIdentity[]): ProcessIdentity[] {
+  const candidates = processes.filter(process => path.basename(process.command) === command && isWithinPane(process.pid, panePid, processes))
   // Tool helpers (including app-server clients) can themselves be named codex.
-  // Only the outermost Codex process represents the terminal's CLI.
+  // Only the outermost matching process represents the terminal's CLI.
   return candidates.filter(process => !candidates.some(other => other.pid !== process.pid
     && isWithinPane(process.pid, other.pid, processes)))
 }

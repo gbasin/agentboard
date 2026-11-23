@@ -123,7 +123,8 @@ export class SessionRefreshWorkerClient {
 
   async getLastUserMessage(
     tmuxWindow: string,
-    scrollbackLines?: number
+    scrollbackLines?: number,
+    agentType?: Session['agentType']
   ): Promise<string | null> {
     if (this.disposed) {
       throw new Error('Session refresh worker is disposed')
@@ -139,6 +140,7 @@ export class SessionRefreshWorkerClient {
       kind: 'last-user-message',
       tmuxWindow,
       scrollbackLines,
+      agentType,
     }
 
     return new Promise<string | null>((resolve, reject) => {

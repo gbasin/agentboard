@@ -18,7 +18,7 @@
  * seeds server-absent keys from its local values on sync. Fresh browsers
  * have nothing to seed and simply adopt the server values.
  */
-import { useSettingsStore } from './stores/settingsStore'
+import { includeBuiltInPresets, useSettingsStore } from './stores/settingsStore'
 import { useThemeStore, type Theme } from './stores/themeStore'
 import { safeStorage } from './utils/storage'
 import { clientLog } from './utils/clientLog'
@@ -173,6 +173,8 @@ export function applySyncedSettings(settings: SyncedSettings): void {
     if (isLocallyOwned(key)) continue
     if (key === 'theme') {
       theme = value as Theme
+    } else if (key === 'commandPresets' && settings.commandPresets) {
+      settingsPatch[key] = includeBuiltInPresets(settings.commandPresets)
     } else {
       settingsPatch[key] = value
     }

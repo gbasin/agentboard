@@ -14,6 +14,7 @@
 // - devin:   subagents share the parent's message tree — nothing to do.
 // - grok:    no subagent transcript format observed — nothing to do.
 
+import { antigravityDescendants } from './antigravityLogs'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentType } from '../shared/types'
@@ -260,6 +261,7 @@ export function getSubagentLogPaths(
   sessionId: string
 ): string[] {
   if (!logPath) return []
+  if (agentType === 'antigravity') return antigravityDescendants(logPath, sessionId)
   const stem = logPath.endsWith('.jsonl') ? logPath.slice(0, -6) : logPath
 
   if (agentType === 'claude') {

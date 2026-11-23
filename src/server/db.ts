@@ -165,7 +165,7 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   session_id TEXT UNIQUE,
   log_file_path TEXT NOT NULL UNIQUE,
   project_path TEXT,
-  agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'claude-rp', 'codex', 'pi', 'devin', 'grok', 'omp')),
+  agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'claude-rp', 'codex', 'pi', 'devin', 'grok', 'omp', 'antigravity')),
   display_name TEXT,
   created_at TEXT NOT NULL,
   last_activity_at TEXT NOT NULL,
@@ -179,7 +179,8 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   last_known_log_size INTEGER,
   is_codex_exec INTEGER NOT NULL DEFAULT 0,
   slug TEXT,
-  launch_command TEXT
+  launch_command TEXT,
+  last_known_log_revision TEXT
 `
 
 const CREATE_TABLE_SQL = `
@@ -982,7 +983,8 @@ function migrateAgentTypeConstraint(db: SQLiteDatabase) {
     tableInfo.sql.includes("'pi'") &&
     tableInfo.sql.includes("'devin'") &&
     tableInfo.sql.includes("'grok'") &&
-    tableInfo.sql.includes("'omp'")
+    tableInfo.sql.includes("'omp'") &&
+    tableInfo.sql.includes("'antigravity'")
   ) {
     return
   }
@@ -1017,7 +1019,8 @@ function migrateAgentTypeConstraint(db: SQLiteDatabase) {
         wake_started_at,
         last_known_log_size,
         is_codex_exec,
-        launch_command
+        launch_command,
+        last_known_log_revision
       )
       SELECT
         id,
@@ -1036,7 +1039,8 @@ function migrateAgentTypeConstraint(db: SQLiteDatabase) {
         ${wakeStartedAtSelect},
         last_known_log_size,
         is_codex_exec,
-        ${launchCommandSelect}
+        ${launchCommandSelect},
+        ${existingColumns.includes('last_known_log_revision') ? 'last_known_log_revision' : 'NULL'}
       FROM agent_sessions_old_agent_type_migrate
     `)
     db.exec('DROP TABLE agent_sessions_old_agent_type_migrate')

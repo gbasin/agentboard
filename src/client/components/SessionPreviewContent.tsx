@@ -146,7 +146,7 @@ function inferLogSource(
   // ahead of Claude type detection — matching the original ordering).
   const family = inferSourceFamily(record)
   if (family === 'pi') return 'pi'
-  if (family === 'grok') return 'grok'
+  if (family === 'grok' || family === 'antigravity') return family
   const type = asString(record.type) ?? ''
   const payloadType = asString(asRecord(record.payload)?.type) ?? ''
   if (type === 'event_msg' || type === 'response_item' || payloadType) return 'codex'

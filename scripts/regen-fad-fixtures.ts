@@ -60,6 +60,7 @@ interface FadConversation {
   externalId: string | null
   title: string | null
   workspace: string | null
+  metadata?: Record<string, unknown>
   sourcePath: string
   startedAt: number | null
   endedAt: number | null
@@ -114,6 +115,9 @@ function main(): void {
       // absolute paths would pin the expected file to the generating machine.
       const portable = {
         ...conv,
+        ...(conv.agent === 'antigravity' && typeof conv.metadata?.data_root === 'string'
+          ? { metadata: { ...conv.metadata, data_root: path.relative(fixtureHome, conv.metadata.data_root).split(path.sep).join('/') } }
+          : {}),
         sourcePath: path.relative(fixtureHome, sourcePath).split(path.sep).join('/'),
       }
       fs.writeFileSync(outPath, JSON.stringify(portable, null, 2) + '\n')

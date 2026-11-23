@@ -84,6 +84,7 @@ interface ScanState {
   partialHasLink: boolean
   // Tool-call ids awaiting their result (id -> expiry in lines).
   pending: PendingCreate[]
+  antigravityResultStep: number | null
   connectorPending: Map<string, number>
   // Fallback lookahead (lines) for create commands that had no ids.
   windowRemaining: number
@@ -111,6 +112,7 @@ function newScanState(): ScanState {
     partialHasLink: false,
     pending: [],
     connectorPending: new Map(),
+    antigravityResultStep: null,
     windowRemaining: 0,
     seenUrls: new Set(),
     prs: [],
@@ -649,7 +651,35 @@ function collectUrls(state: ScanState, line: string): void {
   }
 }
 
+// A single run_command produces the adjacent RUN_COMMAND or GENERIC completion.
+function processAntigravityCreate(state: ScanState, line: string): void {
+  const expected = state.antigravityResultStep
+  state.antigravityResultStep = null
+  try {
+    const step = JSON.parse(line)
+    if (step?.source !== 'MODEL' || !Number.isInteger(step.step_index) || step.status !== 'DONE') return
+    if (expected === step.step_index && typeof step.content === 'string') {
+      if (step.type === 'RUN_COMMAND') collectUrls(state, step.content)
+      if (step.type === 'GENERIC') {
+        const output = /(?:^|\n)Command exited with code 0\.\r?\n\s*Command output:\r?\n([\s\S]*)/.exec(step.content)
+        if (output) collectUrls(state, output[1])
+      }
+      return
+    }
+    if (!Array.isArray(step.tool_calls) || step.tool_calls.length !== 1) return
+    const call = step.tool_calls[0]
+    if (call?.name !== 'run_command') return
+    const command = commandTextFromArgs(call.args?.CommandLine ?? call.arguments)
+    if (command === null || !invokesGhPrCreate(command)) return
+    if (step.type === 'PLANNER_RESPONSE') state.antigravityResultStep = step.step_index + 1
+    if (step.type === 'RUN_COMMAND' && typeof step.content === 'string') collectUrls(state, step.content)
+  } catch { /* Ignore incomplete trajectory steps. */ }
+}
+
 function processLine(state: ScanState, line: string): void {
+  if (state.antigravityResultStep !== null || (line.includes('"step_index"') && GH_PR_CREATE_LINE_RE.test(line))) {
+    processAntigravityCreate(state, line)
+  }
   if (line.includes('"CommandExecution"') && line.includes('pulls')) {
     try {
       for (const url of restPrCompletionUrls(JSON.parse(line), invokesGhPrCreate)) collectUrls(state, url)
@@ -769,6 +799,7 @@ function consumeChunk(state: ScanState, bytes: Buffer): void {
     return
   }
   if (
+    state.antigravityResultStep !== null ||
     state.pending.length > 0 ||
     state.connectorPending.size > 0 ||
     state.windowRemaining > 0 ||

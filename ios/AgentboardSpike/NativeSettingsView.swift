@@ -183,7 +183,7 @@ struct PresetEditor: View {
         NavigationStack { Form {
             Picker("Agent icon", selection: Binding(get: { preset.agentType ?? "" }, set: { preset.agentType = $0.isEmpty ? nil : $0 })) {
                 Text("Terminal").tag("")
-                ForEach(["claude", "codex", "pi", "devin", "grok", "omp"], id: \.self) { Text($0.capitalized).tag($0) }
+                ForEach(["claude", "codex", "pi", "devin", "grok", "omp", "antigravity"], id: \.self) { Text($0.capitalized).tag($0) }
             }
             FormField("Label") { TextField("Label", text: $preset.label) }
             FormField("Command") { TextField("Command", text: $preset.command).textInputAutocapitalization(.never).autocorrectionDisabled() }

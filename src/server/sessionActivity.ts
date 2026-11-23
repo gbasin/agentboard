@@ -1,5 +1,6 @@
 // Bounded passive activity reader for live sessions only. Cold reads use a
 // tail, then consume append-only bytes. Never executes harness commands.
+import { antigravityConversation, antigravitySessionId } from './antigravityLogs'
 import fs from 'node:fs/promises'
 import type { Stats } from 'node:fs'
 import path from 'node:path'
@@ -85,7 +86,7 @@ export class SessionActivityTracker {
 
   constructor(private readonly progress?: () => void, private readonly cursorLimit = CACHE_LIMIT) {}
 
-  private async read(logPath: string, kind: 'claude' | 'codex'): Promise<AgentActivity> {
+  private async read(logPath: string, kind: 'claude' | 'codex' | 'antigravity'): Promise<AgentActivity> {
     let file
     try {
       file = await fs.open(logPath, 'r')
@@ -292,7 +293,7 @@ export class SessionActivityTracker {
         result.push(session)
         continue
       }
-      const kind = session.agentType as 'claude' | 'codex'
+      const kind = session.agentType as 'claude' | 'codex' | 'antigravity'
       const parentLog = session.logFilePath!
       const main = await this.read(parentLog, kind)
       const paths = [...new Set(getSubagentLogPaths(parentLog, kind, session.agentSessionId!))].filter(p => p !== parentLog)
@@ -303,9 +304,10 @@ export class SessionActivityTracker {
       } else {
         children = []
         for (const logPath of await this.select(parentLog, paths)) {
-          const id = childId(logPath)
+          const agyId = kind === 'antigravity' ? antigravitySessionId(logPath) : null
+          const id = agyId ?? childId(logPath)
           const activity = await this.read(logPath, kind)
-          const name = this.cursors.get(logPath)?.state.name ?? this.summaries.get(logPath)?.name ?? id
+          const name = (agyId && antigravityConversation(agyId)?.agent_name.slice(0, 120)) || this.cursors.get(logPath)?.state.name || this.summaries.get(logPath)?.name || id
           children.push({ id, name, activity })
         }
       }

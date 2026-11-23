@@ -32,6 +32,7 @@ for (const name of ['claude', 'codex', 'pi', 'devin', 'grok']) mkdirSync(join(ro
 const appEnv = { ...env, LOG_LEVEL: 'debug', PORT: '18512', TMUX_SESSION: session, DISCOVER_PREFIXES: session,
   AGENTBOARD_DATA_DIR: root, AGENTBOARD_DB_PATH: join(root, 'agentboard.db'), LOG_FILE: join(root, 'app.log'),
   AGENTBOARD_STATIC_DIR: join(repo, 'dist/client'), CLAUDE_CONFIG_DIR: join(root, 'claude'),
+  AGENTBOARD_ANTIGRAVITY_HOME: join(root, 'antigravity-cli'),
   CODEX_HOME: join(root, 'codex'), PI_HOME: join(root, 'pi'), DEVIN_CLI_DIR: join(root, 'devin'), GROK_HOME: join(root, 'grok'),
 }
 const app = Bun.spawn(['bun', 'src/server/index.ts'], { cwd: repo, env: appEnv, stdout: Bun.file(join(root, 'server.log')), stderr: Bun.file(join(root, 'server.err')) })

@@ -207,3 +207,78 @@ test('Claude activity retains completed children outside the read cap and detect
     await info.attach('resumed-subagent', { body: await page.screenshot({ path: info.outputPath('resumed-subagent.png') }), contentType: 'image/png' })
   } finally { fixture.stop() }
 })
+
+test('Antigravity associates the parent, updates delegated work, and serves child images', async ({ page, request }, info) => {
+  const fixture = seedActivity('antigravity')
+  try {
+    await page.goto('/')
+    const card = page.getByTestId('session-card').filter({ hasText: fixture.name }).first()
+    await expect.poll(async () => {
+      const rows = await (await request.get('/api/sessions')).json()
+      const row = rows.find((s: { name: string }) => s.name === fixture.name)
+      if (row?.agentSessionId !== fixture.sessionId) fixture.refreshPrompt()
+      return row?.activity?.running
+    }, { timeout: 60_000 }).toBe(1)
+    await card.getByTestId('session-activity-counter').click()
+    const popover = page.getByTestId('session-activity-popover')
+    await expect(popover).toContainText('research')
+    await expect(popover).toContainText('Tool pending: read_file')
+    await expect(popover).not.toContainText('secret body')
+    const { TINY_PNG } = await import('./helpers/mediaFixture')
+    const { pathToFileURL } = await import('node:url')
+    const file = join(dirname(fixture.child), 'media', 'step_2_media_0.png')
+    fs.mkdirSync(dirname(file))
+    fs.writeFileSync(file, Buffer.from(TINY_PNG, 'base64'))
+    fixture.append({ type: 'GENERIC', source: 'MODEL', status: 'DONE', step_index: 2,
+      media: [{ mime_type: 'image/png', uri: pathToFileURL(file).href }] })
+    fixture.append({ type: 'PLANNER_RESPONSE', source: 'MODEL', status: 'DONE', step_index: 3, content: 'Finished.' })
+    await expect(popover).toContainText('0 running', { timeout: 20_000 })
+    const endpoint = '/api/session-media/' + fixture.sessionId + '/items'
+    expect((await request.get(endpoint + '?stream=1')).ok()).toBe(true)
+    const { items } = await (await request.get(endpoint)).json()
+    const image = items.find((item: { kind: string }) => item.kind === 'image')
+    expect(image).toBeDefined()
+    expect(await (await request.get(image.url)).body()).toEqual(Buffer.from(TINY_PNG, 'base64'))
+    expect((await request.get(image.url + '&thumbnail=1')).headers()['content-type']).toBe('image/png')
+    await page.screenshot({ path: info.outputPath('antigravity-activity.png') })
+    fs.writeFileSync(file, 'changed since indexing')
+    expect((await request.get(image.url)).status()).toBe(409)
+    expect((await request.get(image.url + '&thumbnail=1')).status()).toBe(409)
+  } finally { fixture.stop() }
+})
+
+test('Antigravity hibernates and wakes in its workspace with the same conversation and child', async ({ page, request }) => {
+  // The summary has a parent and child but no workspace URI at hibernate time.
+  const fixture = seedActivity('antigravity', false, false)
+  const card = page.getByTestId('session-card').filter({ hasText: fixture.name }).first()
+  const session = async () => {
+    const rows = await (await request.get('/api/sessions')).json()
+    return rows.find((row: { name: string }) => row.name === fixture.name)
+  }
+  const hibernate = async () => {
+    await page.getByRole('button', { name: 'Session actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Hibernate', exact: true }).click()
+    await expect.poll(session).toBeUndefined()
+  }
+  try {
+    await page.goto('/')
+    await expect.poll(async () => {
+      const row = await session()
+      if (!row?.agentSessionId) fixture.refreshPrompt()
+      return row?.agentSessionId
+    }, { timeout: 60_000 }).toBe(fixture.sessionId)
+    const original = await session()
+    await card.click()
+    await hibernate()
+    await page.locator('footer').getByRole('button', { name: 'Wake', exact: true }).click()
+    const marker = join(fixture.project, 'resumed-id')
+    await expect.poll(() => fs.existsSync(marker) && fs.readFileSync(marker, 'utf8')).toBe(fixture.sessionId)
+    await expect.poll(session).toMatchObject({
+      agentSessionId: fixture.sessionId,
+      projectPath: original.projectPath,
+      activity: { subagents: [{ name: 'research', id: original.activity.subagents[0].id }] },
+    })
+    expect((await session()).id).not.toBe(original.id)
+    await hibernate()
+  } finally { fixture.stop() }
+})

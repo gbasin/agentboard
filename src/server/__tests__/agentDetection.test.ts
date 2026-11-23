@@ -11,6 +11,13 @@ describe('inferAgentType', () => {
     expect(inferAgentType('devin-cli')).toBe('devin')
   })
 
+  test('detects Antigravity CLI by its executable, including a wrapped launch', () => {
+    expect(inferAgentType('agy')).toBe('antigravity')
+    expect(inferAgentType("bash -lc '/opt/bin/agy --conversation abc'")).toBe('antigravity')
+    expect(inferAgentType('echo agy')).toBeUndefined()
+    expect(inferAgentType('agy-helper')).toBeUndefined()
+  })
+
   test('detects other agents', () => {
     expect(inferAgentType('claude')).toBe('claude')
     expect(inferAgentType('/usr/local/bin/claude --model opus')).toBe('claude')
