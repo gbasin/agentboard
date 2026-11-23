@@ -95,6 +95,7 @@ describe('log discovery', () => {
     expect(extractLastUserMessageFromLog(canonical)).toBe(prompt)
     expect(extractLastEntryTimestamp(canonical)).toBe('2026-11-01T12:00:03Z')
     expect(findLogsWithExactMessage(prompt, brain, { userOnly: true })).toEqual([canonical])
+    expect(findLogsWithExactMessage(prompt, brain, { logPaths: [duplicate, canonical] })).toEqual([canonical])
     expect(findLogsWithExactMessage('A generated summary of previous turns.', brain, { userOnly: true })).toEqual([])
   })
 

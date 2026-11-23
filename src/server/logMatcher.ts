@@ -827,7 +827,7 @@ function findLogsWithExactMessageInPaths(
   if (!userMessage || userMessage.length < minLength) {
     return []
   }
-  const uniquePaths = Array.from(new Set(logPaths)).filter(Boolean)
+  const uniquePaths = Array.from(new Set(logPaths)).filter(file => file && !isAuxiliaryLogFile(file))
   if (uniquePaths.length === 0) return []
 
   // Use flexible pattern for fast ripgrep search
@@ -896,7 +896,7 @@ async function findLogsWithExactMessageInPathsAsync(
   if (!userMessage || userMessage.length < minLength) {
     return []
   }
-  const uniquePaths = Array.from(new Set(logPaths)).filter(Boolean)
+  const uniquePaths = Array.from(new Set(logPaths)).filter(file => file && !isAuxiliaryLogFile(file))
   if (uniquePaths.length === 0) return []
 
   const flexiblePattern = messageToFlexiblePattern(userMessage)
