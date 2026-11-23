@@ -41,8 +41,8 @@ function pythonTokens(source: string): Token[] {
 function pythonRepos(command: string): string[] {
   // Only an executed Python heredoc is supported, not Python source supplied
   // to cat/echo or embedded in another command's quoted argument.
-  const match = /^\s*(?:\S*\/)?python3?\s+-\s*<<\s*(['"]?)(\w+)\1\s*\n([\s\S]*?)\n\2\s*$/.exec(command)
-  if (!match) return []
+  const match = /^[ \t]*(?:[\w./-]*\/)?python3?[ \t]+-[ \t]*<<[ \t]*(['"]?)(\w+)\1[ \t]*\n([\s\S]*?)\n\2(?:\n[ \t\n]*)?$/.exec(command)
+  if (!match || match[3].split('\n').includes(match[2])) return []
   const tokens = pythonTokens(match[3])
   // Comprehensions in unrelated expressions do not guard a top-level call.
   // Keep rejecting control flow outside brackets and only accept calls at
@@ -71,6 +71,7 @@ function pythonRepos(command: string): string[] {
 }
 
 function chainedPythonRepos(script: string): string[] {
+  if (!script.includes('&&')) return []
   // A final heredoc after successful Git setup commands is also in command
   // position. Accept only literal Git segments joined by &&, so a skipped
   // branch, quoted Python example or heredoc for another command cannot match.
@@ -104,7 +105,6 @@ export function restPrCompletionUrls(entry: RecordValue, invokes: Matcher): stri
   const chainedRepos = new Set(chainedPythonRepos(script))
   const urls = new Set<string>()
   const chainedUrls = new Set<string>()
-  const lastLines = new Set<string>()
   for (const key of ['stdout', 'aggregated_output', 'formatted_output']) {
     const output = item[key]
     if (typeof output !== 'string') continue
@@ -112,15 +112,16 @@ export function restPrCompletionUrls(entry: RecordValue, invokes: Matcher): stri
       if (repos.has(match[1])) urls.add(match[0])
       if (chainedRepos.has(match[1])) chainedUrls.add(match[0])
     }
-    if (chainedRepos.size > 0) {
-      const trimmed = output.trimEnd()
-      lastLines.add(trimmed.slice(trimmed.lastIndexOf('\n') + 1).trimStart())
-    }
   }
   // Earlier Git commands share the completion's output. Require one distinct
   // matching URL and a final output line containing only that URL.
   if (chainedUrls.size === 1) {
-    for (const url of chainedUrls) if (lastLines.has(url)) urls.add(url)
+    const fullOutput = [item.aggregated_output, item.stdout, item.formatted_output]
+      .find(output => typeof output === 'string')
+    if (fullOutput === undefined) return [...urls]
+    const trimmed = fullOutput.trimEnd()
+    const lastLine = trimmed.slice(trimmed.lastIndexOf('\n') + 1).trimStart()
+    if (chainedUrls.has(lastLine)) urls.add(lastLine)
   }
   return [...urls]
 }

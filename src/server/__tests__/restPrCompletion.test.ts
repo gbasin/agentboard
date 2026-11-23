@@ -29,7 +29,7 @@ test('recognizes the trailing Python heredoc in a successful Git chain', () => {
     aggregated_output: `https://github.com/e2e/rest-pr/pull/16\n${output}`,
   })))).toEqual([])
   expect(extractPullRequests(line(restCompletion(chainedPython, {
-    aggregated_output: `${restPrUrl}\nFinished pushing\n`,
+    aggregated_output: `${restPrUrl}\nFinished pushing\n`, formatted_output: restPrUrl,
   })))).toEqual([])
   expect(extractPullRequests(line(restCompletion(chainedPython, {
     aggregated_output: output, exit_code: 1,
@@ -39,6 +39,8 @@ test('recognizes the trailing Python heredoc in a successful Git chain', () => {
 test('ignores branching, quoted Python and other Git chain lookalikes', () => {
   for (const command of [
     `git push || ${pythonRestCommand}`,
+    `git push && true||/usr/bin/${pythonRestCommand}`,
+    `git push && python3 - <<'PY'\npass\nPY\n: <<'PY'\n${pythonRestCommand.split('\n').slice(1).join('\n')}`,
     `git push && cat <<'EXAMPLE'\n${pythonRestCommand}\nEXAMPLE`,
     `git commit -m 'git push && ${pythonRestCommand}'`,
     `exit 0 && git push && ${pythonRestCommand}`,
