@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.1](https://github.com/gbasin/agentboard/compare/v0.48.0...v0.48.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* scroll the visible tmux pane and launch Antigravity in fullscreen ([#613](https://github.com/gbasin/agentboard/issues/613)) ([319e92a](https://github.com/gbasin/agentboard/commit/319e92acb485b630b4967bb33bcb00ca6179fe5f))
+
 ## [0.48.0](https://github.com/gbasin/agentboard/compare/v0.47.0...v0.48.0) (2026-11-23)
 
 
