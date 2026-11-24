@@ -60,6 +60,14 @@ export interface CommandPreset {
   agentType?: AgentType
 }
 
+const ANTIGRAVITY_PRESET: CommandPreset = {
+  id: 'antigravity',
+  label: 'Antigravity',
+  command: `agy --settings '{"altScreenMode":"always"}'`,
+  isBuiltIn: true,
+  agentType: 'antigravity',
+}
+
 export const DEFAULT_PRESETS: CommandPreset[] = [
   { id: 'claude', label: 'Claude', command: 'claude', isBuiltIn: true, agentType: 'claude' },
   { id: 'codex', label: 'Codex', command: 'codex', isBuiltIn: true, agentType: 'codex' },
@@ -67,7 +75,7 @@ export const DEFAULT_PRESETS: CommandPreset[] = [
   { id: 'grok', label: 'Grok', command: 'grok', isBuiltIn: true, agentType: 'grok' },
   { id: 'devin', label: 'Devin', command: 'devin', isBuiltIn: true, agentType: 'devin' },
   { id: 'omp', label: 'OMP', command: 'omp', isBuiltIn: true, agentType: 'omp' },
-  { id: 'antigravity', label: 'Antigravity', command: 'agy', isBuiltIn: true, agentType: 'antigravity' },
+  ANTIGRAVITY_PRESET,
 ]
 
 // Validation and helper functions
@@ -85,7 +93,16 @@ export function isValidPreset(p: unknown): p is CommandPreset {
 
 export function includeBuiltInPresets(presets: CommandPreset[]): CommandPreset[] {
   const existingIds = new Set(presets.map(p => p.id))
-  return [...presets, ...DEFAULT_PRESETS.filter(p => !existingIds.has(p.id))]
+  const updatedPresets = presets.map(p => (
+    p.id === ANTIGRAVITY_PRESET.id &&
+    p.label === ANTIGRAVITY_PRESET.label &&
+    p.agentType === ANTIGRAVITY_PRESET.agentType &&
+    p.isBuiltIn &&
+    p.command === 'agy'
+      ? { ...p, command: ANTIGRAVITY_PRESET.command }
+      : p
+  ))
+  return [...updatedPresets, ...DEFAULT_PRESETS.filter(p => !existingIds.has(p.id))]
 }
 
 export function normalizePreset(p: CommandPreset): CommandPreset {
@@ -304,7 +321,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'agentboard-settings',
       storage: createJSONStorage(() => safeStorage),
-      version: 10,
+      version: 11,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Record<string, unknown>
         // This preference is device-local: retain only this platform's old choice.
@@ -402,8 +419,8 @@ export const useSettingsStore = create<SettingsState>()(
         // The limit still applies when adding a preset.
         const finalPresets = includeBuiltInPresets(validPresets)
 
-        if (version < 10) {
-          console.info(`[agentboard:settings] Migrated from v${version} to v10`)
+        if (version < 11) {
+          console.info(`[agentboard:settings] Migrated from v${version} to v11`)
         }
 
         return {

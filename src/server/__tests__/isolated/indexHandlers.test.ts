@@ -4710,7 +4710,7 @@ describe('server message handlers', () => {
       agentType: 'antigravity',
       logFilePath: '/tmp/antigravity sessions/resume antigravity.jsonl',
       currentWindow: null,
-      launchCommand: '"agy -c --continue --conversation=old --model gemini"',
+      launchCommand: JSON.stringify(`agy -c --continue --conversation=old --model gemini --settings '{"altScreenMode":"always"}'`),
     })
     seedRecord(record)
 
@@ -4733,7 +4733,7 @@ describe('server message handlers', () => {
 
     expect(createArgs).not.toBeNull()
     expect(createArgs!.command).toBe(
-      'agy --model gemini --conversation resume-antigravity'
+      `agy --model gemini --settings '{"altScreenMode":"always"}' --conversation resume-antigravity`
     )
     const wakeResult = sent.find((m) => m.type === 'session-wake-result')
     expect(wakeResult && 'ok' in wakeResult && wakeResult.ok).toBe(true)
