@@ -18,6 +18,27 @@ export interface SyncedCommandPreset {
   agentType?: AgentType
 }
 
+export const ANTIGRAVITY_PRESET: SyncedCommandPreset = {
+  id: 'antigravity',
+  label: 'Antigravity',
+  command: `agy --settings '{"altScreenMode":"always"}'`,
+  isBuiltIn: true,
+  agentType: 'antigravity',
+}
+
+export function migrateLegacyAntigravityPreset(preset: SyncedCommandPreset): SyncedCommandPreset {
+  if (
+    preset.id === ANTIGRAVITY_PRESET.id &&
+    preset.label === ANTIGRAVITY_PRESET.label &&
+    preset.agentType === ANTIGRAVITY_PRESET.agentType &&
+    preset.isBuiltIn &&
+    preset.command === 'agy'
+  ) {
+    return { ...preset, command: ANTIGRAVITY_PRESET.command }
+  }
+  return preset
+}
+
 export interface SyncedSettings {
   theme?: 'dark' | 'light' | 'system'
   commandPresets?: SyncedCommandPreset[]

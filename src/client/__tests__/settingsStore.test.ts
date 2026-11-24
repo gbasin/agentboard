@@ -323,13 +323,19 @@ describe('preset migration', () => {
   test('upgrades the stock Antigravity launcher in v10 settings', async () => {
     const legacy = DEFAULT_PRESETS.map(p => p.id === 'antigravity' ? { ...p, command: 'agy' } : p)
     const custom = { id: 'custom-agy', label: 'My Antigravity', command: 'agy', isBuiltIn: false }
-    const { commandPresets, defaultPresetId } = await rehydratePresets([...legacy, custom], 'antigravity', 10)
+    const { commandPresets, defaultPresetId } = await rehydratePresets([...legacy, custom, null], 'antigravity', 10)
 
     expect(commandPresets.find(p => p.id === 'antigravity')?.command).toBe(
       `agy --settings '{"altScreenMode":"always"}'`
     )
     expect(commandPresets.find(p => p.id === custom.id)).toEqual(custom)
     expect(defaultPresetId).toBe('antigravity')
+  })
+
+  test('keeps a plain Antigravity command in current saved settings', async () => {
+    const edited = DEFAULT_PRESETS.map(p => p.id === 'antigravity' ? { ...p, command: 'agy' } : p)
+    const { commandPresets } = await rehydratePresets(edited, 'antigravity', 11)
+    expect(commandPresets).toEqual(edited)
   })
 
   test('migrates v1 presets from baseCommand and modifiers', async () => {

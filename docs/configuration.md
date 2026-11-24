@@ -99,7 +99,7 @@ Write each entry as a full origin: the scheme, the host, and the port if it is n
 
 Reasons to opt out: fullscreen rendering keeps the conversation in the alternate screen buffer instead of native terminal scrollback, so terminal-level search and copy workflows behave differently. Claude also captures mouse events unless you disable its mouse capture. Inside Claude Code, run `/tui default` to switch a session back to the classic renderer, or launch Claude with `CLAUDE_CODE_DISABLE_MOUSE=1` if you want fullscreen rendering but native mouse selection.
 
-The web app’s built-in Antigravity new-session preset enables its alternate screen with `agy --settings '{"altScreenMode":"always"}'`. To use terminal scrollback, select **Custom** in the new-session dialog and launch `agy --settings '{"altScreenMode":"never"}'`.
+The web app’s built-in Antigravity new-session preset enables its alternate screen with `agy --settings '{"altScreenMode":"always"}'`. To use terminal scrollback, save `agy --settings '{"altScreenMode":"never"}'` for Antigravity under **Settings → New sessions**, or enter it under **Custom** when starting a session.
 
 **`AGENTBOARD_TMUX_SET_CLIPBOARD`.** By default, Agentboard enables tmux's `set-clipboard on` when it attaches in `pty` mode. Copies made inside a session then land in a tmux paste buffer that Agentboard relays to the browser clipboard. This matters on iOS Safari, where the async OSC 52 path cannot satisfy the user-gesture rule. `set-clipboard` is a server-global tmux option, so this affects your whole tmux server and is not reverted on disconnect.
 

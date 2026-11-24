@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { test, expect, type Page } from '@playwright/test'
+import type { SyncedCommandPreset } from '../../src/shared/syncedSettings'
 import { socketPath } from './tmuxReap'
 
 async function selectPreset(page: Page, label: string, command: string) {
@@ -87,5 +88,41 @@ exec sleep 600
     else tmux('set-option', '-u', '-t', session, 'default-shell')
     rmSync(join(bin, 'agy'), { force: true })
     rmSync(argvFile, { force: true })
+  }
+})
+
+test('editing the built-in launcher survives reload and sync to a fresh browser', async ({ page, browser, baseURL, request }) => {
+  async function commandField(client: Page) {
+    await client.getByRole('button', { name: 'Settings', exact: true }).click()
+    const dialog = client.getByRole('dialog', { name: 'Settings' })
+    await dialog.getByRole('tab', { name: 'New sessions', exact: true }).click()
+    return dialog.getByRole('textbox', { name: 'Command for Antigravity', exact: true })
+  }
+
+  await page.goto('/')
+  const field = await commandField(page)
+  const stock = `agy --settings '{"altScreenMode":"always"}'`
+  await expect(field).toHaveValue(stock)
+  const other = await browser.newContext({ baseURL })
+  let edited: SyncedCommandPreset[] | undefined
+  try {
+    const saved = page.waitForResponse(res => res.url().endsWith('/api/settings/synced') &&
+      res.request().method() === 'PUT' && Array.isArray(res.request().postDataJSON()?.settings?.commandPresets))
+    await field.fill('agy')
+    await field.press('Tab')
+    const response = await saved
+    expect(response.ok()).toBe(true)
+    edited = response.request().postDataJSON().settings.commandPresets
+    await page.reload()
+    await expect(await commandField(page)).toHaveValue('agy')
+    const second = await other.newPage()
+    await selectPreset(second, 'Antigravity', 'agy')
+  } finally {
+    await other.close()
+    await page.close()
+    if (edited) {
+      const commandPresets = edited.map(p => p.id === 'antigravity' ? { ...p, command: stock } : p)
+      expect((await request.put('/api/settings/synced', { data: { settings: { commandPresets } } })).ok()).toBe(true)
+    }
   }
 })

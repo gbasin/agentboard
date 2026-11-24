@@ -10,6 +10,23 @@ import type { AgentType } from '../../shared/types'
 
 const now = new Date('2026-01-01T00:00:00.000Z').toISOString()
 
+function withLegacySyncedPresets(raw: string, run: (dbPath: string) => void) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-synced-presets-'))
+  const dbPath = path.join(dir, 'legacy.db')
+  try {
+    const legacy = new SQLiteDatabase(dbPath)
+    try {
+      legacy.exec('CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+      legacy.run("INSERT INTO app_settings VALUES ('synced_settings.commandPresets', ?)", [raw])
+    } finally {
+      legacy.close()
+    }
+    run(dbPath)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 function makeSession(overrides: Partial<{
   sessionId: string
   logFilePath: string
@@ -54,6 +71,48 @@ describe('db', () => {
 
   afterEach(() => {
     db.db.exec('DELETE FROM agent_sessions')
+  })
+
+  test('migrates the stock synced Antigravity launcher once and preserves later edits', () => {
+    const key = 'synced_settings.commandPresets'
+    const stock = { id: 'antigravity', label: 'Antigravity', command: 'agy', isBuiltIn: true, agentType: 'antigravity' }
+    const custom = { ...stock, id: 'custom-agy', isBuiltIn: false }
+    const raw = JSON.stringify([stock, custom])
+    withLegacySyncedPresets(raw, dbPath => {
+      const upgraded = initDatabase({ path: dbPath })
+      try {
+        expect(JSON.parse(upgraded.getAppSetting(key)!)).toEqual([
+          { ...stock, command: `agy --settings '{"altScreenMode":"always"}'` },
+          custom,
+        ])
+        // The setup screen can save the old command explicitly after migration.
+        upgraded.setAppSetting(key, raw)
+      } finally {
+        upgraded.close()
+      }
+
+      const reopened = initDatabase({ path: dbPath })
+      try {
+        expect(reopened.getAppSetting(key)).toBe(raw)
+      } finally {
+        reopened.close()
+      }
+    })
+  })
+
+  test.each([
+    '{corrupt',
+    '[null]',
+    '[{"id":"antigravity","label":"Antigravity","command":"agy --model gemini","isBuiltIn":true,"agentType":"antigravity"}]',
+  ])('preserves malformed and customized synced preset values (%s)', raw => {
+    withLegacySyncedPresets(raw, dbPath => {
+      const upgraded = initDatabase({ path: dbPath })
+      try {
+        expect(upgraded.getAppSetting('synced_settings.commandPresets')).toBe(raw)
+      } finally {
+        upgraded.close()
+      }
+    })
   })
 
   test('active-session lookup uses the windowed-row index, not a full scan', () => {

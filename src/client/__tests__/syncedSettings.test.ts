@@ -105,16 +105,13 @@ describe('applySyncedSettings', () => {
     expect(presets.find(preset => preset.id === 'antigravity')?.command).toBe(`agy --settings '{"altScreenMode":"always"}'`)
   })
 
-  test('upgrades the old synced Antigravity default and keeps custom presets', () => {
+  test('keeps an explicit plain Antigravity command from the server', () => {
     const original = {
       id: 'antigravity', label: 'Antigravity', command: 'agy', isBuiltIn: true, agentType: 'antigravity' as const,
     }
     const custom = { ...original, id: 'custom-agy', isBuiltIn: false }
     applySyncedSettings({ commandPresets: [original, custom] })
-    expect(useSettingsStore.getState().commandPresets.slice(0, 2)).toEqual([
-      { ...original, command: `agy --settings '{"altScreenMode":"always"}'` },
-      custom,
-    ])
+    expect(useSettingsStore.getState().commandPresets.slice(0, 2)).toEqual([original, custom])
   })
 
   test('keeps an edited synced Antigravity launcher', () => {

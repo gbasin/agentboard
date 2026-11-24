@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import type { AgentType } from '../shared/types'
+import { isValidSyncedSetting, migrateLegacyAntigravityPreset, type SyncedCommandPreset } from '../shared/syncedSettings'
 import { logger } from './logger'
 import { resolveProjectPath } from './paths'
 import { acquireDatabaseOwner } from './persistence/ownership'
@@ -666,7 +667,36 @@ function initializeConnection(
       }
     },
   }
+  migrateSyncedAntigravityPreset(api)
   return api
+}
+
+function migrateSyncedAntigravityPreset(db: SessionDatabase) {
+  const marker = 'synced_settings.antigravity_fullscreen_migrated'
+  if (db.getAppSetting(marker) !== null) return
+
+  db.db.transaction(() => {
+    if (db.getAppSetting(marker) !== null) return
+    const key = 'synced_settings.commandPresets'
+    const raw = db.getAppSetting(key)
+    if (raw !== null) {
+      let value: unknown
+      try {
+        value = JSON.parse(raw)
+      } catch {
+        // Leave corrupt settings untouched. The settings endpoint skips them.
+      }
+      if (isValidSyncedSetting('commandPresets', value)) {
+        const presets = value as SyncedCommandPreset[]
+        const migrated = presets.map(migrateLegacyAntigravityPreset)
+        if (migrated.some((preset, index) => preset !== presets[index])) {
+          db.setAppSetting(key, JSON.stringify(migrated))
+        }
+      }
+    }
+    // Later explicit edits to the original command are ordinary synced values.
+    db.setAppSetting(marker, '1')
+  }).immediate()
 }
 
 function ensureDataDir(dbPath: string) {

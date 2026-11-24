@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ANTIGRAVITY_PRESET, migrateLegacyAntigravityPreset, type SyncedCommandPreset } from '@shared/syncedSettings'
 import type { AgentType } from '@shared/types'
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
@@ -52,21 +53,7 @@ export type SidebarAnchor = 'top' | 'bottom'
 export type ShortcutModifier = 'ctrl-option' | 'ctrl-shift' | 'cmd-option' | 'cmd-shift'
 
 // Command preset system
-export interface CommandPreset {
-  id: string
-  label: string
-  command: string
-  isBuiltIn: boolean
-  agentType?: AgentType
-}
-
-const ANTIGRAVITY_PRESET: CommandPreset = {
-  id: 'antigravity',
-  label: 'Antigravity',
-  command: `agy --settings '{"altScreenMode":"always"}'`,
-  isBuiltIn: true,
-  agentType: 'antigravity',
-}
+export type CommandPreset = SyncedCommandPreset
 
 export const DEFAULT_PRESETS: CommandPreset[] = [
   { id: 'claude', label: 'Claude', command: 'claude', isBuiltIn: true, agentType: 'claude' },
@@ -93,16 +80,7 @@ export function isValidPreset(p: unknown): p is CommandPreset {
 
 export function includeBuiltInPresets(presets: CommandPreset[]): CommandPreset[] {
   const existingIds = new Set(presets.map(p => p.id))
-  const updatedPresets = presets.map(p => (
-    p.id === ANTIGRAVITY_PRESET.id &&
-    p.label === ANTIGRAVITY_PRESET.label &&
-    p.agentType === ANTIGRAVITY_PRESET.agentType &&
-    p.isBuiltIn &&
-    p.command === 'agy'
-      ? { ...p, command: ANTIGRAVITY_PRESET.command }
-      : p
-  ))
-  return [...updatedPresets, ...DEFAULT_PRESETS.filter(p => !existingIds.has(p.id))]
+  return [...presets, ...DEFAULT_PRESETS.filter(p => !existingIds.has(p.id))]
 }
 
 export function normalizePreset(p: CommandPreset): CommandPreset {
@@ -398,8 +376,9 @@ export const useSettingsStore = create<SettingsState>()(
         }
 
         // Migrate v1 presets (baseCommand+modifiers) to v2 (single command)
-        const rawPresets = state.commandPresets as Record<string, unknown>[]
-        const migratedPresets = rawPresets.map(migrateOldPreset)
+        const migratedPresets = state.commandPresets
+          .filter((p): p is Record<string, unknown> => p !== null && typeof p === 'object')
+          .map(migrateOldPreset)
 
         // Validate migrated presets
         const validPresets = migratedPresets.filter(isValidPreset)
@@ -417,7 +396,9 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Preserve saved presets when new built-ins push the list over MAX_PRESETS.
         // The limit still applies when adding a preset.
-        const finalPresets = includeBuiltInPresets(validPresets)
+        const finalPresets = includeBuiltInPresets(
+          version < 11 ? validPresets.map(migrateLegacyAntigravityPreset) : validPresets
+        )
 
         if (version < 11) {
           console.info(`[agentboard:settings] Migrated from v${version} to v11`)
