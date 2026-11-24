@@ -3,7 +3,7 @@ import { startOwnedTerminal, sshTerminalSessionName } from './terminal/startOwne
 import { activityKey } from './sessionActivityProtocol'
 import { TerminalRelayClient } from './relay/client'
 import type { RelayToParent } from './relay/protocol'
-import { CopyModeQuery } from './copyModeQuery'
+import { copyModeCommand, CopyModeQuery } from './copyModeQuery'
 import { capturePaneSnapshot } from './paneSnapshot'
 import { SessionReadClient } from './sessionReadClient'
 import type { Server, ServerWebSocket } from 'bun'
@@ -3190,9 +3190,9 @@ async function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData
   const attachSeq = ws.data.terminalAttachSeq
   const target = resolveCopyModeTarget(sessionId, ws, session)
   const status = await ws.data.copyModeQuery.read(async () => {
-    // Copy mode, alternate screen, and application-owned mouse tracking.
-    const args = ['display-message', '-p', '-t', target,
-      '#{pane_in_mode},#{alternate_on},#{mouse_any_flag}']
+    const terminal = ws.data.terminal
+    const tty = terminal?.getMode() === 'pty' ? terminal.getClientTty() : null
+    const args = copyModeCommand(target, tty)
     if (session.remote && session.host) {
       const result = await runRemoteTmux(session.host, args)
       return result.stdout ?? ''

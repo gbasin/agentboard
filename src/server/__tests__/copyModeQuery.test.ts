@@ -52,3 +52,18 @@ test('switch, detach, or disconnect invalidates pending results', async () => {
     expect(await result).toBeNull()
   }
 })
+
+test('converts the active pane intersection to visible client cells', async () => {
+  const query = new CopyModeQuery()
+  const largeClient = await query.read(async () => '0,0,0,11,0,9,8,,,255,99', current)
+  expect(largeClient?.wheelBounds).toEqual({ firstCol: 12, firstRow: 1, lastCol: 20, lastRow: 8 })
+
+  const pannedClient = await query.read(async () => '0,1,1,11,5,29,20,15,8,20,8', current)
+  expect(pannedClient?.wheelBounds).toEqual({ firstCol: 1, firstRow: 1, lastCol: 20, lastRow: 8 })
+
+  const hiddenPane = await query.read(async () => '0,0,0,41,0,9,8,,,20,8', current)
+  expect(hiddenPane?.wheelBounds).toBeNull()
+
+  const invalidGeometry = await query.read(async () => '0,0,0,,,9,8,,,255,99', current)
+  expect(invalidGeometry?.wheelBounds).toBeUndefined()
+})

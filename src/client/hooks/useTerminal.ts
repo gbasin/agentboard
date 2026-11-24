@@ -19,6 +19,7 @@ import { bracketedPaste, sanitizeImagePath } from '../utils/paste'
 import { installMobileAutocorrect } from '../utils/mobileAutocorrect'
 import { clipboardFiles } from '../utils/browserFiles'
 import { setAppOwnsMouse } from '../utils/iosSelection'
+import { terminalMouseCell } from '../utils/terminalMouseCell'
 
 // Module-level snapshot cache: sessionId → serialized terminal content.
 // Survives component remounts and avoids stale-closure issues in effects.
@@ -405,6 +406,7 @@ export function useTerminal({
   const [isTmuxCopyMode, setIsTmuxCopyMode] = useState(false)
   const appMouseRef = useRef<boolean>(false)
   const altScreenRef = useRef<boolean>(false)
+  const wheelBoundsRef = useRef<Extract<ServerMessageWithDiagnostics, { type: 'tmux-copy-mode-status' }>['wheelBounds']>(undefined)
   const copyModeCheckTimer = useRef<number | null>(null)
   const clipboardOfferIdRef = useRef(0)
   const [pendingClipboardOffer, setPendingClipboardOffer] = useState<PendingClipboardOffer | null>(null)
@@ -635,6 +637,33 @@ export function useTerminal({
       sendMessageRef.current({ type: 'tmux-check-copy-mode', sessionId: attached })
     }, 150) // Check 150ms after last scroll
   }, [])
+
+  const sendWheelScroll = useCallback((session: string, lines: number, point: { clientX: number; clientY: number }) => {
+    const terminal = terminalRef.current
+    if (lines === 0 || !terminal || readySessionRef.current !== session) return
+
+    const bounds = wheelBoundsRef.current
+    if (bounds === null) return
+
+    const cell = appMouseRef.current && bounds && containerRef.current
+      ? terminalMouseCell(containerRef.current, terminal, point) : null
+    // The tmux pane can be smaller than this client when another viewer sizes
+    // the window. Use a visible pane cell, not the center of the browser grid.
+    const col = bounds
+      ? Math.max(bounds.firstCol, Math.min(bounds.lastCol, cell?.col ?? bounds.firstCol))
+      : Math.max(1, Math.floor(terminal.cols / 2))
+    const row = bounds
+      ? Math.max(bounds.firstRow, Math.min(bounds.lastRow, cell?.row ?? bounds.firstRow))
+      : Math.max(1, Math.floor(terminal.rows / 2))
+    const button = lines > 0 ? 65 : 64
+    for (let i = 0; i < Math.abs(lines); i++) {
+      sendMessageRef.current({ type: 'terminal-input', sessionId: session, data: `\x1b[<${button};${col};${row}M` })
+    }
+    if (!appMouseRef.current) {
+      if (lines < 0) setTmuxCopyMode(true)
+      requestCopyModeCheck()
+    }
+  }, [requestCopyModeCheck, setTmuxCopyMode])
 
   const fitAndResize = useCallback(() => {
     const terminal = terminalRef.current
@@ -1269,37 +1298,9 @@ export function useTerminal({
       const STEP = 30
       wheelAccumRef.current += ev.deltaY
 
-      // Get approximate cell position for SGR mouse event
-      const cols = terminal.cols
-      const rows = terminal.rows
-      const col = Math.floor(cols / 2)
-      const row = Math.floor(rows / 2)
-
-      let scrolledUp = false
-      let didScroll = false
-      while (Math.abs(wheelAccumRef.current) >= STEP) {
-        didScroll = true
-        const down = wheelAccumRef.current > 0
-        wheelAccumRef.current += down ? -STEP : STEP
-
-        // SGR mouse wheel: button 64 = scroll up, 65 = scroll down
-        const button = down ? 65 : 64
-        if (!down) scrolledUp = true
-        sendMessageRef.current({
-          type: 'terminal-input',
-          sessionId: attached,
-          data: `\x1b[<${button};${col};${row}M`
-        })
-      }
-
-      // Optimistically show button when scrolling up
-      if (scrolledUp && !appMouseRef.current) {
-        setTmuxCopyMode(true)
-      }
-      // Request actual copy-mode status from tmux (debounced) - only if we sent scroll
-      if (didScroll && !appMouseRef.current) {
-        requestCopyModeCheck()
-      }
+      const lines = Math.trunc(wheelAccumRef.current / STEP)
+      wheelAccumRef.current -= lines * STEP
+      sendWheelScroll(attached, lines, ev)
       return false // We handled it, prevent xterm local scroll
     })
 
@@ -1452,6 +1453,8 @@ export function useTerminal({
     nativeInputRef.current?.reset()
     parserGenerationRef.current += 1
     readySessionRef.current = null
+    wheelBoundsRef.current = undefined
+    wheelAccumRef.current = 0
     acknowledgeOutput(outputBufferRef.current)
     outputBufferRef.current = []
     if (sessionId && allowAttach && connectionStatus === 'connected') setIsSwitching(true)
@@ -1932,6 +1935,7 @@ export function useTerminal({
         const nextAppMouse = message.appMouse === true && !message.inCopyMode
         appMouseRef.current = nextAppMouse
         altScreenRef.current = message.altScreen === true
+        wheelBoundsRef.current = message.wheelBounds
         // While the app owns the mouse, a long-press drag goes to the app as
         // its own selection; native iOS selection would start a second one.
         if (isiOS) {
@@ -2121,6 +2125,7 @@ export function useTerminal({
     isTmuxCopyMode,
     appMouseRef,
     setTmuxCopyMode,
+    sendWheelScroll,
     isSwitching,
     isInputReady,
     pendingClipboardOffer,

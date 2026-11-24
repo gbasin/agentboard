@@ -354,6 +354,10 @@ class TerminalProxyMock {
     this.disposed = true
   }
 
+  getClientTty() {
+    return '/dev/test-agentboard-pty'
+  }
+
   getMode() {
     return 'pty' as const
   }
@@ -3113,12 +3117,13 @@ describe('server message handlers', () => {
         captureOptions = args[1]
       }
       if (tmuxArgs[0] === 'display-message') {
-        copyModeTarget = tmuxArgs[3] ?? ''
+        copyModeTarget = tmuxArgs[tmuxArgs.indexOf('-t') + 1] ?? ''
+        expect(tmuxArgs).toContain('/dev/test-agentboard-pty')
         // Format: pane_in_mode,alternate_on,mouse_any_flag — here: a fullscreen app
         // (not in copy-mode, alt screen on, app owns the mouse).
         return {
           exitCode: 0,
-          stdout: Buffer.from('0,1,1\n'),
+          stdout: Buffer.from('0,1,1,0,0,20,8,,,100,40\n'),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -3181,6 +3186,7 @@ describe('server message handlers', () => {
       inCopyMode: false,
       altScreen: true,
       appMouse: true,
+      wheelBounds: { firstCol: 1, firstRow: 1, lastCol: 20, lastRow: 8 },
     })
   })
 

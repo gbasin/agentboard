@@ -1,6 +1,7 @@
 import type { TerminalSession } from './protocol'
 /** Terminal-only asynchronous tmux reads; never read the dashboard database. */
 import { config } from '../config'
+import { copyModeCommand } from '../copyModeQuery'
 import { splitSshOptions } from '../remoteSessions'
 import { shellQuote } from '../shellQuote'
 import { timedSpawnAsync } from '../syncSpawnTiming'
@@ -34,8 +35,10 @@ export async function checkTerminalCopyMode(peer: TerminalPeer, session: Termina
   const sequence = peer.data.terminalAttachSeq
   const target = peer.data.currentSessionId === session.id && peer.data.currentTmuxTarget
     ? peer.data.currentTmuxTarget : session.tmuxWindow
+  const terminal = peer.data.terminal
+  const tty = terminal?.getMode() === 'pty' ? terminal.getClientTty() : null
   const status = await peer.data.copyModeQuery.read(async () => {
-    const result = await runTerminalTmux(['display-message', '-p', '-t', target, '#{pane_in_mode},#{alternate_on},#{mouse_any_flag}'], session.remote ? session.host : undefined)
+    const result = await runTerminalTmux(copyModeCommand(target, tty), session.remote ? session.host : undefined)
     return result.exitCode === 0 ? result.stdout : ''
   }, () => peer.readyState === 1 && sequence === peer.data.terminalAttachSeq && isCurrent())
   if (status) sendTerminal(peer, { type: 'tmux-copy-mode-status', sessionId: session.id, ...status })

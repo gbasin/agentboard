@@ -1984,6 +1984,22 @@ describe('useTerminal', () => {
     expect(terminal.writes.some((write) => write.includes('\x1b[?1000l'))).toBe(false)
 
     act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse: true,
+        wheelBounds: { firstCol: 12, firstRow: 1, lastCol: 20, lastRow: 8 },
+      })
+      terminal.emitWheel({ deltaY: -30, clientX: 140, clientY: 35, target: container } as unknown as WheelEvent)
+    })
+    expect(sendCalls).toContainEqual({
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: '\x1b[<64;15;4M',
+    })
+
+    act(() => {
       terminal.emitData('x')
     })
     expect(sendCalls).toContainEqual({
@@ -2480,6 +2496,7 @@ describe('useTerminal', () => {
         sessionId: 'session-1',
         inCopyMode: false,
         appMouse: false,
+        wheelBounds: { firstCol: 12, firstRow: 1, lastCol: 20, lastRow: 8 },
       })
     })
     terminal.writes.length = 0
@@ -2492,13 +2509,27 @@ describe('useTerminal', () => {
     expect(sendCalls).toContainEqual({
       type: 'terminal-input',
       sessionId: 'session-1',
-      data: '\x1b[<64;40;12M',
+      data: '\x1b[<64;12;1M',
     })
     expect(sendCalls).toContainEqual({
       type: 'tmux-check-copy-mode',
       sessionId: 'session-1',
     })
     expect(terminal.writes).toContain('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l')
+
+    sendCalls.length = 0
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse: false,
+        wheelBounds: null,
+      })
+      terminal.emitWheel({ deltaY: -30, target: container } as unknown as WheelEvent)
+    })
+    expect(sendCalls).toEqual([])
+    expect(renderer.root.findByType('div').props['data-copy-mode']).toBe('false')
 
     act(() => {
       renderer.unmount()
@@ -2646,6 +2677,78 @@ describe('useTerminal', () => {
     act(() => {
       renderer.unmount()
     })
+  })
+
+  test('iOS swipe uses the visible pane and cancels momentum on session switch', async () => {
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: async () => {}, readText: async () => '' },
+    } as unknown as Navigator
+    const { container, dispatchEvent } = createContainerMock()
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const nextSession = { ...terminalSession, id: 'session-2', tmuxWindow: 'agentboard:@2' }
+    const props = {
+      sessions: [terminalSession, nextSession],
+      connectionStatus: 'connected' as const,
+      sendMessage: (message: Record<string, unknown>) => { sendCalls.push(message) },
+      subscribe: (listener: (message: ServerMessage) => void) => {
+        listeners.push(listener)
+        return () => {}
+      },
+      onClose: () => {},
+      onSelectSession: () => {},
+      onNewSession: () => {},
+      onKillSession: () => {},
+      onRenameSession: () => {},
+      onResumeSession: () => {},
+      onOpenSettings: () => {},
+    }
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(<TerminalComponent {...props} session={terminalSession} />, {
+        createNodeMock: () => container,
+      })
+    })
+    act(() => {
+      listeners[0]?.({ type: 'terminal-ready', sessionId: terminalSession.id })
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: terminalSession.id,
+        inCopyMode: false,
+        appMouse: false,
+        wheelBounds: { firstCol: 12, firstRow: 3, lastCol: 20, lastRow: 8 },
+      })
+    })
+    const originalPerformance = globalThis.performance
+    const clock = { time: 1000 }
+    Object.defineProperty(globalThis, 'performance', { configurable: true, value: { now: () => clock.time } })
+    const scheduled: FrameRequestCallback[] = []
+    const cancelled: number[] = []
+    globalAny.requestAnimationFrame = callback => scheduled.push(callback)
+    globalAny.cancelAnimationFrame = id => { cancelled.push(id) }
+    const start = { clientX: 120, clientY: 100 }
+    const end = { clientX: 120, clientY: 140 }
+    const handled = { preventDefault: () => {}, stopPropagation: () => {} }
+    try {
+      act(() => { dispatchEvent('touchstart', { touches: [start] }) })
+      clock.time += 20
+      act(() => {
+        dispatchEvent('touchmove', { touches: [end], ...handled })
+        dispatchEvent('touchend', { changedTouches: [end], ...handled })
+      })
+      expect(sendCalls).toContainEqual({
+        type: 'terminal-input', sessionId: terminalSession.id, data: '\x1b[<64;12;3M',
+      })
+      expect(scheduled).toHaveLength(1)
+      await act(async () => { renderer.update(<TerminalComponent {...props} session={nextSession} />) })
+      expect(cancelled).toContain(1)
+    } finally {
+      Object.defineProperty(globalThis, 'performance', { configurable: true, value: originalPerformance })
+      act(() => { renderer.unmount() })
+    }
   })
 
   test('iOS appMouse=true long press drag emits SGR mouse selection events', async () => {

@@ -177,6 +177,8 @@ export type ServerMessage = (
       // hijack wheel/clicks into tmux copy-mode. Optional for back-compat.
       altScreen?: boolean
       appMouse?: boolean
+      // Null means the pane is outside this client’s viewport. Omitted for clients without geometry.
+      wheelBounds?: { firstCol: number; firstRow: number; lastCol: number; lastRow: number } | null
     }
   | { type: 'server-config'; remoteAllowControl: boolean; remoteAllowAttach: boolean; hostLabel: string; preferWindowName: boolean; clientLogLevel?: string; catalogVersion?: number }
   | { type: 'synced-settings'; settings: SyncedSettings }

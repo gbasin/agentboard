@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { terminalMouseCell } from '../utils/terminalMouseCell'
 import { clientLog } from '../utils/clientLog'
 import type {
   AgentSession,
@@ -191,6 +192,7 @@ export default function Terminal({
     isTmuxCopyMode,
     appMouseRef,
     setTmuxCopyMode,
+    sendWheelScroll,
     isSwitching,
     isInputReady,
     pendingClipboardOffer,
@@ -688,14 +690,15 @@ export default function Terminal({
   // Single tap focuses terminal for keyboard input
   useEffect(() => {
     const container = containerRef.current
-    if (!container || !session?.id) return
+    const touchSession = session?.id
+    if (!container || !touchSession) return
 
     // Check if mobile or iOS (iOS needs touch scroll even in landscape where width > 767px)
     if (!isMobileLayout && !isiOS) return
     const TAP_MOVE_THRESHOLD = 6 // pixels - allows small jitter without canceling taps
     const LONG_PRESS_MS = 350
 
-    let touchStartPos = { x: 0, y: 0 }
+    let touchStartPos = { clientX: 0, clientY: 0 }
     let touchStartTime = 0
     let hasMoved = false
     let lastTouchY: number | null = null
@@ -721,29 +724,9 @@ export default function Terminal({
     const getTextarea = () =>
       container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
 
-    const getTouchCell = (touch: Pick<Touch, 'clientX' | 'clientY'>): { col: number; row: number } | null => {
+    const getTouchCell = (touch: Pick<Touch, 'clientX' | 'clientY'>) => {
       const terminal = terminalRef.current
-      if (!terminal) return null
-
-      const root = container.querySelector('.xterm') as HTMLElement | null
-      const screen = root?.querySelector('.xterm-screen') as HTMLElement | null
-      const screenRect = screen?.getBoundingClientRect()
-      if (!screenRect || screenRect.width <= 0 || screenRect.height <= 0) return null
-
-      const cellW = screenRect.width / terminal.cols
-      const cellH = screenRect.height / terminal.rows
-      if (cellW <= 0 || cellH <= 0) return null
-
-      const col = Math.min(
-        terminal.cols,
-        Math.max(1, Math.floor((touch.clientX - screenRect.left) / cellW) + 1)
-      )
-      const row = Math.min(
-        terminal.rows,
-        Math.max(1, Math.floor((touch.clientY - screenRect.top) / cellH) + 1)
-      )
-
-      return { col, row }
+      return terminal ? terminalMouseCell(container, terminal, touch) : null
     }
 
     const disableTextareaIfIdle = () => {
@@ -806,39 +789,6 @@ export default function Terminal({
         data: `\x1b[<${button};${cell.col};${cell.row}${final}`,
       })
       return true
-    }
-
-    // Send scroll events to tmux as SGR mouse sequences (like desktop wheel handler)
-    // Returns true if scrolled up (into history), false otherwise
-    const sendScrollToTmux = (lines: number): boolean => {
-      const currentSessionId = sessionIdRef.current
-      if (!currentSessionId || lines === 0) return false
-
-      const terminal = terminalRef.current
-      const cols = terminal?.cols ?? 80
-      const rows = terminal?.rows ?? 24
-      const col = Math.floor(cols / 2)
-      const row = Math.floor(rows / 2)
-
-      // SGR mouse wheel: button 64 = scroll up, 65 = scroll down
-      const button = lines > 0 ? 65 : 64
-      const count = Math.abs(lines)
-      const scrolledUp = lines < 0
-
-      for (let i = 0; i < count; i++) {
-        sendMessageRef.current({
-          type: 'terminal-input',
-          sessionId: currentSessionId,
-          data: `\x1b[<${button};${col};${row}M`
-        })
-      }
-
-      // Only enter copy-mode when scrolling UP (into history), not when scrolling down
-      if (scrolledUp && !appMouseRef.current) {
-        setTmuxCopyMode(true)
-      }
-
-      return scrolledUp
     }
 
     const sendTapClickToApp = (touch: Touch): boolean => {
@@ -945,7 +895,7 @@ export default function Terminal({
 
       if (e.touches.length === 1) {
         const touch = e.touches[0]
-        touchStartPos = { x: touch.clientX, y: touch.clientY }
+        touchStartPos = { clientX: touch.clientX, clientY: touch.clientY }
         touchStartTime = performance.now()
         hasMoved = false
         lastTouchY = touch.clientY
@@ -1001,8 +951,8 @@ export default function Terminal({
       e.preventDefault()
       e.stopPropagation()
 
-      const dx = Math.abs(x - touchStartPos.x)
-      const dy = Math.abs(y - touchStartPos.y)
+      const dx = Math.abs(x - touchStartPos.clientX)
+      const dy = Math.abs(y - touchStartPos.clientY)
       if (!hasMoved && (dx > TAP_MOVE_THRESHOLD || dy > TAP_MOVE_THRESHOLD)) {
         hasMoved = true
         clearLongPressTimer()
@@ -1023,7 +973,7 @@ export default function Terminal({
       const threshold = Math.max(6, lineHeightPx * 0.6)
       const scrollEvents = Math.trunc(accumulatedDelta / threshold)
       if (scrollEvents !== 0) {
-        sendScrollToTmux(scrollEvents)
+        sendWheelScroll(touchSession, scrollEvents, touchStartPos)
         accumulatedDelta -= scrollEvents * threshold
       }
     }
@@ -1102,7 +1052,7 @@ export default function Terminal({
           const threshold = Math.max(6, lineHeightPx * 0.6)
           const scrollEvents = Math.trunc(accumulatedDelta / threshold)
           if (scrollEvents !== 0) {
-            sendScrollToTmux(scrollEvents)
+            sendWheelScroll(touchSession, scrollEvents, touchStartPos)
             accumulatedDelta -= scrollEvents * threshold
           }
 
@@ -1153,6 +1103,7 @@ export default function Terminal({
       container.removeEventListener('touchend', handleTouchEnd, endOptions)
       container.removeEventListener('touchcancel', handleTouchCancel, startOptions)
       container.removeEventListener('mousedown', handleMouseDown, mouseOptions)
+      stopMomentum()
       clearLongPressTimer()
       // Re-enable textarea on cleanup
       const cleanupTextarea = getTextarea()
@@ -1161,7 +1112,7 @@ export default function Terminal({
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- use session?.id and refs to avoid re-running on unrelated changes
-  }, [session?.id, containerRef, terminalRef, isiOS, isMobileLayout, isDrawerOpen, fontSize, lineHeight])
+  }, [session?.id, containerRef, terminalRef, isiOS, isMobileLayout, isDrawerOpen, fontSize, lineHeight, sendWheelScroll, session?.tmuxWindow, connectionStatus, connectionEpoch, isReadOnly])
 
   const handleSendKey = useCallback(
     (key: string) => {
