@@ -693,7 +693,7 @@ function processLine(state: ScanState, line: string): void {
   if (
     state.antigravityResultStep !== null ||
     (state.backgroundCreates.size > 0 && line.includes('finished with result:')) ||
-    (line.includes('"step_index"') && GH_PR_CREATE_LINE_RE.test(line))
+    (line.includes('"step_index"') && (line.includes('Tool is running as a background task') || GH_PR_CREATE_LINE_RE.test(line)))
   ) {
     processAntigravityCreate(state, line)
   }

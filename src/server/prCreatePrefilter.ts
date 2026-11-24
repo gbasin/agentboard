@@ -4,7 +4,8 @@
 // false positive only costs a decode, a false negative loses a PR.
 
 export const CREATE_BYTES = Buffer.from('create')
-const BACKGROUND_COMPLETION_BYTES = Buffer.from('finished with result:')
+// Both the Antigravity kickoff and its later completion carry the same task ID.
+const BACKGROUND_TASK_BYTES = Buffer.from('/task-')
 const REST_BYTES = Buffer.from('pulls')
 const CONNECTOR_CREATE_BYTES = Buffer.from('github_create_pull_request')
 const CONNECTOR_COMPLETION_BYTES = Buffer.from('github.create_pull_request')
@@ -42,7 +43,7 @@ export function hasCreateCandidate(bytes: Buffer): boolean {
 
 // Signals without the literal word "create" must also survive partial-line reads.
 export function hasAdditionalCandidate(bytes: Buffer): boolean {
-  return bytes.includes(REST_BYTES) || bytes.includes(BACKGROUND_COMPLETION_BYTES)
+  return bytes.includes(REST_BYTES) || bytes.includes(BACKGROUND_TASK_BYTES)
 }
 
 // True when `bytes` holds a `pr-link` candidate.
@@ -68,7 +69,7 @@ function seamHasWord(partial: Buffer[], bytes: Buffer, word: Buffer): boolean {
 }
 
 export function seamHasCreate(partial: Buffer[], bytes: Buffer): boolean {
-  return seamHasWord(partial, bytes, BACKGROUND_COMPLETION_BYTES) || seamHasWord(partial, bytes, REST_BYTES) || seamHasWord(partial, bytes, CREATE_BYTES) ||
+  return seamHasWord(partial, bytes, BACKGROUND_TASK_BYTES) || seamHasWord(partial, bytes, REST_BYTES) || seamHasWord(partial, bytes, CREATE_BYTES) ||
     seamHasWord(partial, bytes, CONNECTOR_CREATE_BYTES) ||
     seamHasWord(partial, bytes, CONNECTOR_COMPLETION_BYTES)
 }

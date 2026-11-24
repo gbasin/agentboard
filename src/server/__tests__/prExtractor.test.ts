@@ -1197,7 +1197,7 @@ test('correlates Antigravity background creations across appends and parallel co
   const log = path.join(tempRoot, 'background.jsonl')
   const start = (index: number, command: string) => JSON.stringify({
     type: 'GENERIC', source: 'MODEL', status: 'RUNNING', step_index: index,
-    content: `Created At: now\nTool is running as a background task with task id: session/task-${index}\nTask Description: ${command}\nTask logs are available at: file:///task.log\nLog output:\ngh pr create`,
+    content: `Created At: now\nTool is running as a background task with task id: session/task-${index}\nTask Description: ${command}\nTask logs are available at: file:///task.log\nLog output:\n${index === 2 ? 'gh pr create' : ''}`,
   })
   const finish = (sender: number, task: number, code: number, output: string) => JSON.stringify({
     type: 'SYSTEM_MESSAGE', source: 'SYSTEM', status: 'DONE', step_index: 20 + task,
@@ -1207,7 +1207,7 @@ test('correlates Antigravity background creations across appends and parallel co
   await fs.writeFile(log, [
     start(1, 'git push && \\\n  gh pr create && gh pr ready'),
     start(2, 'gh pr view'),
-    start(3, 'gh pr create'),
+    start(3, 'gh --repo=example/repo pr \\\n create'),
     start(4, 'gh pr create'),
     finish(2, 2, 0, url(99)),
     finish(2, 1, 0, url(98)),
