@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { join } from 'node:path'
 import { isolatePrStatusEnv } from './scripts/test-process-env'
 
 const port = Number(process.env.E2E_PORT) || 4173
@@ -90,8 +90,7 @@ export default defineConfig({
     // test produces), so discovery silently falls back to the 15s
     // reconciliation tick and seeds outlive 20s expect timeouts. Polling
     // makes discovery a real 5s cycle on CI.
-    command: `[ -d dist/client ] || bun run build && LC_ALL=C LANG=C PORT=${port} TMUX_SESSION=${tmuxSession} AGENTBOARD_STATIC_DIR=dist/client AGENTBOARD_LOG_WATCH_MODE=poll bun src/server/index.ts`,
-    env: { PATH: `${join(tmuxTmpDir, 'fixture-bin')}${delimiter}${process.env.PATH ?? ''}` },
+    command: `[ -d dist/client ] || bun run build && PATH="$E2E_TMUX_TMPDIR/fixture-bin:$PATH" LC_ALL=C LANG=C PORT=${port} TMUX_SESSION=${tmuxSession} AGENTBOARD_STATIC_DIR=dist/client AGENTBOARD_LOG_WATCH_MODE=poll bun src/server/index.ts`,
     url: `http://localhost:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

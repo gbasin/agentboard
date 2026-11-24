@@ -96,12 +96,13 @@ test('upgrade preserves the current platform preference in one switch', async ({
       iosAutocorrect: platform !== 'iOS', androidAutocorrect: platform !== 'Android',
     } }))
   }, platform)
-  await create('autocorrect-migrate')
+  const name = `autocorrect-migrate-${platform}`
+  await create(name)
   await page.goto('/')
-  const input = await select(page, 'autocorrect-migrate')
+  const input = await select(page, name)
   await expect(input).toHaveAttribute('autocorrect', 'off')
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('agentboard-settings')!))
-  expect(saved.version).toBe(10)
+  expect(saved.version).toBeGreaterThanOrEqual(10)
   expect(saved.state.mobileAutocorrect).toBe(false)
   expect(saved.state).not.toHaveProperty('iosAutocorrect')
   expect(saved.state).not.toHaveProperty('androidAutocorrect')

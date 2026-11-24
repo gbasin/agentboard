@@ -25,7 +25,7 @@ mode=0
 target=''
 prev=''
 for arg in "$@"; do
-  [ "$arg" = '#{pane_in_mode},#{alternate_on},#{mouse_any_flag}' ] && mode=1
+  case "$arg" in '#{pane_in_mode},#{alternate_on},#{mouse_any_flag}'*) mode=1 ;; esac
   [ "$prev" = '-t' ] && target="$arg"
   prev="$arg"
 done
