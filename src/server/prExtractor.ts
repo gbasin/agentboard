@@ -8,6 +8,7 @@
 // reads bytes appended since the previous scan.
 
 import fs from 'node:fs'
+import { backgroundCreateTask, backgroundCreateUrls } from './antigravityBackgroundPr'
 import { restPrCompletionUrls } from './restPrCompletion'
 import type { SessionPullRequest } from '../shared/types'
 import { logger } from './logger'
@@ -16,7 +17,7 @@ import {
   CREATE_BYTES,
   PR_LINK_BYTES,
   hasCreateCandidate,
-  hasRestCandidate,
+  hasAdditionalCandidate,
   hasPrLinkCandidate,
   seamHasCreate,
   seamHasPrLink,
@@ -85,6 +86,7 @@ interface ScanState {
   // Tool-call ids awaiting their result (id -> expiry in lines).
   pending: PendingCreate[]
   antigravityResultStep: number | null
+  backgroundCreates: Set<string>
   connectorPending: Map<string, number>
   // Fallback lookahead (lines) for create commands that had no ids.
   windowRemaining: number
@@ -111,6 +113,7 @@ function newScanState(): ScanState {
     partialHasCreate: false,
     partialHasLink: false,
     pending: [],
+    backgroundCreates: new Set(),
     connectorPending: new Map(),
     antigravityResultStep: null,
     windowRemaining: 0,
@@ -364,7 +367,7 @@ function invokesGhPrCreate(cmd: string, matcher: GhMatcher = prCreateMatcher): b
   while (i < n) {
     const c = cmd[i]
     if (c === '\\') {
-      word += cmd.slice(i, i + 2)
+      if (cmd[i + 1] !== '\n') word += cmd.slice(i, i + 2)
       i += 2
       continue
     }
@@ -657,6 +660,16 @@ function processAntigravityCreate(state: ScanState, line: string): void {
   state.antigravityResultStep = null
   try {
     const step = JSON.parse(line)
+    if (!step || typeof step !== 'object') return
+    const task = backgroundCreateTask(step, invokesGhPrCreate)
+    if (task) {
+      if (state.backgroundCreates.size >= MAX_PENDING_IDS) {
+        const oldest = state.backgroundCreates.values().next().value
+        if (oldest) state.backgroundCreates.delete(oldest)
+      }
+      state.backgroundCreates.add(detach(task))
+    }
+    for (const url of backgroundCreateUrls(step, state.backgroundCreates)) collectUrls(state, url)
     if (step?.source !== 'MODEL' || !Number.isInteger(step.step_index) || step.status !== 'DONE') return
     if (expected === step.step_index && typeof step.content === 'string') {
       if (step.type === 'RUN_COMMAND') collectUrls(state, step.content)
@@ -677,7 +690,11 @@ function processAntigravityCreate(state: ScanState, line: string): void {
 }
 
 function processLine(state: ScanState, line: string): void {
-  if (state.antigravityResultStep !== null || (line.includes('"step_index"') && GH_PR_CREATE_LINE_RE.test(line))) {
+  if (
+    state.antigravityResultStep !== null ||
+    (state.backgroundCreates.size > 0 && line.includes('finished with result:')) ||
+    (line.includes('"step_index"') && (line.includes('Tool is running as a background task') || GH_PR_CREATE_LINE_RE.test(line)))
+  ) {
     processAntigravityCreate(state, line)
   }
   if (line.includes('"CommandExecution"') && line.includes('pulls')) {
@@ -792,7 +809,7 @@ function consumeChunk(state: ScanState, bytes: Buffer): void {
   const seamCreate = seamHasCreate(state.partial, bytes)
   const seamLink = seamHasPrLink(state.partial, bytes)
   if (lastNewline === -1) {
-    state.partialHasCreate ||= seamCreate || bytes.includes(CREATE_BYTES) || hasRestCandidate(bytes)
+    state.partialHasCreate ||= seamCreate || bytes.includes(CREATE_BYTES) || hasAdditionalCandidate(bytes)
     state.partialHasLink ||= seamLink || bytes.includes(PR_LINK_BYTES)
     // Copy: `bytes` views the shared read buffer.
     state.partial.push(Buffer.from(bytes))
@@ -817,7 +834,7 @@ function consumeChunk(state: ScanState, bytes: Buffer): void {
   }
   const tail = bytes.subarray(lastNewline + 1)
   state.partial = tail.length > 0 ? [Buffer.from(tail)] : []
-  state.partialHasCreate = tail.includes(CREATE_BYTES) || hasRestCandidate(tail)
+  state.partialHasCreate = tail.includes(CREATE_BYTES) || hasAdditionalCandidate(tail)
   state.partialHasLink = tail.includes(PR_LINK_BYTES)
 }
 

@@ -1192,3 +1192,36 @@ test('Antigravity 1.5 CLI attributes successful generic command output', () => {
   expect(ids(result.content)).toEqual([42])
   expect(ids(result.content.replace('code 0.', 'code 1.'))).toEqual([])
 })
+
+test('correlates Antigravity background creations across appends and parallel commands', async () => {
+  const log = path.join(tempRoot, 'background.jsonl')
+  const start = (index: number, command: string) => JSON.stringify({
+    type: 'GENERIC', source: 'MODEL', status: 'RUNNING', step_index: index,
+    content: `Created At: now\nTool is running as a background task with task id: session/task-${index}\nTask Description: ${command}\nTask logs are available at: file:///task.log\nLog output:\n${index === 2 ? 'gh pr create' : ''}`,
+  })
+  const finish = (sender: number, task: number, code: number, output: string) => JSON.stringify({
+    type: 'SYSTEM_MESSAGE', source: 'SYSTEM', status: 'DONE', step_index: 20 + task,
+    content: `Notification\n<SYSTEM_MESSAGE>\n[Message] timestamp=now sender=session/task-${sender} priority=HIGH content=Task id "session/task-${task}" finished with result:\nCommand exited with code ${code}.\n\nCommand output:\n${output}\nLog: file:///task.log\n</SYSTEM_MESSAGE>`,
+  })
+  const url = (id: number) => `https://github.com/example/repo/pull/${id}`
+  await fs.writeFile(log, [
+    start(1, 'git push && \\\n  gh pr create && gh pr ready'),
+    start(2, 'gh pr view'),
+    start(3, 'gh --repo=example/repo pr \\\n create'),
+    start(4, 'gh pr create'),
+    finish(2, 2, 0, url(99)),
+    finish(2, 1, 0, url(98)),
+    finish(4, 4, 1, url(97)),
+    '',
+  ].join('\n'))
+  expect(getSessionPullRequests(log)).toEqual([])
+  const result = finish(3, 3, 0, url(3))
+  const split = result.indexOf('finished with result:') + 6
+  await fs.appendFile(log, result.slice(0, split))
+  expect(getSessionPullRequests(log)).toEqual([])
+  await fs.appendFile(log, result.slice(split) + '\n')
+  expect(getSessionPullRequests(log).map(pr => pr.number)).toEqual([3])
+  const output = `Creating draft pull request for feature into main in example/repo\r\n\r\nWorking...\r\n${url(1)}\r\n{"url":"${url(96)}"}\r\nfollow-up command failed`
+  await fs.appendFile(log, finish(1, 1, 1, output) + '\n')
+  expect(getSessionPullRequests(log).map(pr => pr.number)).toEqual([3, 1])
+})
