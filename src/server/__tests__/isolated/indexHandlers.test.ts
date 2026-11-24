@@ -354,6 +354,14 @@ class TerminalProxyMock {
     this.disposed = true
   }
 
+  getActiveGroupedSession() {
+    return this.switchTargets.length ? this.options.sessionName : null
+  }
+
+  getClientTty() {
+    return '/dev/test-agentboard-pty'
+  }
+
   getMode() {
     return 'pty' as const
   }
@@ -3103,6 +3111,7 @@ describe('server message handlers', () => {
     let captureOptions: Parameters<typeof Bun.spawnSync>[1] | undefined
     let captureUsesUtf8 = false
     let copyModeTarget = ''
+    let cancelTarget = ''
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
       const tmuxArgs = getTmuxArgs(command as string[])
@@ -3112,13 +3121,15 @@ describe('server message handlers', () => {
         captureTarget = tmuxArgs[2] ?? ''
         captureOptions = args[1]
       }
+      if (tmuxArgs[0] === 'send-keys') cancelTarget = tmuxArgs[tmuxArgs.indexOf('-t') + 1] ?? ''
       if (tmuxArgs[0] === 'display-message') {
-        copyModeTarget = tmuxArgs[3] ?? ''
+        copyModeTarget = tmuxArgs[tmuxArgs.indexOf('-t') + 1] ?? ''
+        expect(tmuxArgs).toContain('/dev/test-agentboard-pty')
         // Format: pane_in_mode,alternate_on,mouse_any_flag — here: a fullscreen app
         // (not in copy-mode, alt screen on, app owns the mouse).
         return {
           exitCode: 0,
-          stdout: Buffer.from('0,1,1\n'),
+          stdout: Buffer.from('0,1,1,0,0,20,8,,,100,40\n'),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -3170,7 +3181,12 @@ describe('server message handlers', () => {
       JSON.stringify({ type: 'tmux-check-copy-mode', sessionId: baseSession.id })
     )
     await waitFor(() => sent.some((message) => message.type === 'tmux-copy-mode-status'))
-    expect(copyModeTarget).toBe(groupedTarget)
+    expect(copyModeTarget).toBe(`=${groupedTarget}:`)
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'tmux-cancel-copy-mode', sessionId: baseSession.id })
+    )
+    expect(cancelTarget).toBe(`=${groupedTarget}:`)
 
     // The fullscreen flags from tmux propagate to the client (appMouse drives the
     // client's decision to stop hijacking mouse events into copy-mode).
@@ -3181,6 +3197,7 @@ describe('server message handlers', () => {
       inCopyMode: false,
       altScreen: true,
       appMouse: true,
+      wheelBounds: { firstCol: 1, firstRow: 1, lastCol: 20, lastRow: 8 },
     })
   })
 
@@ -4704,7 +4721,7 @@ describe('server message handlers', () => {
       agentType: 'antigravity',
       logFilePath: '/tmp/antigravity sessions/resume antigravity.jsonl',
       currentWindow: null,
-      launchCommand: '"agy -c --continue --conversation=old --model gemini"',
+      launchCommand: JSON.stringify(`agy -c --continue --conversation=old --model gemini --settings '{"altScreenMode":"always"}'`),
     })
     seedRecord(record)
 
@@ -4727,7 +4744,7 @@ describe('server message handlers', () => {
 
     expect(createArgs).not.toBeNull()
     expect(createArgs!.command).toBe(
-      'agy --model gemini --conversation resume-antigravity'
+      `agy --model gemini --settings '{"altScreenMode":"always"}' --conversation resume-antigravity`
     )
     const wakeResult = sent.find((m) => m.type === 'session-wake-result')
     expect(wakeResult && 'ok' in wakeResult && wakeResult.ok).toBe(true)

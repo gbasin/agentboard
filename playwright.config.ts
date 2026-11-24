@@ -90,7 +90,7 @@ export default defineConfig({
     // test produces), so discovery silently falls back to the 15s
     // reconciliation tick and seeds outlive 20s expect timeouts. Polling
     // makes discovery a real 5s cycle on CI.
-    command: `[ -d dist/client ] || bun run build && LC_ALL=C LANG=C PORT=${port} TMUX_SESSION=${tmuxSession} AGENTBOARD_STATIC_DIR=dist/client AGENTBOARD_LOG_WATCH_MODE=poll bun src/server/index.ts`,
+    command: `[ -d dist/client ] || bun run build && PATH="$E2E_TMUX_TMPDIR/fixture-bin:$PATH" LC_ALL=C LANG=C PORT=${port} TMUX_SESSION=${tmuxSession} AGENTBOARD_STATIC_DIR=dist/client AGENTBOARD_LOG_WATCH_MODE=poll bun src/server/index.ts`,
     url: `http://localhost:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

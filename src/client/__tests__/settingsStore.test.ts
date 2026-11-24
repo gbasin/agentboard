@@ -320,6 +320,24 @@ async function rehydratePresets(commandPresets: unknown[], defaultPresetId: stri
 }
 
 describe('preset migration', () => {
+  test('upgrades the stock Antigravity launcher in v10 settings', async () => {
+    const legacy = DEFAULT_PRESETS.map(p => p.id === 'antigravity' ? { ...p, command: 'agy' } : p)
+    const custom = { id: 'custom-agy', label: 'My Antigravity', command: 'agy', isBuiltIn: false }
+    const { commandPresets, defaultPresetId } = await rehydratePresets([...legacy, custom, null], 'antigravity', 10)
+
+    expect(commandPresets.find(p => p.id === 'antigravity')?.command).toBe(
+      `agy --settings '{"altScreenMode":"always"}'`
+    )
+    expect(commandPresets.find(p => p.id === custom.id)).toEqual(custom)
+    expect(defaultPresetId).toBe('antigravity')
+  })
+
+  test('keeps a plain Antigravity command in current saved settings', async () => {
+    const edited = DEFAULT_PRESETS.map(p => p.id === 'antigravity' ? { ...p, command: 'agy' } : p)
+    const { commandPresets } = await rehydratePresets(edited, 'antigravity', 11)
+    expect(commandPresets).toEqual(edited)
+  })
+
   test('migrates v1 presets from baseCommand and modifiers', async () => {
     const { commandPresets } = await rehydratePresets([
       { id: 'claude', label: 'Claude', baseCommand: 'claude', modifiers: '--model opus', isBuiltIn: true, agentType: 'claude' },
@@ -364,7 +382,7 @@ describe('preset migration', () => {
     ])
     expect(defaultPresetId).toBe(custom.id)
     const persisted = JSON.parse(storage.getItem('agentboard-settings')!)
-    expect(persisted.version).toBe(10)
+    expect(persisted.version).toBe(11)
     await useSettingsStore.persist.rehydrate()
     expect(useSettingsStore.getState().commandPresets).toEqual(commandPresets)
   })
@@ -419,7 +437,7 @@ describe('preset migration', () => {
 describe('settings persistence migration', () => {
   test('runs the hibernating/history expansion rename for v5 persisted state', async () => {
     const options = useSettingsStore.persist.getOptions()
-    expect(options.version).toBe(10)
+    expect(options.version).toBe(11)
     if (!options.migrate) {
       throw new Error('Expected settings migration to be configured')
     }
@@ -479,7 +497,7 @@ describe('mobile autocorrect migration', () => {
         await useSettingsStore.persist.rehydrate()
         expect(useSettingsStore.getState().mobileAutocorrect).toBe(expected)
         const saved = JSON.parse(storage.getItem('agentboard-settings')!)
-        expect(saved.version).toBe(10)
+        expect(saved.version).toBe(11)
         expect(saved.state.mobileAutocorrect).toBe(expected)
         expect(saved.state).not.toHaveProperty('iosAutocorrect')
         expect(saved.state).not.toHaveProperty('androidAutocorrect')

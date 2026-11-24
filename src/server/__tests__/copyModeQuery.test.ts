@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { CopyModeQuery } from '../copyModeQuery'
+import { copyModeCommand, CopyModeQuery, resolveLocalCopyModeTarget } from '../copyModeQuery'
 
 function deferred() {
   let resolve!: (value: string) => void
@@ -51,4 +51,40 @@ test('switch, detach, or disconnect invalidates pending results', async () => {
     slow.resolve('1,1,1')
     expect(await result).toBeNull()
   }
+})
+
+test('converts the active pane intersection to visible client cells', async () => {
+  const query = new CopyModeQuery()
+  const largeClient = await query.read(async () => '0,0,0,11,0,9,8,,,255,99', current)
+  expect(largeClient?.wheelBounds).toEqual({ firstCol: 12, firstRow: 1, lastCol: 20, lastRow: 8 })
+
+  const pannedClient = await query.read(async () => '0,1,1,11,5,29,20,15,8,20,8', current)
+  expect(pannedClient?.wheelBounds).toEqual({ firstCol: 1, firstRow: 1, lastCol: 20, lastRow: 8 })
+
+  const hiddenPane = await query.read(async () => '0,0,0,41,0,9,8,,,20,8', current)
+  expect(hiddenPane?.wheelBounds).toBeNull()
+
+  const invalidGeometry = await query.read(async () => '0,0,0,,,9,8,,,255,99', current)
+  expect(invalidGeometry?.wheelBounds).toBeUndefined()
+})
+
+test('reads the active grouped window with the correct tmux client', () => {
+  const group = 'agentboard-ws-lease-x-external-123'
+  const terminal = { getActiveGroupedSession: () => group }
+  const target = resolveLocalCopyModeTarget(`${group}:@42`, terminal)
+  expect(target).toBe(`=${group}:`)
+  expect(copyModeCommand(target, '/dev/pts/2').slice(0, 6)).toEqual([
+    'display-message', '-p', '-c', '/dev/pts/2', '-t', `=${group}:`,
+  ])
+  for (const selectedTarget of [group, `${group}:1`, `${group}:my-window`]) {
+    expect(resolveLocalCopyModeTarget(selectedTarget, terminal)).toBe(target)
+  }
+})
+
+test('preserves explicit pane targets, ungrouped targets and unavailable groups', () => {
+  const terminal = { getActiveGroupedSession: () => 'agentboard-ws-lease' }
+  for (const target of ['%12', 'agentboard-ws-lease:@42.0', 'agentboard-ws-lease:1.1', 'other:@42']) {
+    expect(resolveLocalCopyModeTarget(target, terminal)).toBe(target)
+  }
+  expect(resolveLocalCopyModeTarget('agentboard-ws-lease:@42', null)).toBe('agentboard-ws-lease:@42')
 })

@@ -102,7 +102,24 @@ describe('applySyncedSettings', () => {
     applySyncedSettings({ commandPresets: [customized] })
     const presets = useSettingsStore.getState().commandPresets
     expect(presets[0]).toEqual(customized)
-    expect(presets.find(preset => preset.id === 'antigravity')?.command).toBe('agy')
+    expect(presets.find(preset => preset.id === 'antigravity')?.command).toBe(`agy --settings '{"altScreenMode":"always"}'`)
+  })
+
+  test('keeps an explicit plain Antigravity command from the server', () => {
+    const original = {
+      id: 'antigravity', label: 'Antigravity', command: 'agy', isBuiltIn: true, agentType: 'antigravity' as const,
+    }
+    const custom = { ...original, id: 'custom-agy', isBuiltIn: false }
+    applySyncedSettings({ commandPresets: [original, custom] })
+    expect(useSettingsStore.getState().commandPresets.slice(0, 2)).toEqual([original, custom])
+  })
+
+  test('keeps an edited synced Antigravity launcher', () => {
+    const edited = {
+      id: 'antigravity', label: 'Antigravity', command: 'agy --model gemini', isBuiltIn: true, agentType: 'antigravity' as const,
+    }
+    applySyncedSettings({ commandPresets: [edited] })
+    expect(useSettingsStore.getState().commandPresets[0]).toEqual(edited)
   })
 
   test('ignores unknown keys and invalid values', () => {

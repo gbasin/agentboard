@@ -3,7 +3,7 @@ import { startOwnedTerminal, sshTerminalSessionName } from './terminal/startOwne
 import { activityKey } from './sessionActivityProtocol'
 import { TerminalRelayClient } from './relay/client'
 import type { RelayToParent } from './relay/protocol'
-import { CopyModeQuery } from './copyModeQuery'
+import { copyModeCommand, CopyModeQuery, resolveLocalCopyModeTarget } from './copyModeQuery'
 import { capturePaneSnapshot } from './paneSnapshot'
 import { SessionReadClient } from './sessionReadClient'
 import type { Server, ServerWebSocket } from 'bun'
@@ -3167,7 +3167,8 @@ async function handleCancelCopyMode(sessionId: string, ws: ServerWebSocket<WSDat
 
   try {
     // Exit tmux copy-mode quietly.
-    const target = resolveCopyModeTarget(sessionId, ws, session)
+    const attachedTarget = resolveCopyModeTarget(sessionId, ws, session)
+    const target = resolveLocalCopyModeTarget(attachedTarget, ws.data.currentSessionId === sessionId ? ws.data.terminal : null)
     if (session.remote && session.host) {
       await runRemoteTmux(session.host, ['send-keys', '-X', '-t', target, 'cancel'])
     } else {
@@ -3188,11 +3189,12 @@ async function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData
   if (session.remote && !config.remoteAllowAttach) return
 
   const attachSeq = ws.data.terminalAttachSeq
-  const target = resolveCopyModeTarget(sessionId, ws, session)
+  const attachedTarget = resolveCopyModeTarget(sessionId, ws, session)
+  const terminal = ws.data.currentSessionId === sessionId ? ws.data.terminal : null
+  const target = resolveLocalCopyModeTarget(attachedTarget, terminal)
+  const tty = terminal?.getMode() === 'pty' ? terminal.getClientTty() : null
   const status = await ws.data.copyModeQuery.read(async () => {
-    // Copy mode, alternate screen, and application-owned mouse tracking.
-    const args = ['display-message', '-p', '-t', target,
-      '#{pane_in_mode},#{alternate_on},#{mouse_any_flag}']
+    const args = copyModeCommand(target, tty)
     if (session.remote && session.host) {
       const result = await runRemoteTmux(session.host, args)
       return result.stdout ?? ''

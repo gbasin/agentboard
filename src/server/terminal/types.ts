@@ -88,6 +88,7 @@ interface ITerminalProxy {
   dispose(): Promise<void>
   isReady(): boolean
   getClientTty(): string | null
+  getActiveGroupedSession?(): string | null
   getCurrentWindow(): string | null
   getSessionName(): string
   getMode(): 'pty' | 'pipe-pane' | 'ssh'
