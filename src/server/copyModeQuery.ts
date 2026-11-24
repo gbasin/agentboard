@@ -1,7 +1,22 @@
+import type { ITerminalProxy } from './terminal/types'
+
 const COPY_MODE_FORMAT = '#{pane_in_mode},#{alternate_on},#{mouse_any_flag}'
 const WHEEL_BOUNDS_FORMAT = '#{pane_left},#{pane_top},#{pane_width},#{pane_height},#{window_offset_x},#{window_offset_y},#{client_width},#{client_height}'
 
+export function resolveLocalCopyModeTarget(target: string, terminal: Pick<ITerminalProxy, 'getActiveGroupedSession'> | null): string {
+  const group = terminal?.getActiveGroupedSession?.()
+  if (!group) return target
+  const prefix = `${group}:`
+  if (target === group || (target.startsWith(prefix) && /^(?:@\d+|[A-Za-z0-9_-]+)$/.test(target.slice(prefix.length)))) {
+    return `=${group}:`
+  }
+  // A pane-specific or external ungrouped target keeps its original scope.
+  return target
+}
+
 export function copyModeCommand(target: string, clientTty?: string | null): string[] {
+  // -c alone formats the most recently active client on tmux 3.7c.
+  // Keep -t to supply the known group’s active pane.
   return clientTty
     ? ['display-message', '-p', '-c', clientTty, '-t', target, `${COPY_MODE_FORMAT},${WHEEL_BOUNDS_FORMAT}`]
     : ['display-message', '-p', '-t', target, COPY_MODE_FORMAT]

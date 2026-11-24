@@ -31,9 +31,14 @@ for arg in "$@"; do
 done
 gate="$AB_COPY_MODE_GATE"
 wanted=''
-[ -f "$gate/arm" ] && wanted="$(cat "$gate/arm")"
-# Relay observers use a derived session name; the tmux window ID is stable.
-if [ "$mode" = 1 ] && [ -n "$wanted" ] && [ "\${wanted##*:}" = "\${target##*:}" ]; then
+[ "$mode" = 1 ] && [ -f "$gate/arm" ] && wanted="$(cat "$gate/arm")"
+# Resolve a grouped session's current window while fault injection is armed.
+if [ -n "$wanted" ]; then
+  case "$target" in
+    *:) target="$("$AB_REAL_TMUX" display-message -p -t "$target" '#{window_id}' 2>/dev/null)" ;;
+  esac
+fi
+if [ -n "$wanted" ] && [ "\${wanted##*:}" = "\${target##*:}" ]; then
   if mv "$gate/arm" "$gate/held" 2>/dev/null; then
     echo "$$" > "$gate/started"
     n=0

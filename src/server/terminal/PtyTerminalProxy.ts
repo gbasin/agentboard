@@ -82,9 +82,8 @@ class PtyTerminalProxy extends TerminalProxyBase {
   // independent focus.
   private externalGroupedSessions = new Map<string, string>()
   // Session the client was last switched into (grouped ws session or derived
-  // external group). Paste targets its active window so it follows manual
-  // in-terminal window switches, which currentWindow (last programmatic
-  // switch) does not.
+  // external group). Paste and copy-mode operations follow manual
+  // in-terminal window switches through this group’s active window.
   private lastEffectiveSession: string | null = null
 
   getMode(): 'pty' {
@@ -93,6 +92,11 @@ class PtyTerminalProxy extends TerminalProxyBase {
 
   getClientTty(): string | null {
     return this.clientTty
+  }
+
+  getActiveGroupedSession(): string | null {
+    const session = this.lastEffectiveSession
+    return session && (session === this.options.sessionName || this.externalGroupedSessions.has(session)) ? session : null
   }
 
   ensureEffectiveTarget(target: string): string {

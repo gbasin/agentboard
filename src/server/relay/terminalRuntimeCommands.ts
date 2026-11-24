@@ -1,7 +1,7 @@
 import type { TerminalSession } from './protocol'
 /** Terminal-only asynchronous tmux reads; never read the dashboard database. */
 import { config } from '../config'
-import { copyModeCommand } from '../copyModeQuery'
+import { copyModeCommand, resolveLocalCopyModeTarget } from '../copyModeQuery'
 import { splitSshOptions } from '../remoteSessions'
 import { shellQuote } from '../shellQuote'
 import { timedSpawnAsync } from '../syncSpawnTiming'
@@ -31,12 +31,19 @@ export async function captureTerminalScreen(target: string, host?: string): Prom
   }
 }
 
+function copyModeEndpoint(peer: TerminalPeer, session: TerminalSession) {
+  const attached = peer.data.currentSessionId === session.id
+  const terminal = attached ? peer.data.terminal : null
+  const selectedTarget = (attached ? peer.data.currentTmuxTarget : null) ?? session.tmuxWindow
+  return {
+    target: resolveLocalCopyModeTarget(selectedTarget, terminal),
+    tty: terminal?.getMode() === 'pty' ? terminal.getClientTty() : null,
+  }
+}
+
 export async function checkTerminalCopyMode(peer: TerminalPeer, session: TerminalSession, isCurrent: () => boolean = () => true): Promise<void> {
   const sequence = peer.data.terminalAttachSeq
-  const target = peer.data.currentSessionId === session.id && peer.data.currentTmuxTarget
-    ? peer.data.currentTmuxTarget : session.tmuxWindow
-  const terminal = peer.data.terminal
-  const tty = terminal?.getMode() === 'pty' ? terminal.getClientTty() : null
+  const { target, tty } = copyModeEndpoint(peer, session)
   const status = await peer.data.copyModeQuery.read(async () => {
     const result = await runTerminalTmux(copyModeCommand(target, tty), session.remote ? session.host : undefined)
     return result.exitCode === 0 ? result.stdout : ''
@@ -45,7 +52,6 @@ export async function checkTerminalCopyMode(peer: TerminalPeer, session: Termina
 }
 
 export async function cancelTerminalCopyMode(peer: TerminalPeer, session: TerminalSession): Promise<void> {
-  const target = peer.data.currentSessionId === session.id && peer.data.currentTmuxTarget
-    ? peer.data.currentTmuxTarget : session.tmuxWindow
+  const { target } = copyModeEndpoint(peer, session)
   try { await runTerminalTmux(['send-keys', '-X', '-t', target, 'cancel'], session.remote ? session.host : undefined) } catch { /* Already out of copy mode or pane gone. */ }
 }

@@ -354,6 +354,10 @@ class TerminalProxyMock {
     this.disposed = true
   }
 
+  getActiveGroupedSession() {
+    return this.switchTargets.length ? this.options.sessionName : null
+  }
+
   getClientTty() {
     return '/dev/test-agentboard-pty'
   }
@@ -3107,6 +3111,7 @@ describe('server message handlers', () => {
     let captureOptions: Parameters<typeof Bun.spawnSync>[1] | undefined
     let captureUsesUtf8 = false
     let copyModeTarget = ''
+    let cancelTarget = ''
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
       const tmuxArgs = getTmuxArgs(command as string[])
@@ -3116,6 +3121,7 @@ describe('server message handlers', () => {
         captureTarget = tmuxArgs[2] ?? ''
         captureOptions = args[1]
       }
+      if (tmuxArgs[0] === 'send-keys') cancelTarget = tmuxArgs[tmuxArgs.indexOf('-t') + 1] ?? ''
       if (tmuxArgs[0] === 'display-message') {
         copyModeTarget = tmuxArgs[tmuxArgs.indexOf('-t') + 1] ?? ''
         expect(tmuxArgs).toContain('/dev/test-agentboard-pty')
@@ -3175,7 +3181,12 @@ describe('server message handlers', () => {
       JSON.stringify({ type: 'tmux-check-copy-mode', sessionId: baseSession.id })
     )
     await waitFor(() => sent.some((message) => message.type === 'tmux-copy-mode-status'))
-    expect(copyModeTarget).toBe(groupedTarget)
+    expect(copyModeTarget).toBe(`=${groupedTarget}:`)
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'tmux-cancel-copy-mode', sessionId: baseSession.id })
+    )
+    expect(cancelTarget).toBe(`=${groupedTarget}:`)
 
     // The fullscreen flags from tmux propagate to the client (appMouse drives the
     // client's decision to stop hijacking mouse events into copy-mode).

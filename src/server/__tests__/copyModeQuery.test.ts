@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { CopyModeQuery } from '../copyModeQuery'
+import { copyModeCommand, CopyModeQuery, resolveLocalCopyModeTarget } from '../copyModeQuery'
 
 function deferred() {
   let resolve!: (value: string) => void
@@ -66,4 +66,25 @@ test('converts the active pane intersection to visible client cells', async () =
 
   const invalidGeometry = await query.read(async () => '0,0,0,,,9,8,,,255,99', current)
   expect(invalidGeometry?.wheelBounds).toBeUndefined()
+})
+
+test('reads the active grouped window with the correct tmux client', () => {
+  const group = 'agentboard-ws-lease-x-external-123'
+  const terminal = { getActiveGroupedSession: () => group }
+  const target = resolveLocalCopyModeTarget(`${group}:@42`, terminal)
+  expect(target).toBe(`=${group}:`)
+  expect(copyModeCommand(target, '/dev/pts/2').slice(0, 6)).toEqual([
+    'display-message', '-p', '-c', '/dev/pts/2', '-t', `=${group}:`,
+  ])
+  for (const selectedTarget of [group, `${group}:1`, `${group}:my-window`]) {
+    expect(resolveLocalCopyModeTarget(selectedTarget, terminal)).toBe(target)
+  }
+})
+
+test('preserves explicit pane targets, ungrouped targets and unavailable groups', () => {
+  const terminal = { getActiveGroupedSession: () => 'agentboard-ws-lease' }
+  for (const target of ['%12', 'agentboard-ws-lease:@42.0', 'agentboard-ws-lease:1.1', 'other:@42']) {
+    expect(resolveLocalCopyModeTarget(target, terminal)).toBe(target)
+  }
+  expect(resolveLocalCopyModeTarget('agentboard-ws-lease:@42', null)).toBe('agentboard-ws-lease:@42')
 })
