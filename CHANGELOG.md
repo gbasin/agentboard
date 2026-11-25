@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.2](https://github.com/gbasin/agentboard/compare/v0.48.1...v0.48.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* recover PR chips from Antigravity background commands ([#616](https://github.com/gbasin/agentboard/issues/616)) ([4f28483](https://github.com/gbasin/agentboard/commit/4f284832f28b938838b2a86bcd03386c47113a8e))
+
 ## [0.48.1](https://github.com/gbasin/agentboard/compare/v0.48.0...v0.48.1) (2026-11-24)
 
 
