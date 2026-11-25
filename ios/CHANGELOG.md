@@ -2,6 +2,20 @@
 
 Release Please maintains this file for the native iPhone client.
 
+## [0.3.0](https://github.com/gbasin/agentboard/compare/ios-v0.2.2...ios-v0.3.0) (2026-11-25)
+
+
+### Features
+
+* share PR status across boards and refresh active repositories every 30 seconds ([#607](https://github.com/gbasin/agentboard/issues/607)) ([911f9e3](https://github.com/gbasin/agentboard/commit/911f9e35427d0a306795f617c3c90913f72bc63f))
+* support Google Antigravity CLI sessions ([#608](https://github.com/gbasin/agentboard/issues/608)) ([d33937b](https://github.com/gbasin/agentboard/commit/d33937b7db1d0198f82870b5c5d03f9796520443))
+
+
+### Bug Fixes
+
+* **ios:** wait for automatic TestFlight group assignment ([#567](https://github.com/gbasin/agentboard/issues/567)) ([fa47e75](https://github.com/gbasin/agentboard/commit/fa47e75319fc2498debc53469e7a099c67448160))
+* stabilize native iOS CI fixtures and interactions ([#585](https://github.com/gbasin/agentboard/issues/585)) ([2d09c81](https://github.com/gbasin/agentboard/commit/2d09c813f1b76390e37411155ec9ff51e9e2f585))
+
 ## [0.2.2](https://github.com/gbasin/agentboard/compare/ios-v0.2.1...ios-v0.2.2) (2026-11-11)
 
 
